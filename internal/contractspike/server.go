@@ -138,7 +138,7 @@ func WriteOpenAPI(path string) error {
 		return err
 	}
 
-	return os.WriteFile(path, append(spec, '\n'), 0o644)
+	return os.WriteFile(path, append(spec, '\n'), 0o644) //nolint:gosec // openapi.json is a non-secret artifact meant to be broadly readable
 }
 
 func registerWidgetRoutes(api huma.API, store *WidgetStore) {
