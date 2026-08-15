@@ -2,16 +2,19 @@
 
 ## Claude Code
 
-- Canonical project skills live under `.cursor/skills/` (Cursor + Agent
-  Skills standard). Use those workflows even when invoking from Claude Code:
-  - `create-feature` — implement one `[ID]` backlog issue
-  - `code-review` — review a diff/PR against build plan §5 / AGENTS.md
-  - `bugfix` — reproduce → failing test → minimal fix → verify
-- If a local `.claude/skills/code-review/SKILL.md` is present, it should
-  defer to `.cursor/skills/code-review/SKILL.md` rather than diverge.
+- Project skill available: `code-review` (`.claude/skills/code-review/SKILL.md`)
+  — reviews a diff/PR against the Agent Working Agreement in
+  docs/GOMBIT_BUILD_PLAN.md §5. Invoke with `/code-review` or ask to review a
+  PR/diff; it overrides the bundled `/code-review` for this repo.
 - This repo has no source tree yet (see AGENTS.md "Current state"). Prefer a
   direct `Read` of `docs/GOMBIT_BUILD_PLAN.md` over spawning an Explore
   subagent for backlog/dependency lookups — there's nothing to search yet.
 - When creating or editing GitHub issues, keep the `[ID]` title prefix and the
   milestone/label mapping from build plan §6. Don't rename, re-bucket, or
   merge existing issues without being asked.
+
+## Cursor skills
+
+Cursor counterparts live under `.cursor/skills/` (`create-feature`,
+`code-review`, `bugfix`). Keep the Claude `code-review` skill and the Cursor
+`code-review` skill aligned with this file and AGENTS.md.

@@ -5,14 +5,14 @@ description: Reviews a Gombit diff or pull request against the agent working agr
 
 # Code Review
 
-Review the current diff (or a named PR/branch) against Gombit's definition of done. Read `AGENTS.md` first. This skill is the Cursor checklist that `AGENTS.md` refers to; it overrides generic review habits for this repo.
+Review the current diff (or a named PR/branch) against Gombit's definition of done. Read `AGENTS.md` first. This is the Claude Code project skill that `AGENTS.md` and `CLAUDE.md` refer to; it overrides the bundled `/code-review` for this repo.
 
-The Claude Code counterpart is `.claude/skills/code-review/SKILL.md`. Keep both aligned.
+The Cursor counterpart is `.cursor/skills/code-review/SKILL.md`. Keep both aligned.
 
 ## When not to use
 
-- Implementing a new backlog item → `create-feature`
-- Reproducing and fixing a defect → `bugfix` (review the fix afterward with this skill)
+- Implementing a new backlog item → treat as a feature (Cursor: `create-feature`)
+- Reproducing and fixing a defect → treat as a bugfix (Cursor: `bugfix`); review the fix afterward with this skill
 
 ## Setup
 

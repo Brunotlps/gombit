@@ -70,6 +70,13 @@ A change is not done unless:
 - If something looks missing from the backlog, flag it — don't silently add
   scope.
 
+## Code review
+
+Before opening or merging a PR, review the diff against the working
+agreement above. In Claude Code, run the project `code-review` skill
+(`.claude/skills/code-review/SKILL.md`); in Cursor, run the project
+`code-review` skill (`.cursor/skills/code-review/SKILL.md`).
+
 ## Cursor skills
 
 Project skills live in `.cursor/skills/` and encode the workflows above.
@@ -84,7 +91,3 @@ asking in those terms.
   this repo (not a generic review).
 - **bugfix** — reproduce, add a failing test, fix the root cause only,
   then verify. Do not use it for new features.
-
-In Claude Code, the same `code-review` workflow is the project skill at
-`.claude/skills/code-review/SKILL.md` when that file exists; otherwise
-follow `.cursor/skills/code-review/SKILL.md`.
