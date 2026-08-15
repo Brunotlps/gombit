@@ -41,7 +41,7 @@ func TestLoadFromEnv(t *testing.T) {
 		envHTTPAddr:                " 127.0.0.1:9000 ",
 		envAPIPrefix:               " /api ",
 		envDatabaseDriver:          " postgres ",
-		envDatabaseDSN:             " postgres://user:pass@localhost:5432/app?sslmode=disable ",
+		envDatabaseDSN:             " host=localhost user=gombit dbname=app sslmode=disable ",
 		envDatabaseMaxOpenConns:    " 20 ",
 		envDatabaseMaxIdleConns:    " 4 ",
 		envDatabaseConnMaxLifetime: " 45m ",
@@ -63,7 +63,7 @@ func TestLoadFromEnv(t *testing.T) {
 		},
 		Database: DatabaseConfig{
 			Driver:          DatabaseDriverPostgres,
-			DSN:             "postgres://user:pass@localhost:5432/app?sslmode=disable",
+			DSN:             "host=localhost user=gombit dbname=app sslmode=disable",
 			MaxOpenConns:    20,
 			MaxIdleConns:    4,
 			ConnMaxLifetime: 45 * time.Minute,
@@ -91,7 +91,7 @@ func TestLoadUsesProcessEnvironment(t *testing.T) {
 	t.Setenv(envHTTPAddr, ":9090")
 	t.Setenv(envAPIPrefix, "/api")
 	t.Setenv(envDatabaseDriver, string(DatabaseDriverMySQL))
-	t.Setenv(envDatabaseDSN, "user:pass@tcp(localhost:3306)/app?parseTime=true")
+	t.Setenv(envDatabaseDSN, "gombit@tcp(localhost:3306)/app?parseTime=true")
 
 	got, err := Load()
 	if err != nil {
@@ -109,7 +109,7 @@ func TestLoadUsesProcessEnvironment(t *testing.T) {
 		},
 		Database: DatabaseConfig{
 			Driver: DatabaseDriverMySQL,
-			DSN:    "user:pass@tcp(localhost:3306)/app?parseTime=true",
+			DSN:    "gombit@tcp(localhost:3306)/app?parseTime=true",
 		},
 	}
 	if !reflect.DeepEqual(got, want) {

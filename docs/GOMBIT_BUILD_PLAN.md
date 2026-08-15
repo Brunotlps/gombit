@@ -49,7 +49,7 @@ If any of C1–C6 is wrong for you, say which — each has a cluster of issues h
 - **D9 — Generic CRUD repo:** `repository.New[T]` lives in the **runtime** as an optional helper. Never generated per-model. Locked.
 - **D10 — Response envelope:** `{"data": ..., "meta"?: ...}` success; `{"error": {code, message, fields?, request_id}}` error. This is a **redesign** of the existing `{"error":"string"}`; acceptable for a new framework, but note it in the migration guide. Locked.
 - **D11 — Pre-v1 compatibility:** No guarantees before v1.0. Breaking changes documented in CHANGELOG. Locked.
-- **D12 — Databases in v0.1:** SQLite + PostgreSQL required and CI-gated. **MySQL deferred to M2 stretch / post-v0.1** — do not let a third dialect slow the first working loop. (Draft made all three v0.1; MySQL demoted to keep scope honest.)
+- **D12 — Databases in v0.1:** SQLite + PostgreSQL + MySQL are required and CI-gated. MySQL is promoted back into the first supported database set so generated apps can target common MySQL deployments without application code changes.
 
 ---
 
@@ -140,20 +140,20 @@ One issue per seam. Each must keep the existing tests green (see §5).
 - **[M1-1] Typed config boundary** — introduce a typed `config.Config`; move all `os.Getenv` reads to the config boundary; low-level packages receive typed config. AC: no `os.Getenv` outside `config`; existing behavior unchanged; config validation errors are explicit. deps: M0-1. size: M. labels: `runtime`, `config`.
 - **[M1-2] `framework.App` + lifecycle + hooks** — extract app construction and the 15-step lifecycle (draft §11.2) into the runtime; add `OnStart`/`OnStop` with deterministic ordering and bounded shutdown context. AC: minimal example boots via `framework.Run`; graceful shutdown test passes. deps: M1-1. size: L. labels: `runtime`, `lifecycle`.
 - **[M1-3] De-domain the router** — remove `Book`/`User` knowledge from router/bootstrap; route registration becomes application-owned; framework mounts only its own endpoints (probes, metrics, openapi). AC: runtime package contains zero example-domain models; middleware order preserved and tested. deps: M1-2. size: M. labels: `runtime`, `http`.
-- **[M1-4] Multi-driver `database.Open` + capability model** — SQLite + Postgres via `gorm.Open` switch; `Driver()` and `Capabilities()` exposed; driver-aware pool defaults. AC: same code opens both; capability flags covered by tests. (MySQL is M2 stretch — D12.) deps: M1-1. size: M. labels: `runtime`, `database`.
+- **[M1-4] Multi-driver `database.Open` + capability model** — SQLite + Postgres + MySQL via `gorm.Open` switch; `Driver()` and `Capabilities()` exposed; driver-aware pool defaults. AC: same code opens all three; capability flags covered by tests; database CI matrix covers SQLite, Postgres, and MySQL. deps: M1-1. size: M. labels: `runtime`, `database`.
 - **[M1-5] Normalize cache interface** — replace the go-redis-leaking interface with `Get/Set/Delete/Increment` value semantics; memory + redis + noop drivers; `app.Redis()` escape hatch when redis is enabled. AC: rate limiter and cache users compile against new interface; memory driver used in tests. deps: M1-1. size: M. labels: `runtime`, `cache`.
 - **[M1-6] Optional Mongo log sink** — Zap stays; Mongo becomes a selectable sink/module, not a runtime dependency; default sink stdout/stderr. AC: app boots and logs with Mongo absent. deps: M1-1. size: S. labels: `runtime`, `logging`.
 - **[M1-7] Preserve observability + security tests** — carry over metrics, tracing, probes, request-id/timeout, security headers, trusted-proxy tests into the runtime package. AC: parity test suite green. deps: M1-2. size: M. labels: `runtime`, `tests`.
 
-**M1 exit gate:** a minimal example app boots through the runtime with no example-domain code in the runtime, on both SQLite and Postgres, all extracted tests green.
+**M1 exit gate:** a minimal example app boots through the runtime with no example-domain code in the runtime, on SQLite, Postgres, and MySQL, all extracted tests green.
 
 ### M2 — Migrations (Atlas-backed, Django `makemigrations`)
 
-- **[M2-0] ADR-012: Migrations = Atlas GORM provider** — confirm `ariga.io/atlas-provider-gorm` (Apache 2.0) covers the needed workflow on SQLite + Postgres via **Program Mode** (models across feature-packages), and verify which capabilities sit in the open core vs the paid Atlas Pro/cloud tier (versioned `migrate diff` is open; confirm nothing you depend on — lint checks, drift monitoring — is gated). Record the decision or the fallback (hand-rolled DSL). **Go/no-go gate for M2.** deps: M1-4. size: S. labels: `adr`, `migrations`.
-- **[M2-1] `gombit db makemigrations`** — wrap the Atlas provider loader + `atlas migrate diff` to generate a versioned migration from current GORM models; wire the loader to enumerate feature-package models. AC: changing a model and running `gombit db makemigrations` writes a correct versioned migration on SQLite + Postgres. deps: M2-0. size: L. labels: `migrations`, `cli`.
-- **[M2-2] `gombit db migrate` / `rollback` / `status`** — apply/roll back/report versioned migrations (Atlas apply + a `framework_migrations`-style revision record: version/name/batch/applied_at, no checksum per D4). AC: up/down/status reflected and correct on both DBs. deps: M2-1. size: M. labels: `migrations`, `cli`.
-- **[M2-3] `gombit db seed` / `reset`** — seeders and a dev reset (drop+migrate+seed). AC: seed and reset work on both DBs. deps: M2-2. size: S. labels: `migrations`, `cli`.
-- **[M2-4] Multi-DB conformance CI** — matrix job runs the DB conformance suite (CRUD, tx, migrate up/down, timestamps, nullable, unique, index, decimal, pagination) on SQLite + Postgres, using Atlas-generated migrations. AC: matrix green; MySQL job added as allowed-failure stretch. deps: M2-3. size: M. labels: `ci`, `database`.
+- **[M2-0] ADR-012: Migrations = Atlas GORM provider** — confirm `ariga.io/atlas-provider-gorm` (Apache 2.0) covers the needed workflow on SQLite + Postgres + MySQL via **Program Mode** (models across feature-packages), and verify which capabilities sit in the open core vs the paid Atlas Pro/cloud tier (versioned `migrate diff` is open; confirm nothing you depend on — lint checks, drift monitoring — is gated). Record the decision or the fallback (hand-rolled DSL). **Go/no-go gate for M2.** deps: M1-4. size: S. labels: `adr`, `migrations`.
+- **[M2-1] `gombit db makemigrations`** — wrap the Atlas provider loader + `atlas migrate diff` to generate a versioned migration from current GORM models; wire the loader to enumerate feature-package models. AC: changing a model and running `gombit db makemigrations` writes a correct versioned migration on SQLite + Postgres + MySQL. deps: M2-0. size: L. labels: `migrations`, `cli`.
+- **[M2-2] `gombit db migrate` / `rollback` / `status`** — apply/roll back/report versioned migrations (Atlas apply + a `framework_migrations`-style revision record: version/name/batch/applied_at, no checksum per D4). AC: up/down/status reflected and correct on all supported DBs. deps: M2-1. size: M. labels: `migrations`, `cli`.
+- **[M2-3] `gombit db seed` / `reset`** — seeders and a dev reset (drop+migrate+seed). AC: seed and reset work on all supported DBs. deps: M2-2. size: S. labels: `migrations`, `cli`.
+- **[M2-4] Multi-DB conformance CI** — matrix job runs the DB conformance suite (CRUD, tx, migrate up/down, timestamps, nullable, unique, index, decimal, pagination) on SQLite + Postgres + MySQL, using Atlas-generated migrations. AC: matrix green. deps: M2-3. size: M. labels: `ci`, `database`.
 
 ### M3 — Contract pipeline
 
@@ -190,7 +190,7 @@ One issue per seam. Each must keep the existing tests green (see §5).
 | `collectstatic` | folded into `gombit build --embed` | M5-5 |
 | `shell` | *skipped for v0.1* (poor fit in Go) | — |
 
-**M4 exit gate:** `gombit new` → `gombit dev` → `gombit make resource` → working authenticated CRUD app, backend-to-frontend, no hand-written contract, on SQLite + Postgres.
+**M4 exit gate:** `gombit new` → `gombit dev` → `gombit make resource` → working authenticated CRUD app, backend-to-frontend, no hand-written contract, on SQLite + Postgres + MySQL.
 
 ### M5 — Frontend + auth polish
 
@@ -219,7 +219,7 @@ Each is a **future epic**, explicitly out of v0.1. Do not create these as active
 
 Put this in `CONTRIBUTING.md`; reference from every issue. A PR is **not** done unless:
 
-1. **Tests:** new behavior has unit tests; runtime changes keep the extracted suite green; DB-touching changes pass the SQLite + Postgres matrix.
+1. **Tests:** new behavior has unit tests; runtime changes keep the extracted suite green; DB-touching changes pass the SQLite + Postgres + MySQL matrix.
 2. **Docs + example:** every stable feature ships docs and appears in an example app.
 3. **Extraction discipline:** do not rewrite code that passes its tests. Refactor and move; preserve contracts (draft §2.3). If a "small extraction" turns into a rewrite, stop and open a discussion issue.
 4. **Generator safety:** Go source is modified via `go/ast`/`go/format` only — never regex. Generators are idempotent, support `--dry-run`/`--force`, print created/modified files, and never silently overwrite user-owned files (§3.3).

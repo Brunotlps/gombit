@@ -55,7 +55,7 @@ describing "how the code works."
 
 A change is not done unless:
 
-1. New behavior has tests; DB-touching changes pass the SQLite + PostgreSQL
+1. New behavior has tests; DB-touching changes pass the SQLite + PostgreSQL + MySQL
    matrix.
 2. Stable features ship docs and appear in an example app.
 3. Extraction from `golang-rest-api-template` preserves contracts — refactor

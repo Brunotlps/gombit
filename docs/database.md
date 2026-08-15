@@ -26,9 +26,10 @@ fmt.Println(db.Driver())
 fmt.Println(db.Capabilities().Returning)
 ```
 
-`framework.App` can receive an opened handle through `framework.WithDatabase`.
-`app.Database()` returns the metadata handle and `app.DB()` returns the raw
-`*gorm.DB` escape hatch.
+`framework.App` can receive an opened handle through `framework.WithDatabase`;
+the caller owns opening and closing that handle. `app.Database()` returns the
+metadata handle and `app.DB()` returns the raw `*gorm.DB` escape hatch.
+HTTP-only apps can omit `WithDatabase`.
 
 ## Capabilities
 
@@ -58,6 +59,10 @@ defaults:
 
 Set `Config.Database.MaxOpenConns`, `MaxIdleConns`, or `ConnMaxLifetime` to
 override these defaults.
+
+The default SQLite DSN writes `gombit.db` in the current working directory.
+Production checks for unwritable SQLite paths are tracked with the later
+Appendix C hardening work.
 
 ## Integration Tests
 

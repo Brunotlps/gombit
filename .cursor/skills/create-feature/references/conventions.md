@@ -44,7 +44,7 @@ Do not emit `{"error":"string"}` or a new wrapper.
 ## Persistence
 
 - GORM is the ORM. Expose `*gorm.DB`; do not invent a universal ORM interface.
-- v0.1 databases: SQLite + PostgreSQL. MySQL is deferred.
+- v0.1 databases: SQLite + PostgreSQL + MySQL.
 - Migrations: Atlas GORM provider (Program Mode) + `atlas migrate diff`. No hand-rolled DSL.
 - Migration metadata: `version, name, batch, applied_at`. No checksums (D4).
 - Optional generic repo `repository.New[T]` lives in the **runtime**, never generated per model.

@@ -36,7 +36,7 @@ Closes #<!-- issue number -->
 <!-- build plan §5 / AGENTS.md. Check what applies; if an item doesn't
      apply to this PR, leave it unchecked and say why instead of deleting it. -->
 
-- [ ] New behavior has tests; DB-touching changes pass the SQLite + PostgreSQL matrix
+- [ ] New behavior has tests; DB-touching changes pass the SQLite + PostgreSQL + MySQL matrix
 - [ ] Stable features ship docs and appear in an example app
 - [ ] Extraction preserves contracts — refactor and move, don't rewrite code that already passes its tests
 - [ ] Generators are idempotent/additive, AST-safe, and never overwrite user-owned files (if this PR touches generators)

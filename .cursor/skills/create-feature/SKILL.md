@@ -53,7 +53,7 @@ Load [references/conventions.md](references/conventions.md) for Huma, envelope, 
 
 A feature is not done unless all of these hold:
 
-1. New behavior has tests. Prefer table-driven Go tests (`t.Run`) with useful failure messages. DB-touching changes pass SQLite **and** PostgreSQL (MySQL is post-v0.1 / stretch).
+1. New behavior has tests. Prefer table-driven Go tests (`t.Run`) with useful failure messages. DB-touching changes pass SQLite, PostgreSQL, and MySQL.
 2. Runtime extractions keep the extracted suite green.
 3. Any API change regenerates OpenAPI 3.1 + the TypeScript client (`openapi-typescript` + `openapi-fetch`) in the same PR.
 4. Stable features ship docs and appear in an example app.
