@@ -17,7 +17,7 @@ This ADR was verified against upstream Atlas documentation on 2026-08-15.
 Atlas provides two relevant pieces:
 
 - `ariga.io/atlas-provider-gorm`, a Go module that loads GORM models into an
-  Atlas external schema.
+  SQL schema document compatible with Atlas.
 - The Atlas CLI, which can compare that desired schema to the current
   migration directory state and write versioned SQL migrations with
   `atlas migrate diff`.
@@ -37,10 +37,11 @@ Gombit will wrap Atlas and `ariga.io/atlas-provider-gorm` for M2 migrations.
 1. Resolve the configured database driver.
 2. Generate or run an application-owned Atlas loader program that imports the
    registered feature-package models.
-3. Use `ariga.io/atlas-provider-gorm/gormschema` in Program Mode to expose the
-   GORM schema as an Atlas external schema.
-4. Invoke `atlas migrate diff` against Gombit's migration directory to write a
-   versioned SQL migration for the selected driver.
+3. Use `ariga.io/atlas-provider-gorm/gormschema` in Program Mode to emit the
+   GORM schema SQL to a temporary schema file.
+4. Invoke `atlas migrate diff` against that temporary schema file and Gombit's
+   migration directory to write a versioned SQL migration for the selected
+   driver.
 
 The supported v0.1 drivers remain SQLite, PostgreSQL, and MySQL. Although
 issue #11 mentions SQLite and PostgreSQL, the build plan is authoritative and
@@ -84,8 +85,9 @@ part of M2 acceptance criteria.
 
 ## Consequences
 
-- M2-1 should build a thin wrapper around Atlas Program Mode and
-  `atlas migrate diff`; it should not introduce a Gombit migration DSL.
+- M2-1 should build a thin wrapper around Atlas Program Mode, a temporary
+  schema file, and `atlas migrate diff`; it should not introduce a Gombit
+  migration DSL.
 - Model discovery remains explicit and generator-owned. Generated apps should
   register model types in a known place so the loader can pass concrete model
   values to the provider without runtime reflection discovery.
