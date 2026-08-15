@@ -13,7 +13,13 @@ import (
 func registerPingRoutes(router *gin.Engine) {
 	ping := router.Group("/ping")
 	ping.GET("", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"data": gin.H{"status": "pong"}})
+		c.JSON(http.StatusOK, gin.H{
+			"data": gin.H{
+				"status":     "pong",
+				"request_id": framework.GetRequestID(c),
+				"trace_id":   framework.GetTraceID(c),
+			},
+		})
 	})
 }
 

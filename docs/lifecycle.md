@@ -52,9 +52,9 @@ steps that need their own runtime surfaces.
 | 4. migration state checks | Deferred to M2. |
 | 5. optional Redis/cache connection | Deferred to M1-5. |
 | 6. auth infrastructure | Deferred to M5. |
-| 7. tracing and metrics | Deferred to M1-7. |
+| 7. tracing and metrics | Basic trace-ID propagation and HTTP request metrics are owned in M1-7; full OpenTelemetry exporter wiring is future runtime work. |
 | 8. HTTP server construction | Owned in M1-2 through `framework.Run` and `RunContext`. |
-| 9. middleware installation | Recovery is owned in M1-2. Route-registration composition (independently-registered route groups, each with optional group-scoped middleware) is owned in M1-3 — see [`docs/router.md`](router.md). The concrete security/observability middleware set (CORS, security headers, rate limiting, request-id/timeout, trusted-proxy) is owned by M1-7. |
+| 9. middleware installation | Recovery is owned in M1-2. Route-registration composition (independently-registered route groups, each with optional group-scoped middleware) is owned in M1-3 — see [`docs/router.md`](router.md). Request ID, trace context, metrics, security headers, request timeout, and trusted-proxy configuration are owned in M1-7. CORS, rate limiting, and auth remain separate issues. |
 | 10. module registration | Owned in M1-3 — applications register feature routes directly against `app.Router()`; see [`docs/router.md`](router.md). |
 | 11. readiness/liveness endpoints | Basic raw Gin probes are owned in M1-2; DB/cache-aware readiness is deferred to M1-4/M1-5. |
 | 12. frontend static asset mounting when embedded | Deferred to M5-5. |

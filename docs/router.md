@@ -2,8 +2,8 @@
 
 M1-3 de-domains the router introduced in M1-2: `framework.New` builds a
 `*gin.Engine` with zero knowledge of any application domain and mounts only
-its own endpoints. Today that means `/livez` and `/readyz`; metrics and the
-OpenAPI document join later (M1-7, M3).
+its own endpoints. Today that means `/livez`, `/readyz`, and `/metrics`; the
+OpenAPI document joins later (M3).
 
 Applications register their own routes directly against the escape hatch:
 
@@ -40,15 +40,49 @@ two independently-registered groups compose without cross-module leakage.
 
 ## Middleware ordering
 
-Framework middleware installed before `New` returns — currently
-`gin.Recovery()` — wraps every route registered afterward, including
-application route groups and their own group-scoped middleware. Order is:
+Framework middleware installed before `New` returns wraps every route
+registered afterward, including application route groups and their own
+group-scoped middleware. Order is:
 
 ```text
-framework middleware (e.g. Recovery)
+Recovery
+  -> request ID
+  -> trace context
+  -> request metrics
+  -> security headers
+  -> request timeout
   -> feature group middleware (if any)
     -> feature handler
 ```
+
+Request IDs use the `X-Request-Id` header. If the caller provides one, the
+runtime preserves it; otherwise it generates one and stores it on both Gin's
+context and `c.Request.Context()` for downstream code:
+
+```go
+requestID := framework.GetRequestID(c)
+requestIDFromContext := framework.GetRequestIDFromContext(c.Request.Context())
+```
+
+Trace context currently preserves the W3C `Traceparent` trace ID when present
+and exposes the active trace ID through `X-Trace-Id`,
+`framework.GetTraceID(c)`, and `framework.GetTraceIDFromContext(ctx)`. Full
+OpenTelemetry exporter wiring remains future runtime work; M1-7 preserves the
+runtime seam and parity tests.
+
+`/metrics` exposes Prometheus text-format request counters, active request
+gauge, and request-duration sums for the runtime router. The text renderer is
+intentionally minimal for M1 runtime parity; a later observability issue can
+swap in `prometheus/client_golang` or full OpenTelemetry exporter wiring
+without changing the route contract. Trusted proxies are configured through
+`config.Config.HTTP.TrustedProxies` or
+`GOMBIT_HTTP_TRUSTED_PROXIES`; when unset, Gin ignores forwarded-client IP
+headers and uses the direct TCP peer.
+
+`framework.WithRouter` is the custom-router escape hatch. When an application
+passes its own `*gin.Engine`, Gombit applies trusted-proxy configuration only;
+the application owns recovery, request ID, trace context, metrics, security
+headers, and timeout middleware for that router.
 
 `framework/router_test.go`'s `TestDefaultRouterMountsOnlyFrameworkEndpoints`
 and `TestApplicationOwnedRouteRegistrationComposesIndependently` cover this;
@@ -57,14 +91,12 @@ Recovery still applying to an application-registered route.
 
 ## What is not here yet
 
-This surface does not include CORS, security/XSS headers, rate limiting,
-request-id/timeout, trusted-proxy configuration, or authentication
+This surface does not include CORS, rate limiting, or authentication
 middleware. Those are extracted with their own runtime dependencies in later
 issues:
 
 - rate limiting and the cache interface: M1-5
 - Mongo-backed access logging: M1-6
-- request-id/timeout, security headers, trusted-proxy parity: M1-7
 - auth middleware: M5
 
 Until then, an application that needs one of these can add it directly via

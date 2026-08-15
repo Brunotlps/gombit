@@ -44,6 +44,11 @@ type App struct {
 	addr   string
 }
 
+type namedMiddleware struct {
+	name    string
+	handler gin.HandlerFunc
+}
+
 // New creates an application using process configuration and the default router.
 func New(options ...Option) (*App, error) {
 	app := &App{
@@ -86,7 +91,13 @@ func New(options ...Option) (*App, error) {
 		})
 	}
 	if app.router == nil {
-		app.router = newRouter()
+		router, err := newRouter(app.cfg)
+		if err != nil {
+			return nil, err
+		}
+		app.router = router
+	} else if err := configureTrustedProxies(app.router, app.cfg.HTTP.TrustedProxies); err != nil {
+		return nil, err
 	}
 
 	return app, nil
@@ -240,6 +251,8 @@ func RunContext(ctx context.Context, app *App) error {
 	server := &http.Server{
 		Handler:           app.Router(),
 		ReadHeaderTimeout: 5 * time.Second,
+		WriteTimeout:      app.Config().HTTP.RequestTimeout,
+		IdleTimeout:       app.Config().HTTP.RequestTimeout,
 	}
 	app.setServer(server, listener.Addr().String())
 
@@ -352,9 +365,14 @@ func syncLogger(logger *zap.Logger) error {
 	return nil
 }
 
-func newRouter() *gin.Engine {
+func newRouter(cfg config.Config) (*gin.Engine, error) {
 	router := gin.New()
-	router.Use(gin.Recovery())
+	if err := configureTrustedProxies(router, cfg.HTTP.TrustedProxies); err != nil {
+		return nil, err
+	}
+
+	metrics := newHTTPMetrics()
+	router.Use(middlewareHandlers(runtimeMiddlewareStack(cfg, metrics))...)
 	router.GET("/livez", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"data": gin.H{
@@ -369,11 +387,41 @@ func newRouter() *gin.Engine {
 			},
 		})
 	})
-	return router
+	router.GET("/metrics", metrics.handler)
+	return router, nil
 }
 
 func configureHTTPMode(cfg config.Config) {
 	if cfg.Environment == config.EnvironmentProduction {
 		gin.SetMode(gin.ReleaseMode)
 	}
+}
+
+func configureTrustedProxies(engine *gin.Engine, proxies []string) error {
+	if err := engine.SetTrustedProxies(proxies); err != nil {
+		return fmt.Errorf("framework: trusted proxies: %w", err)
+	}
+	return nil
+}
+
+func runtimeMiddlewareStack(cfg config.Config, metrics *httpMetrics) []namedMiddleware {
+	return []namedMiddleware{
+		{name: "recovery", handler: gin.Recovery()},
+		{name: "request_id", handler: requestIDMiddleware()},
+		{name: "trace_context", handler: traceContextMiddleware()},
+		{name: "metrics", handler: metricsMiddleware(metrics)},
+		{
+			name:    "security_headers",
+			handler: securityHeadersMiddleware(cfg.Environment == config.EnvironmentProduction),
+		},
+		{name: "request_timeout", handler: requestTimeoutMiddleware(cfg.HTTP.RequestTimeout)},
+	}
+}
+
+func middlewareHandlers(stack []namedMiddleware) []gin.HandlerFunc {
+	handlers := make([]gin.HandlerFunc, 0, len(stack))
+	for _, middleware := range stack {
+		handlers = append(handlers, middleware.handler)
+	}
+	return handlers
 }
