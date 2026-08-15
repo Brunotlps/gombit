@@ -12,10 +12,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/LAA-Software-Engineering/gombit/cache"
 	"github.com/LAA-Software-Engineering/gombit/config"
 	"github.com/LAA-Software-Engineering/gombit/database"
 	"github.com/LAA-Software-Engineering/gombit/logging"
 	"github.com/gin-gonic/gin"
+	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
@@ -32,6 +34,10 @@ type Option func(*App) error
 type App struct {
 	cfg             config.Config
 	cfgSet          bool
+	cache           cache.Cache
+	cacheStore      *cache.Store
+	cacheOwned      bool
+	redis           *redis.Client
 	db              *database.DB
 	logger          *zap.Logger
 	router          *gin.Engine
@@ -99,6 +105,16 @@ func New(options ...Option) (*App, error) {
 	} else if err := configureTrustedProxies(app.router, app.cfg.HTTP.TrustedProxies); err != nil {
 		return nil, err
 	}
+	if app.cache == nil {
+		store, err := cache.Open(app.cfg.Cache)
+		if err != nil {
+			return nil, err
+		}
+		app.cache = store
+		app.cacheStore = store
+		app.cacheOwned = true
+		app.redis = store.Redis()
+	}
 
 	return app, nil
 }
@@ -111,6 +127,33 @@ func WithConfig(cfg config.Config) Option {
 		}
 		app.cfg = cfg
 		app.cfgSet = true
+		return nil
+	}
+}
+
+// WithCache attaches an application-owned cache implementation to the app.
+func WithCache(c cache.Cache) Option {
+	return func(app *App) error {
+		if c == nil {
+			return errors.New("framework: nil cache")
+		}
+		app.cache = c
+		if store, ok := c.(*cache.Store); ok {
+			app.cacheStore = store
+			app.redis = store.Redis()
+		}
+		return nil
+	}
+}
+
+// WithRedis attaches an application-owned Redis client as the app cache.
+func WithRedis(client *redis.Client) Option {
+	return func(app *App) error {
+		if client == nil {
+			return errors.New("framework: nil redis client")
+		}
+		app.cache = cache.NewRedis(client)
+		app.redis = client
 		return nil
 	}
 }
@@ -164,6 +207,20 @@ func (a *App) Config() config.Config {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.cfg
+}
+
+// Cache returns the configured cache implementation.
+func (a *App) Cache() cache.Cache {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.cache
+}
+
+// Redis returns the underlying go-redis client when Redis is enabled.
+func (a *App) Redis() *redis.Client {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.redis
 }
 
 // Logger returns the app's Zap logger.
@@ -330,11 +387,12 @@ func (a *App) shutdown() error {
 			return errors.Join(
 				fmt.Errorf("framework: shutdown: %w", err),
 				a.runStopHooksWithContext(shutdownCtx),
+				a.closeOwnedCache(),
 			)
 		}
 	}
 
-	return a.runStopHooksWithContext(shutdownCtx)
+	return errors.Join(a.runStopHooksWithContext(shutdownCtx), a.closeOwnedCache())
 }
 
 func (a *App) runStopHooks() error {
@@ -344,7 +402,21 @@ func (a *App) runStopHooks() error {
 
 	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
-	return a.runStopHooksWithContext(ctx)
+	return errors.Join(a.runStopHooksWithContext(ctx), a.closeOwnedCache())
+}
+
+func (a *App) closeOwnedCache() error {
+	a.mu.Lock()
+	store := a.cacheStore
+	owned := a.cacheOwned
+	if owned {
+		a.cacheOwned = false
+	}
+	a.mu.Unlock()
+	if !owned || store == nil {
+		return nil
+	}
+	return store.Close()
 }
 
 func (a *App) runStopHooksWithContext(ctx context.Context) error {
