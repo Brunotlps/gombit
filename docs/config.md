@@ -15,6 +15,8 @@ runtime packages.
 - API prefix: `/api/v1`
 - database driver: `sqlite`
 - database DSN: `file:gombit.db?cache=shared&_fk=1`
+- log level: `info`
+- log sink: `stderr`
 
 ## Environment
 
@@ -34,6 +36,8 @@ configuration. The M1-1 boundary recognizes:
 | `GOMBIT_DATABASE_MAX_OPEN_CONNS` | `Config.Database.MaxOpenConns` | `0` |
 | `GOMBIT_DATABASE_MAX_IDLE_CONNS` | `Config.Database.MaxIdleConns` | `0` |
 | `GOMBIT_DATABASE_CONN_MAX_LIFETIME` | `Config.Database.ConnMaxLifetime` | `0` |
+| `GOMBIT_LOG_LEVEL` | `Config.Logging.Level` | `info` |
+| `GOMBIT_LOG_SINK` | `Config.Logging.Sink` | `stderr` |
 
 `GOMBIT_ENV` accepts the exact lowercase values `development`, `test`, and
 `production`.
@@ -47,6 +51,9 @@ The value sets the cooperative per-request context deadline and the
 `http.Server` write/idle timeouts; `0` disables all three.
 `GOMBIT_DATABASE_CONN_MAX_LIFETIME` uses Go duration syntax such as `30m` or
 `1h`.
+`GOMBIT_LOG_LEVEL` accepts `debug`, `info`, `warn`, and `error`.
+`GOMBIT_LOG_SINK` accepts `stderr`, `stdout`, and `mongo`; Mongo logging is an
+external module hook, not a runtime dependency.
 
 Validation returns `config.FieldErrors`, which names the typed field, the
 environment variable, the invalid value, and the validation message.

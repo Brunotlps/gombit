@@ -21,6 +21,8 @@ const (
 	envDatabaseMaxOpenConns    = "GOMBIT_DATABASE_MAX_OPEN_CONNS"
 	envDatabaseMaxIdleConns    = "GOMBIT_DATABASE_MAX_IDLE_CONNS"
 	envDatabaseConnMaxLifetime = "GOMBIT_DATABASE_CONN_MAX_LIFETIME"
+	envLogLevel                = "GOMBIT_LOG_LEVEL"
+	envLogSink                 = "GOMBIT_LOG_SINK"
 )
 
 // Environment is the runtime environment name.
@@ -42,6 +44,7 @@ type Config struct {
 	HTTP        HTTPConfig
 	API         APIConfig
 	Database    DatabaseConfig
+	Logging     LoggingConfig
 }
 
 // HTTPConfig contains HTTP server configuration.
@@ -77,6 +80,38 @@ type DatabaseConfig struct {
 	ConnMaxLifetime time.Duration
 }
 
+// LogLevel names the configured logging level.
+type LogLevel string
+
+const (
+	// LogLevelDebug enables debug, info, warn, and error logs.
+	LogLevelDebug LogLevel = "debug"
+	// LogLevelInfo enables info, warn, and error logs.
+	LogLevelInfo LogLevel = "info"
+	// LogLevelWarn enables warn and error logs.
+	LogLevelWarn LogLevel = "warn"
+	// LogLevelError enables error logs.
+	LogLevelError LogLevel = "error"
+)
+
+// LogSink names the configured logging sink.
+type LogSink string
+
+const (
+	// LogSinkStderr writes JSON logs to stderr.
+	LogSinkStderr LogSink = "stderr"
+	// LogSinkStdout writes JSON logs to stdout.
+	LogSinkStdout LogSink = "stdout"
+	// LogSinkMongo selects an external Mongo logging module.
+	LogSinkMongo LogSink = "mongo"
+)
+
+// LoggingConfig contains structured logging configuration.
+type LoggingConfig struct {
+	Level LogLevel
+	Sink  LogSink
+}
+
 // EnvLookup reads an environment variable by name.
 type EnvLookup func(key string) (value string, ok bool)
 
@@ -95,6 +130,10 @@ func Default() Config {
 		Database: DatabaseConfig{
 			Driver: DatabaseDriverSQLite,
 			DSN:    "file:gombit.db?cache=shared&_fk=1",
+		},
+		Logging: LoggingConfig{
+			Level: LogLevelInfo,
+			Sink:  LogSinkStderr,
 		},
 	}
 }
@@ -136,6 +175,8 @@ func LoadFromEnv(lookup EnvLookup) (Config, error) {
 		&cfg.Database.ConnMaxLifetime,
 		&errs,
 	)
+	applyLogLevel(lookup, envLogLevel, &cfg.Logging.Level)
+	applyLogSink(lookup, envLogSink, &cfg.Logging.Sink)
 
 	if err := cfg.Validate(); err != nil {
 		var fieldErrors FieldErrors
@@ -222,6 +263,7 @@ func (c Config) Validate() error {
 	}
 
 	validateDatabaseConfig(&errs, c.Database)
+	validateLoggingConfig(&errs, c.Logging)
 
 	if len(errs) > 0 {
 		return errs
@@ -238,6 +280,40 @@ func ValidateDatabase(cfg DatabaseConfig) error {
 		return errs
 	}
 	return nil
+}
+
+// ValidateLogging returns explicit field errors for invalid logging settings.
+func ValidateLogging(cfg LoggingConfig) error {
+	var errs FieldErrors
+	validateLoggingConfig(&errs, cfg)
+	if len(errs) > 0 {
+		return errs
+	}
+	return nil
+}
+
+func validateLoggingConfig(errs *FieldErrors, cfg LoggingConfig) {
+	switch cfg.Level {
+	case LogLevelDebug, LogLevelInfo, LogLevelWarn, LogLevelError:
+	default:
+		*errs = append(*errs, FieldError{
+			Field:   "Logging.Level",
+			Env:     envLogLevel,
+			Value:   string(cfg.Level),
+			Message: "must be one of debug, info, warn, error",
+		})
+	}
+
+	switch cfg.Sink {
+	case LogSinkStderr, LogSinkStdout, LogSinkMongo:
+	default:
+		*errs = append(*errs, FieldError{
+			Field:   "Logging.Sink",
+			Env:     envLogSink,
+			Value:   string(cfg.Sink),
+			Message: "must be one of stderr, stdout, mongo",
+		})
+	}
 }
 
 func validateDatabaseConfig(errs *FieldErrors, cfg DatabaseConfig) {
@@ -327,6 +403,18 @@ func applyEnvironment(lookup EnvLookup, key string, dest *Environment) {
 func applyDatabaseDriver(lookup EnvLookup, key string, dest *DatabaseDriver) {
 	if value, ok := lookup(key); ok {
 		*dest = DatabaseDriver(strings.TrimSpace(value))
+	}
+}
+
+func applyLogLevel(lookup EnvLookup, key string, dest *LogLevel) {
+	if value, ok := lookup(key); ok {
+		*dest = LogLevel(strings.TrimSpace(value))
+	}
+}
+
+func applyLogSink(lookup EnvLookup, key string, dest *LogSink) {
+	if value, ok := lookup(key); ok {
+		*dest = LogSink(strings.TrimSpace(value))
 	}
 }
 
