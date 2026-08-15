@@ -6,11 +6,12 @@ a generated React+TypeScript frontend, Atlas-backed migrations. Module path
 
 ## Current state
 
-This repo is in the **M0 bootstrap** stage. It has a root `go.mod`, a minimal
-root Go package, CI/lint wiring, and docs. It does not yet have runtime
-framework source, generated app templates, migrations, frontend source, or
-example apps. Don't assume a runtime codebase layout exists; check `git log` /
-`ls` before describing "how the code works."
+This repo is in the **M0 spike** stage. It has a root `go.mod`, a minimal root
+Go package, CI/lint wiring, docs, and the M0-2 Huma-over-Gin contract spike
+under `internal/contractspike`. It does not yet have stable runtime framework
+source, generated app templates, migrations, frontend source, or example apps.
+Don't assume a runtime codebase layout exists; check `git log` / `ls` before
+describing "how the code works."
 
 ## Source of truth
 
