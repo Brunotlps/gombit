@@ -32,8 +32,8 @@ gombit db makemigrations create_accounts \
 ```
 
 The command writes a temporary Atlas Program Mode loader under `.gombit`,
-passes all supplied model types to `gormschema.New(driver).Load(...)`, and
-then runs:
+passes all supplied model types to `gormschema.New(driver).Load(...)`, writes
+the generated SQL schema to a temporary `schema.sql`, and then runs:
 
 ```sh
 atlas migrate diff <name> --env gombit --config file://<generated atlas.hcl>
@@ -43,8 +43,9 @@ The temporary loader is removed after Atlas exits. Migration files are written
 to `database/migrations` by default; override that with `--dir`.
 
 `gombit db makemigrations` depends only on Atlas Community Edition features:
-the generated config uses `external_schema` plus `atlas migrate diff`. It does
-not depend on Atlas Cloud, drift monitoring, or migration linting.
+the generated config points `src` at the temporary schema file and uses
+`atlas migrate diff`. It does not depend on Atlas Cloud, drift monitoring,
+external schema data sources, or migration linting.
 
 Gombit does not add a separate `--dry-run` flag in M2-1. Atlas owns the diff
 preview behavior: if there is no model/schema change, `atlas migrate diff`

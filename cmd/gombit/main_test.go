@@ -34,7 +34,7 @@ func TestRunMakeMigrationsInvokesAtlasAndWritesMigration(t *testing.T) {
 		"--atlas-bin",
 		atlas,
 		"--model",
-		"github.com/example/app/internal/product.Product",
+		"github.com/LAA-Software-Engineering/gombit/migrations/testmodels.Product",
 	}, stdout, stderr)
 	if err != nil {
 		t.Fatalf("run() error = %v, want nil; stderr=%q", err, stderr.String())
@@ -74,7 +74,7 @@ func TestRunMakeMigrationsUsesConfiguredDriver(t *testing.T) {
 		"--atlas-bin",
 		atlas,
 		"--model",
-		"github.com/example/app/internal/product.Product",
+		"github.com/LAA-Software-Engineering/gombit/migrations/testmodels.Product",
 	}, ioDiscard{}, ioDiscard{})
 	if err != nil {
 		t.Fatalf("run() error = %v, want nil", err)

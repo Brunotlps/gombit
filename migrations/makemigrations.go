@@ -1,6 +1,7 @@
 package migrations
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -129,8 +130,19 @@ func MakeMigrations(ctx context.Context, opts Options) error {
 	if err != nil {
 		return fmt.Errorf("migrations: resolve loader path: %w", err)
 	}
+	var schema bytes.Buffer
+	goArgs := []string{"run", "-mod=mod", "./" + filepath.ToSlash(loaderRel)}
+	if err := opts.runner.Run(ctx, absWorkDir, "go", goArgs, &schema, opts.Stderr); err != nil {
+		return fmt.Errorf("migrations: load gorm schema: %w", err)
+	}
+
+	schemaPath := filepath.Join(tmpDir, "schema.sql")
+	if err := os.WriteFile(schemaPath, schema.Bytes(), 0o600); err != nil {
+		return fmt.Errorf("migrations: write schema: %w", err)
+	}
+
 	atlasPath := filepath.Join(tmpDir, "atlas.hcl")
-	if err := os.WriteFile(atlasPath, []byte(atlasHCL(loaderRel, migrationDir, devURL(opts.Driver))), 0o600); err != nil {
+	if err := os.WriteFile(atlasPath, []byte(atlasHCL(schemaPath, migrationDir, devURL(opts.Driver))), 0o600); err != nil {
 		return fmt.Errorf("migrations: write atlas config: %w", err)
 	}
 
@@ -203,18 +215,9 @@ func (execRunner) Run(ctx context.Context, dir string, name string, args []strin
 	return cmd.Run()
 }
 
-func atlasHCL(loaderRel string, migrationDir string, dev string) string {
-	return fmt.Sprintf(`data "external_schema" "gorm" {
-  program = [
-    "go",
-    "run",
-    "-mod=mod",
-    %q,
-  ]
-}
-
-env "gombit" {
-  src = data.external_schema.gorm.url
+func atlasHCL(schemaPath string, migrationDir string, dev string) string {
+	return fmt.Sprintf(`env "gombit" {
+  src = %q
   dev = %q
   migration {
     dir = %q
@@ -225,7 +228,7 @@ env "gombit" {
     }
   }
 }
-`, "./"+filepath.ToSlash(loaderRel), dev, "file://"+filepath.ToSlash(migrationDir))
+`, "file://"+filepath.ToSlash(schemaPath), dev, "file://"+filepath.ToSlash(migrationDir))
 }
 
 func loaderSource(driver config.DatabaseDriver, models []Model) string {
