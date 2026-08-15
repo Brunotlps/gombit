@@ -9,9 +9,10 @@ a generated React+TypeScript frontend, Atlas-backed migrations. Module path
 This repo has completed the **M0 spike** and is beginning **M1 runtime** work.
 It has a root `go.mod`, a minimal root Go package, CI/lint wiring, docs,
 ADR-011, the M0-2 Huma-over-Gin contract spike under `internal/contractspike`,
-and the initial public `config.Config` boundary with `examples/config`. It does
-not yet have stable runtime framework source beyond that config boundary,
-generated app templates, migrations, frontend source, or full example apps.
+the initial public `config.Config` boundary with `examples/config`, and the
+initial `framework.App` lifecycle surface with `examples/lifecycle`. It does not
+yet have stable runtime framework source beyond those M1 surfaces, generated
+app templates, migrations, frontend source, or full example apps.
 Don't assume a runtime codebase layout exists; check `git log` / `ls` before
 describing "how the code works."
 

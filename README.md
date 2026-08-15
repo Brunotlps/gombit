@@ -1,8 +1,8 @@
 # Gombit
 
 Gombit is a Django-for-Go full-stack framework. The current repository has
-completed the M0 spike and contains the module skeleton, project documentation,
-CI wiring, ADR-011, and the Huma-over-Gin contract spike.
+completed the M0 spike and is beginning M1 runtime work with typed config and
+the initial `framework.App` lifecycle surface.
 
 ## Development
 
@@ -22,3 +22,4 @@ The authoritative implementation backlog and architecture decisions live in
 
 Accepted architecture decisions are recorded under [`docs/adr/`](docs/adr/).
 Runtime configuration is documented in [`docs/config.md`](docs/config.md).
+Application lifecycle is documented in [`docs/lifecycle.md`](docs/lifecycle.md).
