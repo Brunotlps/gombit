@@ -55,6 +55,43 @@ func TestLoadFromEnv(t *testing.T) {
 	}
 }
 
+func TestLoadFromEnvUsesDefaultsWhenUnset(t *testing.T) {
+	got, err := LoadFromEnv(mapLookup(nil))
+	if err != nil {
+		t.Fatalf("LoadFromEnv() error = %v, want nil", err)
+	}
+
+	if !reflect.DeepEqual(got, Default()) {
+		t.Fatalf("LoadFromEnv() = %#v, want default %#v", got, Default())
+	}
+}
+
+func TestLoadUsesProcessEnvironment(t *testing.T) {
+	t.Setenv(envAppName, "Process Example")
+	t.Setenv(envEnv, string(EnvironmentProduction))
+	t.Setenv(envHTTPAddr, ":9090")
+	t.Setenv(envAPIPrefix, "/api")
+
+	got, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v, want nil", err)
+	}
+
+	want := Config{
+		AppName:     "Process Example",
+		Environment: EnvironmentProduction,
+		HTTP: HTTPConfig{
+			Addr: ":9090",
+		},
+		API: APIConfig{
+			Prefix: "/api",
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("Load() = %#v, want %#v", got, want)
+	}
+}
+
 func TestLoadFromEnvRequiresLookup(t *testing.T) {
 	_, err := LoadFromEnv(nil)
 	if err == nil {
