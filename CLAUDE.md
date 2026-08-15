@@ -12,3 +12,9 @@
 - When creating or editing GitHub issues, keep the `[ID]` title prefix and the
   milestone/label mapping from build plan §6. Don't rename, re-bucket, or
   merge existing issues without being asked.
+
+## Cursor skills
+
+Cursor counterparts live under `.cursor/skills/` (`create-feature`,
+`code-review`, `bugfix`). Keep the Claude `code-review` skill and the Cursor
+`code-review` skill aligned with this file and AGENTS.md.
