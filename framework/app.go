@@ -81,6 +81,9 @@ func New(options ...Option) (*App, error) {
 			return nil, err
 		}
 		app.logger = logger
+		app.OnStop(func(context.Context) error {
+			return syncLogger(logger)
+		})
 	}
 	if app.router == nil {
 		app.router = newRouter()
@@ -340,6 +343,13 @@ func (a *App) runStopHooksWithContext(ctx context.Context) error {
 		}
 	}
 	return joined
+}
+
+func syncLogger(logger *zap.Logger) error {
+	if err := logger.Sync(); err != nil && !errors.Is(err, syscall.EINVAL) {
+		return fmt.Errorf("framework: sync logger: %w", err)
+	}
+	return nil
 }
 
 func newRouter() *gin.Engine {

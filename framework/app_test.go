@@ -245,6 +245,18 @@ func TestAppBootsWithMongoSinkWhenLoggerProvided(t *testing.T) {
 	}
 }
 
+func TestNewWithMongoSinkRequiresProvidedLogger(t *testing.T) {
+	cfg := config.Default()
+	cfg.Environment = config.EnvironmentTest
+	cfg.HTTP.Addr = "127.0.0.1:0"
+	cfg.Logging.Sink = config.LogSinkMongo
+
+	_, err := New(WithConfig(cfg))
+	if err == nil {
+		t.Fatal("New(WithConfig(mongo sink)) error = nil, want error")
+	}
+}
+
 func TestNewValidatesOptions(t *testing.T) {
 	_, err := New(WithShutdownTimeout(0))
 	if err == nil {
