@@ -3,6 +3,10 @@
 M1-4 introduces the runtime database boundary. Gombit opens GORM directly and
 keeps `*gorm.DB` reachable; it does not define a second ORM interface.
 
+Migration generation is tracked separately in
+`docs/adr/012-migrations-atlas-gorm-provider.md`: M2 will wrap Atlas and
+`ariga.io/atlas-provider-gorm` rather than defining a Gombit migration DSL.
+
 ## Drivers
 
 `database.Open` supports:
