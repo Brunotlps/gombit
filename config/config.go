@@ -23,7 +23,7 @@ const (
 	envCacheNamespace          = "GOMBIT_CACHE_NAMESPACE"
 	envRedisAddr               = "GOMBIT_REDIS_ADDR"
 	envRedisUsername           = "GOMBIT_REDIS_USERNAME"
-	envRedisPassword           = "GOMBIT_REDIS_PASSWORD"
+	envRedisPassword           = "GOMBIT_REDIS_PASSWORD" // #nosec G101 -- environment variable name, not a credential.
 	envRedisDB                 = "GOMBIT_REDIS_DB"
 	envRedisDialTimeout        = "GOMBIT_REDIS_DIAL_TIMEOUT"
 	envRedisReadTimeout        = "GOMBIT_REDIS_READ_TIMEOUT"
@@ -250,7 +250,7 @@ func (c Config) Validate() error {
 	}
 
 	validateDatabaseConfig(&errs, c.Database)
-	validateCacheConfig(&errs, c.Cache)
+	validateCacheConfig(&errs, c.Environment, c.Cache)
 
 	if len(errs) > 0 {
 		return errs
@@ -272,7 +272,7 @@ func ValidateDatabase(cfg DatabaseConfig) error {
 // ValidateCache returns explicit field errors for invalid cache settings.
 func ValidateCache(cfg CacheConfig) error {
 	var errs FieldErrors
-	validateCacheConfig(&errs, cfg)
+	validateCacheConfig(&errs, "", cfg)
 	if len(errs) > 0 {
 		return errs
 	}
@@ -361,7 +361,7 @@ func validateDatabaseConfig(errs *FieldErrors, cfg DatabaseConfig) {
 	}
 }
 
-func validateCacheConfig(errs *FieldErrors, cfg CacheConfig) {
+func validateCacheConfig(errs *FieldErrors, env Environment, cfg CacheConfig) {
 	validateRedis := false
 	switch cfg.Driver {
 	case CacheDriverMemory, CacheDriverNoop:
@@ -430,6 +430,15 @@ func validateCacheConfig(errs *FieldErrors, cfg CacheConfig) {
 			Env:     envRedisWriteTimeout,
 			Value:   cfg.Redis.WriteTimeout.String(),
 			Message: "must be greater than zero",
+		})
+	}
+
+	if env == EnvironmentProduction && cfg.Redis.TLSInsecure {
+		*errs = append(*errs, FieldError{
+			Field:   "Cache.Redis.TLSInsecure",
+			Env:     envRedisTLSInsecure,
+			Value:   strconv.FormatBool(cfg.Redis.TLSInsecure),
+			Message: "must be false in production",
 		})
 	}
 }

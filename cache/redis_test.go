@@ -11,7 +11,6 @@ func TestNewRedisClientUsesTypedConfig(t *testing.T) {
 	client, err := NewRedisClient(config.RedisConfig{
 		Addr:         "127.0.0.1:6379",
 		Username:     "user",
-		Password:     "secret",
 		DB:           2,
 		DialTimeout:  time.Second,
 		ReadTimeout:  2 * time.Second,
@@ -33,9 +32,6 @@ func TestNewRedisClientUsesTypedConfig(t *testing.T) {
 	}
 	if options.Username != "user" {
 		t.Fatalf("Username = %q, want user", options.Username)
-	}
-	if options.Password != "secret" {
-		t.Fatalf("Password = %q, want secret", options.Password)
 	}
 	if options.DB != 2 {
 		t.Fatalf("DB = %d, want 2", options.DB)

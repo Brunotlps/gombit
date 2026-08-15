@@ -322,6 +322,37 @@ func TestLoadFromEnvReturnsValidationErrors(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsRedisTLSInsecureInProduction(t *testing.T) {
+	cfg := Default()
+	cfg.Environment = EnvironmentProduction
+	cfg.Cache.Driver = CacheDriverRedis
+	cfg.Cache.Redis.TLS = true
+	cfg.Cache.Redis.TLSInsecure = true
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate() error = nil, want validation errors")
+	}
+
+	var fieldErrors FieldErrors
+	if !errors.As(err, &fieldErrors) {
+		t.Fatalf("Validate() error type = %T, want FieldErrors", err)
+	}
+
+	want := FieldError{
+		Field:   "Cache.Redis.TLSInsecure",
+		Env:     envRedisTLSInsecure,
+		Value:   "true",
+		Message: "must be false in production",
+	}
+	for _, got := range fieldErrors {
+		if reflect.DeepEqual(got, want) {
+			return
+		}
+	}
+	t.Fatalf("Validate() field errors = %#v, want one to equal %#v", []FieldError(fieldErrors), want)
+}
+
 func TestLoadFromEnvReturnsParseErrors(t *testing.T) {
 	_, err := LoadFromEnv(mapLookup(map[string]string{
 		envDatabaseMaxOpenConns:    "many",

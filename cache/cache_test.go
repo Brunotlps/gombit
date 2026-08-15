@@ -69,6 +69,34 @@ func TestMemoryExpiresValues(t *testing.T) {
 	}
 }
 
+func TestMemoryIncrementPreservesExistingTTL(t *testing.T) {
+	ctx := context.Background()
+	c := NewMemory()
+	now := time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC)
+	c.now = func() time.Time { return now }
+
+	if err := c.Set(ctx, "counter", int64(1), time.Second); err != nil {
+		t.Fatalf("Set() error = %v, want nil", err)
+	}
+	count, err := c.Increment(ctx, "counter", 1)
+	if err != nil {
+		t.Fatalf("Increment() error = %v, want nil", err)
+	}
+	if count != 2 {
+		t.Fatalf("Increment() = %d, want 2", count)
+	}
+
+	now = now.Add(time.Second)
+	var got int64
+	found, err := c.Get(ctx, "counter", &got)
+	if err != nil {
+		t.Fatalf("Get() error = %v, want nil", err)
+	}
+	if found {
+		t.Fatalf("Get() found = true, want false after original ttl; value = %d", got)
+	}
+}
+
 func TestMemoryIncrementValueSemantics(t *testing.T) {
 	ctx := context.Background()
 	c := NewMemory()

@@ -45,7 +45,9 @@ redisClient := app.Redis()
 
 `app.Redis()` returns `nil` unless the Redis driver or `framework.WithRedis` is
 used. Application code that only needs `Get`, `Set`, `Delete`, or `Increment`
-should use `app.Cache()` instead.
+should use `app.Cache()` instead. `framework.WithRedis` wraps the provided
+client directly and does not apply `Config.Cache.Namespace`; use `cache.Open`
+when configured namespacing is required.
 
 ## Configuration
 

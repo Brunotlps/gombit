@@ -111,7 +111,11 @@ func (m *Memory) Increment(ctx context.Context, key string, delta int64) (int64,
 	if err != nil {
 		return 0, err
 	}
-	m.items[key] = memoryItem{payload: payload}
+	expiresAt := time.Time{}
+	if item, ok := m.items[key]; ok && !item.expired(m.now()) {
+		expiresAt = item.expiresAt
+	}
+	m.items[key] = memoryItem{payload: payload, expiresAt: expiresAt}
 	return current, nil
 }
 
