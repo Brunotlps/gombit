@@ -10,8 +10,9 @@
   "Current state").
   Prefer a direct `Read` of `docs/GOMBIT_BUILD_PLAN.md` over spawning an
   Explore subagent for backlog/dependency lookups — there is no stable runtime
-  source tree yet beyond the initial public `config.Config` boundary and
-  `framework.App` lifecycle surface.
+  source tree yet beyond the initial public `config.Config` boundary,
+  `framework.App` lifecycle surface, and application-owned route
+  registration surface.
 - When creating or editing GitHub issues, keep the `[ID]` title prefix and the
   milestone/label mapping from build plan §6. Don't rename, re-bucket, or
   merge existing issues without being asked.
