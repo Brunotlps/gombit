@@ -6,10 +6,11 @@ a generated React+TypeScript frontend, Atlas-backed migrations. Module path
 
 ## Current state
 
-This repo is **pre-code**. It currently contains only `docs/` — no `go.mod`,
-no runtime source. Don't assume a codebase layout exists; check `git log` /
-`ls` before describing "how the code works." M0-1 (repo/module/CI bootstrap)
-is the first issue that changes this.
+This repo is in the **M0 bootstrap** stage. It has a root `go.mod`, a minimal
+root Go package, CI/lint wiring, and docs. It does not yet have runtime
+framework source, generated app templates, migrations, frontend source, or
+example apps. Don't assume a runtime codebase layout exists; check `git log` /
+`ls` before describing "how the code works."
 
 ## Source of truth
 
