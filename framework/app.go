@@ -41,6 +41,11 @@ type App struct {
 	addr   string
 }
 
+type namedMiddleware struct {
+	name    string
+	handler gin.HandlerFunc
+}
+
 // New creates an application using process configuration and the default router.
 func New(options ...Option) (*App, error) {
 	app := &App{
@@ -215,6 +220,8 @@ func RunContext(ctx context.Context, app *App) error {
 	server := &http.Server{
 		Handler:           app.Router(),
 		ReadHeaderTimeout: 5 * time.Second,
+		WriteTimeout:      app.Config().HTTP.RequestTimeout,
+		IdleTimeout:       app.Config().HTTP.RequestTimeout,
 	}
 	app.setServer(server, listener.Addr().String())
 
@@ -327,14 +334,7 @@ func newRouter(cfg config.Config) (*gin.Engine, error) {
 	}
 
 	metrics := newHTTPMetrics()
-	router.Use(
-		gin.Recovery(),
-		requestIDMiddleware(),
-		traceContextMiddleware(),
-		metricsMiddleware(metrics),
-		securityHeadersMiddleware(),
-		requestTimeoutMiddleware(cfg.HTTP.RequestTimeout),
-	)
+	router.Use(middlewareHandlers(runtimeMiddlewareStack(cfg, metrics))...)
 	router.GET("/livez", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"data": gin.H{
@@ -364,4 +364,26 @@ func configureTrustedProxies(engine *gin.Engine, proxies []string) error {
 		return fmt.Errorf("framework: trusted proxies: %w", err)
 	}
 	return nil
+}
+
+func runtimeMiddlewareStack(cfg config.Config, metrics *httpMetrics) []namedMiddleware {
+	return []namedMiddleware{
+		{name: "recovery", handler: gin.Recovery()},
+		{name: "request_id", handler: requestIDMiddleware()},
+		{name: "trace_context", handler: traceContextMiddleware()},
+		{name: "metrics", handler: metricsMiddleware(metrics)},
+		{
+			name:    "security_headers",
+			handler: securityHeadersMiddleware(cfg.Environment == config.EnvironmentProduction),
+		},
+		{name: "request_timeout", handler: requestTimeoutMiddleware(cfg.HTTP.RequestTimeout)},
+	}
+}
+
+func middlewareHandlers(stack []namedMiddleware) []gin.HandlerFunc {
+	handlers := make([]gin.HandlerFunc, 0, len(stack))
+	for _, middleware := range stack {
+		handlers = append(handlers, middleware.handler)
+	}
+	return handlers
 }

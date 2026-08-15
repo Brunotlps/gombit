@@ -42,8 +42,9 @@ configuration. The M1-1 boundary recognizes:
 to Gin's trusted-proxy configuration. When unset, forwarded-client IP headers
 are ignored. Production config rejects values that trust all proxies, such as
 `0.0.0.0/0`.
-`GOMBIT_HTTP_REQUEST_TIMEOUT` uses Go duration syntax such as `30s` or `2m`;
-`0` disables the per-request deadline.
+`GOMBIT_HTTP_REQUEST_TIMEOUT` uses Go duration syntax such as `30s` or `2m`.
+The value sets the cooperative per-request context deadline and the
+`http.Server` write/idle timeouts; `0` disables all three.
 `GOMBIT_DATABASE_CONN_MAX_LIFETIME` uses Go duration syntax such as `30m` or
 `1h`.
 

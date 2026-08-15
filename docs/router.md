@@ -71,10 +71,18 @@ OpenTelemetry exporter wiring remains future runtime work; M1-7 preserves the
 runtime seam and parity tests.
 
 `/metrics` exposes Prometheus text-format request counters, active request
-gauge, and request-duration sums for the runtime router. Trusted proxies are
-configured through `config.Config.HTTP.TrustedProxies` or
+gauge, and request-duration sums for the runtime router. The text renderer is
+intentionally minimal for M1 runtime parity; a later observability issue can
+swap in `prometheus/client_golang` or full OpenTelemetry exporter wiring
+without changing the route contract. Trusted proxies are configured through
+`config.Config.HTTP.TrustedProxies` or
 `GOMBIT_HTTP_TRUSTED_PROXIES`; when unset, Gin ignores forwarded-client IP
 headers and uses the direct TCP peer.
+
+`framework.WithRouter` is the custom-router escape hatch. When an application
+passes its own `*gin.Engine`, Gombit applies trusted-proxy configuration only;
+the application owns recovery, request ID, trace context, metrics, security
+headers, and timeout middleware for that router.
 
 `framework/router_test.go`'s `TestDefaultRouterMountsOnlyFrameworkEndpoints`
 and `TestApplicationOwnedRouteRegistrationComposesIndependently` cover this;

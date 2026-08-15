@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -14,6 +15,26 @@ import (
 	"github.com/LAA-Software-Engineering/gombit/config"
 	"github.com/gin-gonic/gin"
 )
+
+func TestDefaultRuntimeMiddlewareOrder(t *testing.T) {
+	stack := runtimeMiddlewareStack(config.Default(), newHTTPMetrics())
+	got := make([]string, 0, len(stack))
+	for _, middleware := range stack {
+		got = append(got, middleware.name)
+	}
+
+	want := []string{
+		"recovery",
+		"request_id",
+		"trace_context",
+		"metrics",
+		"security_headers",
+		"request_timeout",
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("runtime middleware order = %v, want %v", got, want)
+	}
+}
 
 func TestDefaultRouterAddsRequestID(t *testing.T) {
 	app := newTestApp(t)
@@ -109,15 +130,40 @@ func TestDefaultRouterAddsSecurityHeaders(t *testing.T) {
 		"X-Content-Type-Options":  "nosniff",
 		"X-Download-Options":      "noopen",
 		"X-Frame-Options":         "DENY",
-		"X-XSS-Protection":        "1; mode=block",
 	}
 	for header, value := range want {
 		if got := rec.Header().Get(header); got != value {
 			t.Fatalf("%s = %q, want %q", header, got, value)
 		}
 	}
+	if got := rec.Header().Get("Strict-Transport-Security"); got != "" {
+		t.Fatalf("Strict-Transport-Security = %q, want empty outside production", got)
+	}
+	if got := rec.Header().Get("X-XSS-Protection"); got != "" {
+		t.Fatalf("X-XSS-Protection = %q, want empty deprecated header", got)
+	}
+}
+
+func TestProductionRouterAddsHSTS(t *testing.T) {
+	previousMode := gin.Mode()
+	t.Cleanup(func() {
+		gin.SetMode(previousMode)
+	})
+
+	cfg := config.Default()
+	cfg.Environment = config.EnvironmentProduction
+	cfg.HTTP.Addr = "127.0.0.1:0"
+	app := newTestApp(t, WithConfig(cfg))
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/livez", nil)
+	app.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /livez status = %d, want %d", rec.Code, http.StatusOK)
+	}
 	if got := rec.Header().Get("Strict-Transport-Security"); !strings.Contains(got, "max-age=315360000") {
-		t.Fatalf("Strict-Transport-Security = %q, want max-age=315360000", got)
+		t.Fatalf("Strict-Transport-Security = %q, want max-age=315360000 in production", got)
 	}
 }
 
@@ -154,6 +200,41 @@ func TestDefaultRouterRequestTimeoutSetsDeadline(t *testing.T) {
 	}
 }
 
+func TestRunContextConfiguresServerTimeouts(t *testing.T) {
+	cfg := config.Default()
+	cfg.Environment = config.EnvironmentTest
+	cfg.HTTP.Addr = "127.0.0.1:0"
+	cfg.HTTP.RequestTimeout = 2 * time.Second
+	app := newTestApp(t, WithConfig(cfg))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- RunContext(ctx, app)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		if err := waitRun(done); err != nil {
+			t.Fatalf("RunContext() error = %v, want nil", err)
+		}
+	})
+
+	waitForHTTP(t, app, "/livez")
+
+	app.mu.RLock()
+	server := app.server
+	app.mu.RUnlock()
+	if server == nil {
+		t.Fatal("server = nil, want configured HTTP server")
+	}
+	if server.WriteTimeout != cfg.HTTP.RequestTimeout {
+		t.Fatalf("server.WriteTimeout = %v, want %v", server.WriteTimeout, cfg.HTTP.RequestTimeout)
+	}
+	if server.IdleTimeout != cfg.HTTP.RequestTimeout {
+		t.Fatalf("server.IdleTimeout = %v, want %v", server.IdleTimeout, cfg.HTTP.RequestTimeout)
+	}
+}
+
 func TestDefaultRouterMetricsEndpointRecordsRequests(t *testing.T) {
 	app := newTestApp(t)
 
@@ -177,6 +258,34 @@ func TestDefaultRouterMetricsEndpointRecordsRequests(t *testing.T) {
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("GET /metrics body = %q, want it to contain %q", body, want)
+		}
+	}
+}
+
+func TestDefaultRouterMetricsUsesBoundedLabelForUnmatchedRoutes(t *testing.T) {
+	app := newTestApp(t)
+
+	for _, path := range []string{"/missing/one", "/missing/two"} {
+		rec := httptest.NewRecorder()
+		app.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, path, nil))
+		if rec.Code != http.StatusNotFound {
+			t.Fatalf("GET %s status = %d, want %d", path, rec.Code, http.StatusNotFound)
+		}
+	}
+
+	metrics := httptest.NewRecorder()
+	app.Router().ServeHTTP(metrics, httptest.NewRequest(http.MethodGet, "/metrics", nil))
+	if metrics.Code != http.StatusOK {
+		t.Fatalf("GET /metrics status = %d, want %d", metrics.Code, http.StatusOK)
+	}
+
+	body := metrics.Body.String()
+	if !strings.Contains(body, `gombit_http_requests_total{method="GET",route="unmatched",status="404"} 2`) {
+		t.Fatalf("GET /metrics body = %q, want bounded unmatched route label", body)
+	}
+	for _, rawPath := range []string{"/missing/one", "/missing/two"} {
+		if strings.Contains(body, rawPath) {
+			t.Fatalf("GET /metrics body = %q, want no raw unmatched path %q", body, rawPath)
 		}
 	}
 }

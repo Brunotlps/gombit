@@ -83,16 +83,17 @@ func GetTraceIDFromContext(ctx context.Context) string {
 	return traceID
 }
 
-func securityHeadersMiddleware() gin.HandlerFunc {
+func securityHeadersMiddleware(includeHSTS bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		header := c.Writer.Header()
 		header.Set("Content-Security-Policy", "default-src 'self'")
 		header.Set("Referrer-Policy", "strict-origin-when-cross-origin")
-		header.Set("Strict-Transport-Security", "max-age=315360000; includeSubDomains")
+		if includeHSTS {
+			header.Set("Strict-Transport-Security", "max-age=315360000; includeSubDomains")
+		}
 		header.Set("X-Content-Type-Options", "nosniff")
 		header.Set("X-Download-Options", "noopen")
 		header.Set("X-Frame-Options", "DENY")
-		header.Set("X-XSS-Protection", "1; mode=block")
 		c.Next()
 	}
 }
@@ -127,7 +128,7 @@ func metricsMiddleware(metrics *httpMetrics) gin.HandlerFunc {
 
 		route := c.FullPath()
 		if route == "" {
-			route = c.Request.URL.Path
+			route = "unmatched"
 		}
 		metrics.observe(metricsKey{
 			method: c.Request.Method,
