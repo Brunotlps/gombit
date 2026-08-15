@@ -11,12 +11,15 @@ runtime packages.
 - app name: `Gombit`
 - environment: `development`
 - HTTP address: `:8080`
+- HTTP request timeout: `60s`
 - API prefix: `/api/v1`
 - database driver: `sqlite`
 - database DSN: `file:gombit.db?cache=shared&_fk=1`
 - cache driver: `memory`
 - cache namespace: `gombit:development`
 - Redis address: `127.0.0.1:6379`
+- log level: `info`
+- log sink: `stderr`
 
 ## Environment
 
@@ -28,6 +31,8 @@ configuration. The M1-1 boundary recognizes:
 | `GOMBIT_APP_NAME` | `Config.AppName` | `Gombit` |
 | `GOMBIT_ENV` | `Config.Environment` | `development` |
 | `GOMBIT_HTTP_ADDR` | `Config.HTTP.Addr` | `:8080` |
+| `GOMBIT_HTTP_TRUSTED_PROXIES` | `Config.HTTP.TrustedProxies` | unset |
+| `GOMBIT_HTTP_REQUEST_TIMEOUT` | `Config.HTTP.RequestTimeout` | `60s` |
 | `GOMBIT_API_PREFIX` | `Config.API.Prefix` | `/api/v1` |
 | `GOMBIT_DATABASE_DRIVER` | `Config.Database.Driver` | `sqlite` |
 | `GOMBIT_DATABASE_DSN` | `Config.Database.DSN` | `file:gombit.db?cache=shared&_fk=1` |
@@ -45,6 +50,8 @@ configuration. The M1-1 boundary recognizes:
 | `GOMBIT_REDIS_WRITE_TIMEOUT` | `Config.Cache.Redis.WriteTimeout` | `3s` |
 | `GOMBIT_REDIS_TLS` | `Config.Cache.Redis.TLS` | `false` |
 | `GOMBIT_REDIS_TLS_INSECURE` | `Config.Cache.Redis.TLSInsecure` | `false` |
+| `GOMBIT_LOG_LEVEL` | `Config.Logging.Level` | `info` |
+| `GOMBIT_LOG_SINK` | `Config.Logging.Sink` | `stderr` |
 
 `GOMBIT_ENV` accepts the exact lowercase values `development`, `test`, and
 `production`.
@@ -52,7 +59,19 @@ configuration. The M1-1 boundary recognizes:
 `GOMBIT_CACHE_DRIVER` accepts `memory`, `redis`, and `noop`.
 When `GOMBIT_CACHE_NAMESPACE` is unset, the namespace is derived from the
 normalized app name and environment, such as `gombit:development`.
-Duration fields use Go duration syntax such as `30m` or `1h`.
+`GOMBIT_HTTP_TRUSTED_PROXIES` is a comma-separated list of IPs or CIDRs passed
+to Gin's trusted-proxy configuration. When unset, forwarded-client IP headers
+are ignored. Production config rejects values that trust all proxies, such as
+`0.0.0.0/0`.
+`GOMBIT_HTTP_REQUEST_TIMEOUT` uses Go duration syntax such as `30s` or `2m`.
+The value sets the cooperative per-request context deadline and the
+`http.Server` write/idle timeouts; `0` disables all three.
+`GOMBIT_DATABASE_CONN_MAX_LIFETIME` uses Go duration syntax such as `30m` or
+`1h`.
+Redis timeout values use the same Go duration syntax.
+`GOMBIT_LOG_LEVEL` accepts `debug`, `info`, `warn`, and `error`.
+`GOMBIT_LOG_SINK` accepts `stderr`, `stdout`, and `mongo`; Mongo logging is an
+external module hook, not a runtime dependency.
 
 Validation returns `config.FieldErrors`, which names the typed field, the
 environment variable, the invalid value, and the validation message.

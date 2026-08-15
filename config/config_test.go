@@ -20,6 +20,9 @@ func TestDefault(t *testing.T) {
 	if got.HTTP.Addr != ":8080" {
 		t.Fatalf("HTTP.Addr = %q, want %q", got.HTTP.Addr, ":8080")
 	}
+	if got.HTTP.RequestTimeout != 60*time.Second {
+		t.Fatalf("HTTP.RequestTimeout = %v, want 60s", got.HTTP.RequestTimeout)
+	}
 	if got.API.Prefix != "/api/v1" {
 		t.Fatalf("API.Prefix = %q, want %q", got.API.Prefix, "/api/v1")
 	}
@@ -38,6 +41,12 @@ func TestDefault(t *testing.T) {
 	if got.Cache.Redis.Addr != "127.0.0.1:6379" {
 		t.Fatalf("Cache.Redis.Addr = %q, want 127.0.0.1:6379", got.Cache.Redis.Addr)
 	}
+	if got.Logging.Level != LogLevelInfo {
+		t.Fatalf("Logging.Level = %q, want %q", got.Logging.Level, LogLevelInfo)
+	}
+	if got.Logging.Sink != LogSinkStderr {
+		t.Fatalf("Logging.Sink = %q, want %q", got.Logging.Sink, LogSinkStderr)
+	}
 	if err := got.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v, want nil", err)
 	}
@@ -48,6 +57,8 @@ func TestLoadFromEnv(t *testing.T) {
 		envAppName:                 " Example ",
 		envEnv:                     " test ",
 		envHTTPAddr:                " 127.0.0.1:9000 ",
+		envHTTPTrustedProxies:      " 10.0.0.1, 10.0.0.0/24 ",
+		envHTTPRequestTimeout:      " 15s ",
 		envAPIPrefix:               " /api ",
 		envDatabaseDriver:          " postgres ",
 		envDatabaseDSN:             " host=localhost user=gombit dbname=app sslmode=disable ",
@@ -65,6 +76,8 @@ func TestLoadFromEnv(t *testing.T) {
 		envRedisWriteTimeout:       " 3s ",
 		envRedisTLS:                " true ",
 		envRedisTLSInsecure:        " yes ",
+		envLogLevel:                " debug ",
+		envLogSink:                 " stdout ",
 	}
 
 	got, err := LoadFromEnv(mapLookup(env))
@@ -76,7 +89,9 @@ func TestLoadFromEnv(t *testing.T) {
 		AppName:     "Example",
 		Environment: EnvironmentTest,
 		HTTP: HTTPConfig{
-			Addr: "127.0.0.1:9000",
+			Addr:           "127.0.0.1:9000",
+			TrustedProxies: []string{"10.0.0.1", "10.0.0.0/24"},
+			RequestTimeout: 15 * time.Second,
 		},
 		API: APIConfig{
 			Prefix: "/api",
@@ -103,6 +118,10 @@ func TestLoadFromEnv(t *testing.T) {
 				TLSInsecure:  true,
 			},
 		},
+		Logging: LoggingConfig{
+			Level: LogLevelDebug,
+			Sink:  LogSinkStdout,
+		},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("LoadFromEnv() = %#v, want %#v", got, want)
@@ -120,6 +139,18 @@ func TestLoadFromEnvUsesDefaultsWhenUnset(t *testing.T) {
 	}
 }
 
+func TestLoadFromEnvAllowsDisabledHTTPRequestTimeout(t *testing.T) {
+	got, err := LoadFromEnv(mapLookup(map[string]string{
+		envHTTPRequestTimeout: "0",
+	}))
+	if err != nil {
+		t.Fatalf("LoadFromEnv() error = %v, want nil", err)
+	}
+	if got.HTTP.RequestTimeout != 0 {
+		t.Fatalf("HTTP.RequestTimeout = %v, want disabled timeout", got.HTTP.RequestTimeout)
+	}
+}
+
 func TestLoadUsesProcessEnvironment(t *testing.T) {
 	t.Setenv(envAppName, "Process Example")
 	t.Setenv(envEnv, string(EnvironmentProduction))
@@ -127,6 +158,8 @@ func TestLoadUsesProcessEnvironment(t *testing.T) {
 	t.Setenv(envAPIPrefix, "/api")
 	t.Setenv(envDatabaseDriver, string(DatabaseDriverMySQL))
 	t.Setenv(envDatabaseDSN, "gombit@tcp(localhost:3306)/app?parseTime=true")
+	t.Setenv(envLogLevel, string(LogLevelError))
+	t.Setenv(envLogSink, string(LogSinkMongo))
 
 	got, err := Load()
 	if err != nil {
@@ -137,7 +170,8 @@ func TestLoadUsesProcessEnvironment(t *testing.T) {
 		AppName:     "Process Example",
 		Environment: EnvironmentProduction,
 		HTTP: HTTPConfig{
-			Addr: ":9090",
+			Addr:           ":9090",
+			RequestTimeout: 60 * time.Second,
 		},
 		API: APIConfig{
 			Prefix: "/api",
@@ -150,6 +184,10 @@ func TestLoadUsesProcessEnvironment(t *testing.T) {
 			Driver:    CacheDriverMemory,
 			Namespace: "process-example:production",
 			Redis:     Default().Cache.Redis,
+		},
+		Logging: LoggingConfig{
+			Level: LogLevelError,
+			Sink:  LogSinkMongo,
 		},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -172,7 +210,8 @@ func TestValidateReportsExplicitFieldErrors(t *testing.T) {
 		AppName:     " ",
 		Environment: "staging",
 		HTTP: HTTPConfig{
-			Addr: "",
+			Addr:           "",
+			RequestTimeout: -time.Second,
 		},
 		API: APIConfig{
 			Prefix: "api",
@@ -195,6 +234,10 @@ func TestValidateReportsExplicitFieldErrors(t *testing.T) {
 				WriteTimeout: 0,
 			},
 		},
+		Logging: LoggingConfig{
+			Level: "trace",
+			Sink:  "file",
+		},
 	}
 
 	err := cfg.Validate()
@@ -216,6 +259,12 @@ func TestValidateReportsExplicitFieldErrors(t *testing.T) {
 			Message: "must be one of development, test, production",
 		},
 		{Field: "HTTP.Addr", Env: envHTTPAddr, Value: "", Message: "must not be empty"},
+		{
+			Field:   "HTTP.RequestTimeout",
+			Env:     envHTTPRequestTimeout,
+			Value:   "-1s",
+			Message: "must be greater than or equal to zero",
+		},
 		{Field: "API.Prefix", Env: envAPIPrefix, Value: "api", Message: "must start with /"},
 		{
 			Field:   "Database.Driver",
@@ -274,6 +323,18 @@ func TestValidateReportsExplicitFieldErrors(t *testing.T) {
 			Value:   "0s",
 			Message: "must be greater than zero",
 		},
+		{
+			Field:   "Logging.Level",
+			Env:     envLogLevel,
+			Value:   "trace",
+			Message: "must be one of debug, info, warn, error",
+		},
+		{
+			Field:   "Logging.Sink",
+			Env:     envLogSink,
+			Value:   "file",
+			Message: "must be one of stderr, stdout, mongo",
+		},
 	}
 	if !reflect.DeepEqual([]FieldError(fieldErrors), want) {
 		t.Fatalf("Validate() field errors = %#v, want %#v", []FieldError(fieldErrors), want)
@@ -284,6 +345,7 @@ func TestValidateReportsExplicitFieldErrors(t *testing.T) {
 		envAppName,
 		envEnv,
 		envHTTPAddr,
+		envHTTPRequestTimeout,
 		envAPIPrefix,
 		envDatabaseDriver,
 		envDatabaseDSN,
@@ -297,6 +359,8 @@ func TestValidateReportsExplicitFieldErrors(t *testing.T) {
 		envRedisDialTimeout,
 		envRedisReadTimeout,
 		envRedisWriteTimeout,
+		envLogLevel,
+		envLogSink,
 	} {
 		if !strings.Contains(message, wantPart) {
 			t.Fatalf("Validate() error = %q, want it to contain %q", message, wantPart)
@@ -304,21 +368,31 @@ func TestValidateReportsExplicitFieldErrors(t *testing.T) {
 	}
 }
 
-func TestLoadFromEnvReturnsValidationErrors(t *testing.T) {
-	_, err := LoadFromEnv(mapLookup(map[string]string{
-		envEnv:       "prod",
-		envAPIPrefix: "api",
-	}))
+func TestValidateRejectsUnsafeTrustedProxyInProduction(t *testing.T) {
+	cfg := Default()
+	cfg.Environment = EnvironmentProduction
+	cfg.HTTP.TrustedProxies = []string{"0.0.0.0/0"}
+
+	err := cfg.Validate()
 	if err == nil {
-		t.Fatal("LoadFromEnv() error = nil, want validation errors")
+		t.Fatal("Validate() error = nil, want trusted proxy validation error")
 	}
 
 	var fieldErrors FieldErrors
 	if !errors.As(err, &fieldErrors) {
-		t.Fatalf("LoadFromEnv() error type = %T, want FieldErrors", err)
+		t.Fatalf("Validate() error type = %T, want FieldErrors", err)
 	}
-	if len(fieldErrors) != 2 {
-		t.Fatalf("LoadFromEnv() field error count = %d, want 2", len(fieldErrors))
+
+	want := []FieldError{
+		{
+			Field:   "HTTP.TrustedProxies",
+			Env:     envHTTPTrustedProxies,
+			Value:   "0.0.0.0/0",
+			Message: "must not trust all proxies in production",
+		},
+	}
+	if !reflect.DeepEqual([]FieldError(fieldErrors), want) {
+		t.Fatalf("Validate() field errors = %#v, want %#v", []FieldError(fieldErrors), want)
 	}
 }
 
@@ -353,10 +427,29 @@ func TestValidateRejectsRedisTLSInsecureInProduction(t *testing.T) {
 	t.Fatalf("Validate() field errors = %#v, want one to equal %#v", []FieldError(fieldErrors), want)
 }
 
+func TestLoadFromEnvReturnsValidationErrors(t *testing.T) {
+	_, err := LoadFromEnv(mapLookup(map[string]string{
+		envEnv:       "prod",
+		envAPIPrefix: "api",
+	}))
+	if err == nil {
+		t.Fatal("LoadFromEnv() error = nil, want validation errors")
+	}
+
+	var fieldErrors FieldErrors
+	if !errors.As(err, &fieldErrors) {
+		t.Fatalf("LoadFromEnv() error type = %T, want FieldErrors", err)
+	}
+	if len(fieldErrors) != 2 {
+		t.Fatalf("LoadFromEnv() field error count = %d, want 2", len(fieldErrors))
+	}
+}
+
 func TestLoadFromEnvReturnsParseErrors(t *testing.T) {
 	_, err := LoadFromEnv(mapLookup(map[string]string{
 		envDatabaseMaxOpenConns:    "many",
 		envDatabaseConnMaxLifetime: "later",
+		envHTTPRequestTimeout:      "soon",
 		envRedisTLS:                "maybe",
 	}))
 	if err == nil {
@@ -367,8 +460,8 @@ func TestLoadFromEnvReturnsParseErrors(t *testing.T) {
 	if !errors.As(err, &fieldErrors) {
 		t.Fatalf("LoadFromEnv() error type = %T, want FieldErrors", err)
 	}
-	if len(fieldErrors) != 3 {
-		t.Fatalf("LoadFromEnv() field error count = %d, want 3", len(fieldErrors))
+	if len(fieldErrors) != 4 {
+		t.Fatalf("LoadFromEnv() field error count = %d, want 4", len(fieldErrors))
 	}
 }
 

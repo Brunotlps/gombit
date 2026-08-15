@@ -15,8 +15,10 @@ import (
 	"github.com/LAA-Software-Engineering/gombit/cache"
 	"github.com/LAA-Software-Engineering/gombit/config"
 	"github.com/LAA-Software-Engineering/gombit/database"
+	"github.com/LAA-Software-Engineering/gombit/logging"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -37,6 +39,7 @@ type App struct {
 	cacheOwned      bool
 	redis           *redis.Client
 	db              *database.DB
+	logger          *zap.Logger
 	router          *gin.Engine
 	startHooks      []Hook
 	stopHooks       []Hook
@@ -45,6 +48,11 @@ type App struct {
 	mu     sync.RWMutex
 	server *http.Server
 	addr   string
+}
+
+type namedMiddleware struct {
+	name    string
+	handler gin.HandlerFunc
 }
 
 // New creates an application using process configuration and the default router.
@@ -78,8 +86,24 @@ func New(options ...Option) (*App, error) {
 		return nil, errors.New("framework: shutdown timeout must be positive")
 	}
 	configureHTTPMode(app.cfg)
+	if app.logger == nil {
+		logger, err := logging.New(app.cfg.Logging)
+		if err != nil {
+			return nil, err
+		}
+		app.logger = logger
+		app.OnStop(func(context.Context) error {
+			return syncLogger(logger)
+		})
+	}
 	if app.router == nil {
-		app.router = newRouter()
+		router, err := newRouter(app.cfg)
+		if err != nil {
+			return nil, err
+		}
+		app.router = router
+	} else if err := configureTrustedProxies(app.router, app.cfg.HTTP.TrustedProxies); err != nil {
+		return nil, err
 	}
 	if app.cache == nil {
 		store, err := cache.Open(app.cfg.Cache)
@@ -145,6 +169,17 @@ func WithDatabase(db *database.DB) Option {
 	}
 }
 
+// WithLogger attaches a Zap logger to the app.
+func WithLogger(logger *zap.Logger) Option {
+	return func(app *App) error {
+		if logger == nil {
+			return errors.New("framework: nil logger")
+		}
+		app.logger = logger
+		return nil
+	}
+}
+
 // WithRouter sets the app router.
 func WithRouter(router *gin.Engine) Option {
 	return func(app *App) error {
@@ -186,6 +221,13 @@ func (a *App) Redis() *redis.Client {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.redis
+}
+
+// Logger returns the app's Zap logger.
+func (a *App) Logger() *zap.Logger {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.logger
 }
 
 // Database returns the opened database handle with driver metadata.
@@ -266,6 +308,8 @@ func RunContext(ctx context.Context, app *App) error {
 	server := &http.Server{
 		Handler:           app.Router(),
 		ReadHeaderTimeout: 5 * time.Second,
+		WriteTimeout:      app.Config().HTTP.RequestTimeout,
+		IdleTimeout:       app.Config().HTTP.RequestTimeout,
 	}
 	app.setServer(server, listener.Addr().String())
 
@@ -386,9 +430,21 @@ func (a *App) runStopHooksWithContext(ctx context.Context) error {
 	return joined
 }
 
-func newRouter() *gin.Engine {
+func syncLogger(logger *zap.Logger) error {
+	if err := logger.Sync(); err != nil && !errors.Is(err, syscall.EINVAL) {
+		return fmt.Errorf("framework: sync logger: %w", err)
+	}
+	return nil
+}
+
+func newRouter(cfg config.Config) (*gin.Engine, error) {
 	router := gin.New()
-	router.Use(gin.Recovery())
+	if err := configureTrustedProxies(router, cfg.HTTP.TrustedProxies); err != nil {
+		return nil, err
+	}
+
+	metrics := newHTTPMetrics()
+	router.Use(middlewareHandlers(runtimeMiddlewareStack(cfg, metrics))...)
 	router.GET("/livez", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"data": gin.H{
@@ -403,11 +459,41 @@ func newRouter() *gin.Engine {
 			},
 		})
 	})
-	return router
+	router.GET("/metrics", metrics.handler)
+	return router, nil
 }
 
 func configureHTTPMode(cfg config.Config) {
 	if cfg.Environment == config.EnvironmentProduction {
 		gin.SetMode(gin.ReleaseMode)
 	}
+}
+
+func configureTrustedProxies(engine *gin.Engine, proxies []string) error {
+	if err := engine.SetTrustedProxies(proxies); err != nil {
+		return fmt.Errorf("framework: trusted proxies: %w", err)
+	}
+	return nil
+}
+
+func runtimeMiddlewareStack(cfg config.Config, metrics *httpMetrics) []namedMiddleware {
+	return []namedMiddleware{
+		{name: "recovery", handler: gin.Recovery()},
+		{name: "request_id", handler: requestIDMiddleware()},
+		{name: "trace_context", handler: traceContextMiddleware()},
+		{name: "metrics", handler: metricsMiddleware(metrics)},
+		{
+			name:    "security_headers",
+			handler: securityHeadersMiddleware(cfg.Environment == config.EnvironmentProduction),
+		},
+		{name: "request_timeout", handler: requestTimeoutMiddleware(cfg.HTTP.RequestTimeout)},
+	}
+}
+
+func middlewareHandlers(stack []namedMiddleware) []gin.HandlerFunc {
+	handlers := make([]gin.HandlerFunc, 0, len(stack))
+	for _, middleware := range stack {
+		handlers = append(handlers, middleware.handler)
+	}
+	return handlers
 }

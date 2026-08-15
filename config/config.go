@@ -13,6 +13,8 @@ const (
 	envAppName                 = "GOMBIT_APP_NAME"
 	envEnv                     = "GOMBIT_ENV"
 	envHTTPAddr                = "GOMBIT_HTTP_ADDR"
+	envHTTPTrustedProxies      = "GOMBIT_HTTP_TRUSTED_PROXIES"
+	envHTTPRequestTimeout      = "GOMBIT_HTTP_REQUEST_TIMEOUT"
 	envAPIPrefix               = "GOMBIT_API_PREFIX"
 	envDatabaseDriver          = "GOMBIT_DATABASE_DRIVER"
 	envDatabaseDSN             = "GOMBIT_DATABASE_DSN"
@@ -30,6 +32,8 @@ const (
 	envRedisWriteTimeout       = "GOMBIT_REDIS_WRITE_TIMEOUT"
 	envRedisTLS                = "GOMBIT_REDIS_TLS"
 	envRedisTLSInsecure        = "GOMBIT_REDIS_TLS_INSECURE"
+	envLogLevel                = "GOMBIT_LOG_LEVEL"
+	envLogSink                 = "GOMBIT_LOG_SINK"
 )
 
 // Environment is the runtime environment name.
@@ -52,11 +56,14 @@ type Config struct {
 	API         APIConfig
 	Database    DatabaseConfig
 	Cache       CacheConfig
+	Logging     LoggingConfig
 }
 
 // HTTPConfig contains HTTP server configuration.
 type HTTPConfig struct {
-	Addr string
+	Addr           string
+	TrustedProxies []string
+	RequestTimeout time.Duration
 }
 
 // APIConfig contains public API configuration.
@@ -117,6 +124,38 @@ type RedisConfig struct {
 	TLSInsecure  bool
 }
 
+// LogLevel names the configured logging level.
+type LogLevel string
+
+const (
+	// LogLevelDebug enables debug, info, warn, and error logs.
+	LogLevelDebug LogLevel = "debug"
+	// LogLevelInfo enables info, warn, and error logs.
+	LogLevelInfo LogLevel = "info"
+	// LogLevelWarn enables warn and error logs.
+	LogLevelWarn LogLevel = "warn"
+	// LogLevelError enables error logs.
+	LogLevelError LogLevel = "error"
+)
+
+// LogSink names the configured logging sink.
+type LogSink string
+
+const (
+	// LogSinkStderr writes JSON logs to stderr.
+	LogSinkStderr LogSink = "stderr"
+	// LogSinkStdout writes JSON logs to stdout.
+	LogSinkStdout LogSink = "stdout"
+	// LogSinkMongo selects an external Mongo logging module.
+	LogSinkMongo LogSink = "mongo"
+)
+
+// LoggingConfig contains structured logging configuration.
+type LoggingConfig struct {
+	Level LogLevel
+	Sink  LogSink
+}
+
 // EnvLookup reads an environment variable by name.
 type EnvLookup func(key string) (value string, ok bool)
 
@@ -126,7 +165,8 @@ func Default() Config {
 		AppName:     "Gombit",
 		Environment: EnvironmentDevelopment,
 		HTTP: HTTPConfig{
-			Addr: ":8080",
+			Addr:           ":8080",
+			RequestTimeout: 60 * time.Second,
 		},
 		API: APIConfig{
 			Prefix: "/api/v1",
@@ -144,6 +184,10 @@ func Default() Config {
 				ReadTimeout:  3 * time.Second,
 				WriteTimeout: 3 * time.Second,
 			},
+		},
+		Logging: LoggingConfig{
+			Level: LogLevelInfo,
+			Sink:  LogSinkStderr,
 		},
 	}
 }
@@ -163,9 +207,17 @@ func LoadFromEnv(lookup EnvLookup) (Config, error) {
 	applyString(lookup, envAppName, &cfg.AppName)
 	applyEnvironment(lookup, envEnv, &cfg.Environment)
 	applyString(lookup, envHTTPAddr, &cfg.HTTP.Addr)
+	applyStringList(lookup, envHTTPTrustedProxies, &cfg.HTTP.TrustedProxies)
 	applyString(lookup, envAPIPrefix, &cfg.API.Prefix)
 
 	var errs FieldErrors
+	applyDuration(
+		lookup,
+		envHTTPRequestTimeout,
+		"HTTP.RequestTimeout",
+		&cfg.HTTP.RequestTimeout,
+		&errs,
+	)
 	applyDatabaseDriver(lookup, envDatabaseDriver, &cfg.Database.Driver)
 	applyString(lookup, envDatabaseDSN, &cfg.Database.DSN)
 	applyInt(lookup, envDatabaseMaxOpenConns, "Database.MaxOpenConns", &cfg.Database.MaxOpenConns, &errs)
@@ -192,6 +244,8 @@ func LoadFromEnv(lookup EnvLookup) (Config, error) {
 	if !cacheNamespaceSet {
 		cfg.Cache.Namespace = DefaultCacheNamespace(cfg.AppName, cfg.Environment)
 	}
+	applyLogLevel(lookup, envLogLevel, &cfg.Logging.Level)
+	applyLogSink(lookup, envLogSink, &cfg.Logging.Sink)
 
 	if err := cfg.Validate(); err != nil {
 		var fieldErrors FieldErrors
@@ -240,6 +294,34 @@ func (c Config) Validate() error {
 		})
 	}
 
+	if c.HTTP.RequestTimeout < 0 {
+		errs = append(errs, FieldError{
+			Field:   "HTTP.RequestTimeout",
+			Env:     envHTTPRequestTimeout,
+			Value:   c.HTTP.RequestTimeout.String(),
+			Message: "must be greater than or equal to zero",
+		})
+	}
+
+	for _, proxy := range c.HTTP.TrustedProxies {
+		if strings.TrimSpace(proxy) == "" {
+			errs = append(errs, FieldError{
+				Field:   "HTTP.TrustedProxies",
+				Env:     envHTTPTrustedProxies,
+				Value:   proxy,
+				Message: "must not contain empty entries",
+			})
+		}
+		if c.Environment == EnvironmentProduction && isUnsafeTrustedProxy(proxy) {
+			errs = append(errs, FieldError{
+				Field:   "HTTP.TrustedProxies",
+				Env:     envHTTPTrustedProxies,
+				Value:   proxy,
+				Message: "must not trust all proxies in production",
+			})
+		}
+	}
+
 	if !strings.HasPrefix(c.API.Prefix, "/") {
 		errs = append(errs, FieldError{
 			Field:   "API.Prefix",
@@ -251,6 +333,7 @@ func (c Config) Validate() error {
 
 	validateDatabaseConfig(&errs, c.Database)
 	validateCacheConfig(&errs, c.Environment, c.Cache)
+	validateLoggingConfig(&errs, c.Logging)
 
 	if len(errs) > 0 {
 		return errs
@@ -273,6 +356,16 @@ func ValidateDatabase(cfg DatabaseConfig) error {
 func ValidateCache(cfg CacheConfig) error {
 	var errs FieldErrors
 	validateCacheConfig(&errs, "", cfg)
+	if len(errs) > 0 {
+		return errs
+	}
+	return nil
+}
+
+// ValidateLogging returns explicit field errors for invalid logging settings.
+func ValidateLogging(cfg LoggingConfig) error {
+	var errs FieldErrors
+	validateLoggingConfig(&errs, cfg)
 	if len(errs) > 0 {
 		return errs
 	}
@@ -304,59 +397,26 @@ func DefaultCacheNamespace(appName string, env Environment) string {
 	return normalized + ":" + string(env)
 }
 
-func validateDatabaseConfig(errs *FieldErrors, cfg DatabaseConfig) {
-	switch cfg.Driver {
-	case DatabaseDriverSQLite, DatabaseDriverPostgres, DatabaseDriverMySQL:
+func validateLoggingConfig(errs *FieldErrors, cfg LoggingConfig) {
+	switch cfg.Level {
+	case LogLevelDebug, LogLevelInfo, LogLevelWarn, LogLevelError:
 	default:
 		*errs = append(*errs, FieldError{
-			Field:   "Database.Driver",
-			Env:     envDatabaseDriver,
-			Value:   string(cfg.Driver),
-			Message: "must be one of sqlite, postgres, mysql",
+			Field:   "Logging.Level",
+			Env:     envLogLevel,
+			Value:   string(cfg.Level),
+			Message: "must be one of debug, info, warn, error",
 		})
 	}
 
-	if strings.TrimSpace(cfg.DSN) == "" {
+	switch cfg.Sink {
+	case LogSinkStderr, LogSinkStdout, LogSinkMongo:
+	default:
 		*errs = append(*errs, FieldError{
-			Field:   "Database.DSN",
-			Env:     envDatabaseDSN,
-			Message: "must not be empty",
-		})
-	}
-
-	if cfg.MaxOpenConns < 0 {
-		*errs = append(*errs, FieldError{
-			Field:   "Database.MaxOpenConns",
-			Env:     envDatabaseMaxOpenConns,
-			Value:   strconv.Itoa(cfg.MaxOpenConns),
-			Message: "must be greater than or equal to zero",
-		})
-	}
-
-	if cfg.MaxIdleConns < 0 {
-		*errs = append(*errs, FieldError{
-			Field:   "Database.MaxIdleConns",
-			Env:     envDatabaseMaxIdleConns,
-			Value:   strconv.Itoa(cfg.MaxIdleConns),
-			Message: "must be greater than or equal to zero",
-		})
-	}
-
-	if cfg.MaxOpenConns != 0 && cfg.MaxIdleConns > cfg.MaxOpenConns {
-		*errs = append(*errs, FieldError{
-			Field:   "Database.MaxIdleConns",
-			Env:     envDatabaseMaxIdleConns,
-			Value:   strconv.Itoa(cfg.MaxIdleConns),
-			Message: "must be less than or equal to Database.MaxOpenConns",
-		})
-	}
-
-	if cfg.ConnMaxLifetime < 0 {
-		*errs = append(*errs, FieldError{
-			Field:   "Database.ConnMaxLifetime",
-			Env:     envDatabaseConnMaxLifetime,
-			Value:   cfg.ConnMaxLifetime.String(),
-			Message: "must be greater than or equal to zero",
+			Field:   "Logging.Sink",
+			Env:     envLogSink,
+			Value:   string(cfg.Sink),
+			Message: "must be one of stderr, stdout, mongo",
 		})
 	}
 }
@@ -443,10 +503,82 @@ func validateCacheConfig(errs *FieldErrors, env Environment, cfg CacheConfig) {
 	}
 }
 
+func validateDatabaseConfig(errs *FieldErrors, cfg DatabaseConfig) {
+	switch cfg.Driver {
+	case DatabaseDriverSQLite, DatabaseDriverPostgres, DatabaseDriverMySQL:
+	default:
+		*errs = append(*errs, FieldError{
+			Field:   "Database.Driver",
+			Env:     envDatabaseDriver,
+			Value:   string(cfg.Driver),
+			Message: "must be one of sqlite, postgres, mysql",
+		})
+	}
+
+	if strings.TrimSpace(cfg.DSN) == "" {
+		*errs = append(*errs, FieldError{
+			Field:   "Database.DSN",
+			Env:     envDatabaseDSN,
+			Message: "must not be empty",
+		})
+	}
+
+	if cfg.MaxOpenConns < 0 {
+		*errs = append(*errs, FieldError{
+			Field:   "Database.MaxOpenConns",
+			Env:     envDatabaseMaxOpenConns,
+			Value:   strconv.Itoa(cfg.MaxOpenConns),
+			Message: "must be greater than or equal to zero",
+		})
+	}
+
+	if cfg.MaxIdleConns < 0 {
+		*errs = append(*errs, FieldError{
+			Field:   "Database.MaxIdleConns",
+			Env:     envDatabaseMaxIdleConns,
+			Value:   strconv.Itoa(cfg.MaxIdleConns),
+			Message: "must be greater than or equal to zero",
+		})
+	}
+
+	if cfg.MaxOpenConns != 0 && cfg.MaxIdleConns > cfg.MaxOpenConns {
+		*errs = append(*errs, FieldError{
+			Field:   "Database.MaxIdleConns",
+			Env:     envDatabaseMaxIdleConns,
+			Value:   strconv.Itoa(cfg.MaxIdleConns),
+			Message: "must be less than or equal to Database.MaxOpenConns",
+		})
+	}
+
+	if cfg.ConnMaxLifetime < 0 {
+		*errs = append(*errs, FieldError{
+			Field:   "Database.ConnMaxLifetime",
+			Env:     envDatabaseConnMaxLifetime,
+			Value:   cfg.ConnMaxLifetime.String(),
+			Message: "must be greater than or equal to zero",
+		})
+	}
+}
+
 func applyString(lookup EnvLookup, key string, dest *string) {
 	if value, ok := lookup(key); ok {
 		*dest = strings.TrimSpace(value)
 	}
+}
+
+func applyStringList(lookup EnvLookup, key string, dest *[]string) {
+	value, ok := lookup(key)
+	if !ok {
+		return
+	}
+
+	var parsed []string
+	for _, part := range strings.Split(value, ",") {
+		if item := strings.TrimSpace(part); item != "" {
+			parsed = append(parsed, item)
+		}
+	}
+	*dest = parsed
 }
 
 func applyEnvironment(lookup EnvLookup, key string, dest *Environment) {
@@ -464,6 +596,18 @@ func applyDatabaseDriver(lookup EnvLookup, key string, dest *DatabaseDriver) {
 func applyCacheDriver(lookup EnvLookup, key string, dest *CacheDriver) {
 	if value, ok := lookup(key); ok {
 		*dest = CacheDriver(strings.TrimSpace(value))
+	}
+}
+
+func applyLogLevel(lookup EnvLookup, key string, dest *LogLevel) {
+	if value, ok := lookup(key); ok {
+		*dest = LogLevel(strings.TrimSpace(value))
+	}
+}
+
+func applyLogSink(lookup EnvLookup, key string, dest *LogSink) {
+	if value, ok := lookup(key); ok {
+		*dest = LogSink(strings.TrimSpace(value))
 	}
 }
 
@@ -502,6 +646,15 @@ func applyBool(lookup EnvLookup, key string, field string, dest *bool, errs *Fie
 			Value:   value,
 			Message: "must be a boolean",
 		})
+	}
+}
+
+func isUnsafeTrustedProxy(proxy string) bool {
+	switch strings.TrimSpace(proxy) {
+	case "*", "0.0.0.0/0", "::/0":
+		return true
+	default:
+		return false
 	}
 }
 

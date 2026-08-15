@@ -13,6 +13,7 @@ import (
 	"github.com/LAA-Software-Engineering/gombit/config"
 	"github.com/LAA-Software-Engineering/gombit/database"
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 )
 
 func TestRunContextBootsAndShutsDown(t *testing.T) {
@@ -261,6 +262,48 @@ func TestAppExposesRedisEscapeHatchWhenConfigured(t *testing.T) {
 	})
 }
 
+func TestNewBuildsDefaultLoggerWithoutMongo(t *testing.T) {
+	app := newTestApp(t)
+	if app.Logger() == nil {
+		t.Fatal("Logger() = nil, want logger")
+	}
+}
+
+func TestAppExposesLogger(t *testing.T) {
+	logger := zap.NewNop()
+	app := newTestApp(t, WithLogger(logger))
+	if got := app.Logger(); got != logger {
+		t.Fatalf("Logger() = %p, want %p", got, logger)
+	}
+}
+
+func TestAppBootsWithMongoSinkWhenLoggerProvided(t *testing.T) {
+	cfg := config.Default()
+	cfg.Environment = config.EnvironmentTest
+	cfg.HTTP.Addr = "127.0.0.1:0"
+	cfg.Logging.Sink = config.LogSinkMongo
+
+	app, err := New(WithConfig(cfg), WithLogger(zap.NewNop()))
+	if err != nil {
+		t.Fatalf("New() error = %v, want nil", err)
+	}
+	if app.Logger() == nil {
+		t.Fatal("Logger() = nil, want logger")
+	}
+}
+
+func TestNewWithMongoSinkRequiresProvidedLogger(t *testing.T) {
+	cfg := config.Default()
+	cfg.Environment = config.EnvironmentTest
+	cfg.HTTP.Addr = "127.0.0.1:0"
+	cfg.Logging.Sink = config.LogSinkMongo
+
+	_, err := New(WithConfig(cfg))
+	if err == nil {
+		t.Fatal("New(WithConfig(mongo sink)) error = nil, want error")
+	}
+}
+
 func TestNewValidatesOptions(t *testing.T) {
 	_, err := New(WithShutdownTimeout(0))
 	if err == nil {
@@ -275,6 +318,11 @@ func TestNewValidatesOptions(t *testing.T) {
 	_, err = New(WithCache(nil))
 	if err == nil {
 		t.Fatal("New(WithCache(nil)) error = nil, want error")
+	}
+
+	_, err = New(WithLogger(nil))
+	if err == nil {
+		t.Fatal("New(WithLogger(nil)) error = nil, want error")
 	}
 }
 
