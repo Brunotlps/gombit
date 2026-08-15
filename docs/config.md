@@ -11,6 +11,7 @@ runtime packages.
 - app name: `Gombit`
 - environment: `development`
 - HTTP address: `:8080`
+- HTTP request timeout: `60s`
 - API prefix: `/api/v1`
 - database driver: `sqlite`
 - database DSN: `file:gombit.db?cache=shared&_fk=1`
@@ -25,6 +26,8 @@ configuration. The M1-1 boundary recognizes:
 | `GOMBIT_APP_NAME` | `Config.AppName` | `Gombit` |
 | `GOMBIT_ENV` | `Config.Environment` | `development` |
 | `GOMBIT_HTTP_ADDR` | `Config.HTTP.Addr` | `:8080` |
+| `GOMBIT_HTTP_TRUSTED_PROXIES` | `Config.HTTP.TrustedProxies` | unset |
+| `GOMBIT_HTTP_REQUEST_TIMEOUT` | `Config.HTTP.RequestTimeout` | `60s` |
 | `GOMBIT_API_PREFIX` | `Config.API.Prefix` | `/api/v1` |
 | `GOMBIT_DATABASE_DRIVER` | `Config.Database.Driver` | `sqlite` |
 | `GOMBIT_DATABASE_DSN` | `Config.Database.DSN` | `file:gombit.db?cache=shared&_fk=1` |
@@ -35,6 +38,12 @@ configuration. The M1-1 boundary recognizes:
 `GOMBIT_ENV` accepts the exact lowercase values `development`, `test`, and
 `production`.
 `GOMBIT_DATABASE_DRIVER` accepts `sqlite`, `postgres`, and `mysql`.
+`GOMBIT_HTTP_TRUSTED_PROXIES` is a comma-separated list of IPs or CIDRs passed
+to Gin's trusted-proxy configuration. When unset, forwarded-client IP headers
+are ignored. Production config rejects values that trust all proxies, such as
+`0.0.0.0/0`.
+`GOMBIT_HTTP_REQUEST_TIMEOUT` uses Go duration syntax such as `30s` or `2m`;
+`0` disables the per-request deadline.
 `GOMBIT_DATABASE_CONN_MAX_LIFETIME` uses Go duration syntax such as `30m` or
 `1h`.
 

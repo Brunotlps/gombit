@@ -13,6 +13,8 @@ const (
 	envAppName                 = "GOMBIT_APP_NAME"
 	envEnv                     = "GOMBIT_ENV"
 	envHTTPAddr                = "GOMBIT_HTTP_ADDR"
+	envHTTPTrustedProxies      = "GOMBIT_HTTP_TRUSTED_PROXIES"
+	envHTTPRequestTimeout      = "GOMBIT_HTTP_REQUEST_TIMEOUT"
 	envAPIPrefix               = "GOMBIT_API_PREFIX"
 	envDatabaseDriver          = "GOMBIT_DATABASE_DRIVER"
 	envDatabaseDSN             = "GOMBIT_DATABASE_DSN"
@@ -44,7 +46,9 @@ type Config struct {
 
 // HTTPConfig contains HTTP server configuration.
 type HTTPConfig struct {
-	Addr string
+	Addr           string
+	TrustedProxies []string
+	RequestTimeout time.Duration
 }
 
 // APIConfig contains public API configuration.
@@ -82,7 +86,8 @@ func Default() Config {
 		AppName:     "Gombit",
 		Environment: EnvironmentDevelopment,
 		HTTP: HTTPConfig{
-			Addr: ":8080",
+			Addr:           ":8080",
+			RequestTimeout: 60 * time.Second,
 		},
 		API: APIConfig{
 			Prefix: "/api/v1",
@@ -109,9 +114,17 @@ func LoadFromEnv(lookup EnvLookup) (Config, error) {
 	applyString(lookup, envAppName, &cfg.AppName)
 	applyEnvironment(lookup, envEnv, &cfg.Environment)
 	applyString(lookup, envHTTPAddr, &cfg.HTTP.Addr)
+	applyStringList(lookup, envHTTPTrustedProxies, &cfg.HTTP.TrustedProxies)
 	applyString(lookup, envAPIPrefix, &cfg.API.Prefix)
 
 	var errs FieldErrors
+	applyDuration(
+		lookup,
+		envHTTPRequestTimeout,
+		"HTTP.RequestTimeout",
+		&cfg.HTTP.RequestTimeout,
+		&errs,
+	)
 	applyDatabaseDriver(lookup, envDatabaseDriver, &cfg.Database.Driver)
 	applyString(lookup, envDatabaseDSN, &cfg.Database.DSN)
 	applyInt(lookup, envDatabaseMaxOpenConns, "Database.MaxOpenConns", &cfg.Database.MaxOpenConns, &errs)
@@ -169,6 +182,34 @@ func (c Config) Validate() error {
 			Value:   c.HTTP.Addr,
 			Message: "must not be empty",
 		})
+	}
+
+	if c.HTTP.RequestTimeout < 0 {
+		errs = append(errs, FieldError{
+			Field:   "HTTP.RequestTimeout",
+			Env:     envHTTPRequestTimeout,
+			Value:   c.HTTP.RequestTimeout.String(),
+			Message: "must be greater than or equal to zero",
+		})
+	}
+
+	for _, proxy := range c.HTTP.TrustedProxies {
+		if strings.TrimSpace(proxy) == "" {
+			errs = append(errs, FieldError{
+				Field:   "HTTP.TrustedProxies",
+				Env:     envHTTPTrustedProxies,
+				Value:   proxy,
+				Message: "must not contain empty entries",
+			})
+		}
+		if c.Environment == EnvironmentProduction && isUnsafeTrustedProxy(proxy) {
+			errs = append(errs, FieldError{
+				Field:   "HTTP.TrustedProxies",
+				Env:     envHTTPTrustedProxies,
+				Value:   proxy,
+				Message: "must not trust all proxies in production",
+			})
+		}
 	}
 
 	if !strings.HasPrefix(c.API.Prefix, "/") {
@@ -262,6 +303,21 @@ func applyString(lookup EnvLookup, key string, dest *string) {
 	}
 }
 
+func applyStringList(lookup EnvLookup, key string, dest *[]string) {
+	value, ok := lookup(key)
+	if !ok {
+		return
+	}
+
+	var parsed []string
+	for _, part := range strings.Split(value, ",") {
+		if item := strings.TrimSpace(part); item != "" {
+			parsed = append(parsed, item)
+		}
+	}
+	*dest = parsed
+}
+
 func applyEnvironment(lookup EnvLookup, key string, dest *Environment) {
 	if value, ok := lookup(key); ok {
 		*dest = Environment(strings.TrimSpace(value))
@@ -290,6 +346,15 @@ func applyInt(lookup EnvLookup, key string, field string, dest *int, errs *Field
 		return
 	}
 	*dest = parsed
+}
+
+func isUnsafeTrustedProxy(proxy string) bool {
+	switch strings.TrimSpace(proxy) {
+	case "*", "0.0.0.0/0", "::/0":
+		return true
+	default:
+		return false
+	}
 }
 
 func applyDuration(lookup EnvLookup, key string, field string, dest *time.Duration, errs *FieldErrors) {

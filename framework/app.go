@@ -73,7 +73,13 @@ func New(options ...Option) (*App, error) {
 	}
 	configureHTTPMode(app.cfg)
 	if app.router == nil {
-		app.router = newRouter()
+		router, err := newRouter(app.cfg)
+		if err != nil {
+			return nil, err
+		}
+		app.router = router
+	} else if err := configureTrustedProxies(app.router, app.cfg.HTTP.TrustedProxies); err != nil {
+		return nil, err
 	}
 
 	return app, nil
@@ -314,9 +320,21 @@ func (a *App) runStopHooksWithContext(ctx context.Context) error {
 	return joined
 }
 
-func newRouter() *gin.Engine {
+func newRouter(cfg config.Config) (*gin.Engine, error) {
 	router := gin.New()
-	router.Use(gin.Recovery())
+	if err := configureTrustedProxies(router, cfg.HTTP.TrustedProxies); err != nil {
+		return nil, err
+	}
+
+	metrics := newHTTPMetrics()
+	router.Use(
+		gin.Recovery(),
+		requestIDMiddleware(),
+		traceContextMiddleware(),
+		metricsMiddleware(metrics),
+		securityHeadersMiddleware(),
+		requestTimeoutMiddleware(cfg.HTTP.RequestTimeout),
+	)
 	router.GET("/livez", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"data": gin.H{
@@ -331,11 +349,19 @@ func newRouter() *gin.Engine {
 			},
 		})
 	})
-	return router
+	router.GET("/metrics", metrics.handler)
+	return router, nil
 }
 
 func configureHTTPMode(cfg config.Config) {
 	if cfg.Environment == config.EnvironmentProduction {
 		gin.SetMode(gin.ReleaseMode)
 	}
+}
+
+func configureTrustedProxies(engine *gin.Engine, proxies []string) error {
+	if err := engine.SetTrustedProxies(proxies); err != nil {
+		return fmt.Errorf("framework: trusted proxies: %w", err)
+	}
+	return nil
 }
