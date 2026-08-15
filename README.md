@@ -19,3 +19,5 @@ go run ./cmd/contract-spike-openapi openapi.json
 
 The authoritative implementation backlog and architecture decisions live in
 [`docs/GOMBIT_BUILD_PLAN.md`](docs/GOMBIT_BUILD_PLAN.md).
+
+Accepted architecture decisions are recorded under [`docs/adr/`](docs/adr/).
