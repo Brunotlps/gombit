@@ -14,8 +14,12 @@ gombit db makemigrations create_products \
   --model github.com/acme/shop/internal/product.Product
 ```
 
-The Atlas CLI must be installed and available on `PATH`, or supplied with
-`--atlas-bin`.
+The Atlas Community Edition CLI must be installed and available on `PATH`, or
+supplied with `--atlas-bin`:
+
+```sh
+curl -sSf https://atlasgo.sh | sh -s -- --community
+```
 
 Repeat `--model` for every GORM model that should be part of the desired
 schema:
