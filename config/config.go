@@ -19,6 +19,17 @@ const (
 	envDatabaseMaxOpenConns    = "GOMBIT_DATABASE_MAX_OPEN_CONNS"
 	envDatabaseMaxIdleConns    = "GOMBIT_DATABASE_MAX_IDLE_CONNS"
 	envDatabaseConnMaxLifetime = "GOMBIT_DATABASE_CONN_MAX_LIFETIME"
+	envCacheDriver             = "GOMBIT_CACHE_DRIVER"
+	envCacheNamespace          = "GOMBIT_CACHE_NAMESPACE"
+	envRedisAddr               = "GOMBIT_REDIS_ADDR"
+	envRedisUsername           = "GOMBIT_REDIS_USERNAME"
+	envRedisPassword           = "GOMBIT_REDIS_PASSWORD"
+	envRedisDB                 = "GOMBIT_REDIS_DB"
+	envRedisDialTimeout        = "GOMBIT_REDIS_DIAL_TIMEOUT"
+	envRedisReadTimeout        = "GOMBIT_REDIS_READ_TIMEOUT"
+	envRedisWriteTimeout       = "GOMBIT_REDIS_WRITE_TIMEOUT"
+	envRedisTLS                = "GOMBIT_REDIS_TLS"
+	envRedisTLSInsecure        = "GOMBIT_REDIS_TLS_INSECURE"
 )
 
 // Environment is the runtime environment name.
@@ -40,6 +51,7 @@ type Config struct {
 	HTTP        HTTPConfig
 	API         APIConfig
 	Database    DatabaseConfig
+	Cache       CacheConfig
 }
 
 // HTTPConfig contains HTTP server configuration.
@@ -73,6 +85,38 @@ type DatabaseConfig struct {
 	ConnMaxLifetime time.Duration
 }
 
+// CacheDriver names a supported cache driver.
+type CacheDriver string
+
+const (
+	// CacheDriverMemory stores cache values in process memory.
+	CacheDriverMemory CacheDriver = "memory"
+	// CacheDriverRedis stores cache values in Redis.
+	CacheDriverRedis CacheDriver = "redis"
+	// CacheDriverNoop disables persistence while preserving cache call sites.
+	CacheDriverNoop CacheDriver = "noop"
+)
+
+// CacheConfig contains cache configuration consumed by cache.Open.
+type CacheConfig struct {
+	Driver    CacheDriver
+	Namespace string
+	Redis     RedisConfig
+}
+
+// RedisConfig contains go-redis client configuration.
+type RedisConfig struct {
+	Addr         string
+	Username     string
+	Password     string
+	DB           int
+	DialTimeout  time.Duration
+	ReadTimeout  time.Duration
+	WriteTimeout time.Duration
+	TLS          bool
+	TLSInsecure  bool
+}
+
 // EnvLookup reads an environment variable by name.
 type EnvLookup func(key string) (value string, ok bool)
 
@@ -90,6 +134,16 @@ func Default() Config {
 		Database: DatabaseConfig{
 			Driver: DatabaseDriverSQLite,
 			DSN:    "file:gombit.db?cache=shared&_fk=1",
+		},
+		Cache: CacheConfig{
+			Driver:    CacheDriverMemory,
+			Namespace: DefaultCacheNamespace("Gombit", EnvironmentDevelopment),
+			Redis: RedisConfig{
+				Addr:         "127.0.0.1:6379",
+				DialTimeout:  5 * time.Second,
+				ReadTimeout:  3 * time.Second,
+				WriteTimeout: 3 * time.Second,
+			},
 		},
 	}
 }
@@ -123,6 +177,21 @@ func LoadFromEnv(lookup EnvLookup) (Config, error) {
 		&cfg.Database.ConnMaxLifetime,
 		&errs,
 	)
+	applyCacheDriver(lookup, envCacheDriver, &cfg.Cache.Driver)
+	_, cacheNamespaceSet := lookup(envCacheNamespace)
+	applyString(lookup, envCacheNamespace, &cfg.Cache.Namespace)
+	applyString(lookup, envRedisAddr, &cfg.Cache.Redis.Addr)
+	applyString(lookup, envRedisUsername, &cfg.Cache.Redis.Username)
+	applyString(lookup, envRedisPassword, &cfg.Cache.Redis.Password)
+	applyInt(lookup, envRedisDB, "Cache.Redis.DB", &cfg.Cache.Redis.DB, &errs)
+	applyDuration(lookup, envRedisDialTimeout, "Cache.Redis.DialTimeout", &cfg.Cache.Redis.DialTimeout, &errs)
+	applyDuration(lookup, envRedisReadTimeout, "Cache.Redis.ReadTimeout", &cfg.Cache.Redis.ReadTimeout, &errs)
+	applyDuration(lookup, envRedisWriteTimeout, "Cache.Redis.WriteTimeout", &cfg.Cache.Redis.WriteTimeout, &errs)
+	applyBool(lookup, envRedisTLS, "Cache.Redis.TLS", &cfg.Cache.Redis.TLS, &errs)
+	applyBool(lookup, envRedisTLSInsecure, "Cache.Redis.TLSInsecure", &cfg.Cache.Redis.TLSInsecure, &errs)
+	if !cacheNamespaceSet {
+		cfg.Cache.Namespace = DefaultCacheNamespace(cfg.AppName, cfg.Environment)
+	}
 
 	if err := cfg.Validate(); err != nil {
 		var fieldErrors FieldErrors
@@ -181,6 +250,7 @@ func (c Config) Validate() error {
 	}
 
 	validateDatabaseConfig(&errs, c.Database)
+	validateCacheConfig(&errs, c.Cache)
 
 	if len(errs) > 0 {
 		return errs
@@ -197,6 +267,41 @@ func ValidateDatabase(cfg DatabaseConfig) error {
 		return errs
 	}
 	return nil
+}
+
+// ValidateCache returns explicit field errors for invalid cache settings.
+func ValidateCache(cfg CacheConfig) error {
+	var errs FieldErrors
+	validateCacheConfig(&errs, cfg)
+	if len(errs) > 0 {
+		return errs
+	}
+	return nil
+}
+
+// DefaultCacheNamespace returns the conventional cache namespace for app/env.
+func DefaultCacheNamespace(appName string, env Environment) string {
+	name := strings.ToLower(strings.TrimSpace(appName))
+	var b strings.Builder
+	lastDash := false
+	for _, r := range name {
+		switch {
+		case r >= 'a' && r <= 'z':
+			b.WriteRune(r)
+			lastDash = false
+		case r >= '0' && r <= '9':
+			b.WriteRune(r)
+			lastDash = false
+		case !lastDash:
+			b.WriteByte('-')
+			lastDash = true
+		}
+	}
+	normalized := strings.Trim(b.String(), "-")
+	if normalized == "" {
+		normalized = "gombit"
+	}
+	return normalized + ":" + string(env)
 }
 
 func validateDatabaseConfig(errs *FieldErrors, cfg DatabaseConfig) {
@@ -256,6 +361,79 @@ func validateDatabaseConfig(errs *FieldErrors, cfg DatabaseConfig) {
 	}
 }
 
+func validateCacheConfig(errs *FieldErrors, cfg CacheConfig) {
+	validateRedis := false
+	switch cfg.Driver {
+	case CacheDriverMemory, CacheDriverNoop:
+	case CacheDriverRedis:
+		validateRedis = true
+	default:
+		validateRedis = true
+		*errs = append(*errs, FieldError{
+			Field:   "Cache.Driver",
+			Env:     envCacheDriver,
+			Value:   string(cfg.Driver),
+			Message: "must be one of memory, redis, noop",
+		})
+	}
+
+	if strings.TrimSpace(cfg.Namespace) == "" {
+		*errs = append(*errs, FieldError{
+			Field:   "Cache.Namespace",
+			Env:     envCacheNamespace,
+			Value:   cfg.Namespace,
+			Message: "must not be empty",
+		})
+	}
+
+	if !validateRedis {
+		return
+	}
+
+	if strings.TrimSpace(cfg.Redis.Addr) == "" {
+		*errs = append(*errs, FieldError{
+			Field:   "Cache.Redis.Addr",
+			Env:     envRedisAddr,
+			Value:   cfg.Redis.Addr,
+			Message: "must not be empty",
+		})
+	}
+
+	if cfg.Redis.DB < 0 {
+		*errs = append(*errs, FieldError{
+			Field:   "Cache.Redis.DB",
+			Env:     envRedisDB,
+			Value:   strconv.Itoa(cfg.Redis.DB),
+			Message: "must be greater than or equal to zero",
+		})
+	}
+
+	if cfg.Redis.DialTimeout <= 0 {
+		*errs = append(*errs, FieldError{
+			Field:   "Cache.Redis.DialTimeout",
+			Env:     envRedisDialTimeout,
+			Value:   cfg.Redis.DialTimeout.String(),
+			Message: "must be greater than zero",
+		})
+	}
+	if cfg.Redis.ReadTimeout <= 0 {
+		*errs = append(*errs, FieldError{
+			Field:   "Cache.Redis.ReadTimeout",
+			Env:     envRedisReadTimeout,
+			Value:   cfg.Redis.ReadTimeout.String(),
+			Message: "must be greater than zero",
+		})
+	}
+	if cfg.Redis.WriteTimeout <= 0 {
+		*errs = append(*errs, FieldError{
+			Field:   "Cache.Redis.WriteTimeout",
+			Env:     envRedisWriteTimeout,
+			Value:   cfg.Redis.WriteTimeout.String(),
+			Message: "must be greater than zero",
+		})
+	}
+}
+
 func applyString(lookup EnvLookup, key string, dest *string) {
 	if value, ok := lookup(key); ok {
 		*dest = strings.TrimSpace(value)
@@ -271,6 +449,12 @@ func applyEnvironment(lookup EnvLookup, key string, dest *Environment) {
 func applyDatabaseDriver(lookup EnvLookup, key string, dest *DatabaseDriver) {
 	if value, ok := lookup(key); ok {
 		*dest = DatabaseDriver(strings.TrimSpace(value))
+	}
+}
+
+func applyCacheDriver(lookup EnvLookup, key string, dest *CacheDriver) {
+	if value, ok := lookup(key); ok {
+		*dest = CacheDriver(strings.TrimSpace(value))
 	}
 }
 
@@ -290,6 +474,26 @@ func applyInt(lookup EnvLookup, key string, field string, dest *int, errs *Field
 		return
 	}
 	*dest = parsed
+}
+
+func applyBool(lookup EnvLookup, key string, field string, dest *bool, errs *FieldErrors) {
+	value, ok := lookup(key)
+	if !ok {
+		return
+	}
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "1", "true", "yes", "on":
+		*dest = true
+	case "0", "false", "no", "off":
+		*dest = false
+	default:
+		*errs = append(*errs, FieldError{
+			Field:   field,
+			Env:     key,
+			Value:   value,
+			Message: "must be a boolean",
+		})
+	}
 }
 
 func applyDuration(lookup EnvLookup, key string, field string, dest *time.Duration, errs *FieldErrors) {

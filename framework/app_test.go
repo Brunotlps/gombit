@@ -214,6 +214,53 @@ func TestAppExposesDatabaseEscapeHatch(t *testing.T) {
 	}
 }
 
+func TestAppExposesDefaultMemoryCache(t *testing.T) {
+	app := newTestApp(t)
+	if app.Cache() == nil {
+		t.Fatal("Cache() = nil, want default memory cache")
+	}
+	if app.Redis() != nil {
+		t.Fatalf("Redis() = %v, want nil for memory cache", app.Redis())
+	}
+
+	ctx := context.Background()
+	if err := app.Cache().Set(ctx, "answer", 42, time.Minute); err != nil {
+		t.Fatalf("Cache().Set() error = %v, want nil", err)
+	}
+	var got int
+	found, err := app.Cache().Get(ctx, "answer", &got)
+	if err != nil {
+		t.Fatalf("Cache().Get() error = %v, want nil", err)
+	}
+	if !found || got != 42 {
+		t.Fatalf("Cache().Get() = (%t, %d), want (true, 42)", found, got)
+	}
+}
+
+func TestAppExposesRedisEscapeHatchWhenConfigured(t *testing.T) {
+	cfg := config.Default()
+	cfg.Environment = config.EnvironmentTest
+	cfg.HTTP.Addr = "127.0.0.1:0"
+	cfg.Cache.Driver = config.CacheDriverRedis
+	cfg.Cache.Namespace = config.DefaultCacheNamespace(cfg.AppName, cfg.Environment)
+
+	app, err := New(WithConfig(cfg))
+	if err != nil {
+		t.Fatalf("New() error = %v, want nil", err)
+	}
+	if app.Cache() == nil {
+		t.Fatal("Cache() = nil, want Redis-backed cache")
+	}
+	if app.Redis() == nil {
+		t.Fatal("Redis() = nil, want Redis escape hatch")
+	}
+	t.Cleanup(func() {
+		if err := app.Redis().Close(); err != nil {
+			t.Fatalf("Redis().Close() error = %v, want nil", err)
+		}
+	})
+}
+
 func TestNewValidatesOptions(t *testing.T) {
 	_, err := New(WithShutdownTimeout(0))
 	if err == nil {
@@ -223,6 +270,11 @@ func TestNewValidatesOptions(t *testing.T) {
 	_, err = New(WithDatabase(nil))
 	if err == nil {
 		t.Fatal("New(WithDatabase(nil)) error = nil, want error")
+	}
+
+	_, err = New(WithCache(nil))
+	if err == nil {
+		t.Fatal("New(WithCache(nil)) error = nil, want error")
 	}
 }
 

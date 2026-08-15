@@ -29,6 +29,15 @@ func TestDefault(t *testing.T) {
 	if got.Database.DSN != "file:gombit.db?cache=shared&_fk=1" {
 		t.Fatalf("Database.DSN = %q, want default sqlite DSN", got.Database.DSN)
 	}
+	if got.Cache.Driver != CacheDriverMemory {
+		t.Fatalf("Cache.Driver = %q, want %q", got.Cache.Driver, CacheDriverMemory)
+	}
+	if got.Cache.Namespace != "gombit:development" {
+		t.Fatalf("Cache.Namespace = %q, want gombit:development", got.Cache.Namespace)
+	}
+	if got.Cache.Redis.Addr != "127.0.0.1:6379" {
+		t.Fatalf("Cache.Redis.Addr = %q, want 127.0.0.1:6379", got.Cache.Redis.Addr)
+	}
 	if err := got.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v, want nil", err)
 	}
@@ -45,6 +54,17 @@ func TestLoadFromEnv(t *testing.T) {
 		envDatabaseMaxOpenConns:    " 20 ",
 		envDatabaseMaxIdleConns:    " 4 ",
 		envDatabaseConnMaxLifetime: " 45m ",
+		envCacheDriver:             " redis ",
+		envCacheNamespace:          " example:test ",
+		envRedisAddr:               " localhost:6380 ",
+		envRedisUsername:           " default ",
+		envRedisPassword:           " password ",
+		envRedisDB:                 " 2 ",
+		envRedisDialTimeout:        " 1s ",
+		envRedisReadTimeout:        " 2s ",
+		envRedisWriteTimeout:       " 3s ",
+		envRedisTLS:                " true ",
+		envRedisTLSInsecure:        " yes ",
 	}
 
 	got, err := LoadFromEnv(mapLookup(env))
@@ -67,6 +87,21 @@ func TestLoadFromEnv(t *testing.T) {
 			MaxOpenConns:    20,
 			MaxIdleConns:    4,
 			ConnMaxLifetime: 45 * time.Minute,
+		},
+		Cache: CacheConfig{
+			Driver:    CacheDriverRedis,
+			Namespace: "example:test",
+			Redis: RedisConfig{
+				Addr:         "localhost:6380",
+				Username:     "default",
+				Password:     "password",
+				DB:           2,
+				DialTimeout:  time.Second,
+				ReadTimeout:  2 * time.Second,
+				WriteTimeout: 3 * time.Second,
+				TLS:          true,
+				TLSInsecure:  true,
+			},
 		},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -111,6 +146,11 @@ func TestLoadUsesProcessEnvironment(t *testing.T) {
 			Driver: DatabaseDriverMySQL,
 			DSN:    "gombit@tcp(localhost:3306)/app?parseTime=true",
 		},
+		Cache: CacheConfig{
+			Driver:    CacheDriverMemory,
+			Namespace: "process-example:production",
+			Redis:     Default().Cache.Redis,
+		},
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Load() = %#v, want %#v", got, want)
@@ -143,6 +183,17 @@ func TestValidateReportsExplicitFieldErrors(t *testing.T) {
 			MaxOpenConns:    -1,
 			MaxIdleConns:    2,
 			ConnMaxLifetime: -time.Second,
+		},
+		Cache: CacheConfig{
+			Driver:    "disk",
+			Namespace: "",
+			Redis: RedisConfig{
+				Addr:         "",
+				DB:           -1,
+				DialTimeout:  -time.Second,
+				ReadTimeout:  0,
+				WriteTimeout: 0,
+			},
 		},
 	}
 
@@ -191,6 +242,38 @@ func TestValidateReportsExplicitFieldErrors(t *testing.T) {
 			Value:   "-1s",
 			Message: "must be greater than or equal to zero",
 		},
+		{
+			Field:   "Cache.Driver",
+			Env:     envCacheDriver,
+			Value:   "disk",
+			Message: "must be one of memory, redis, noop",
+		},
+		{Field: "Cache.Namespace", Env: envCacheNamespace, Value: "", Message: "must not be empty"},
+		{Field: "Cache.Redis.Addr", Env: envRedisAddr, Value: "", Message: "must not be empty"},
+		{
+			Field:   "Cache.Redis.DB",
+			Env:     envRedisDB,
+			Value:   "-1",
+			Message: "must be greater than or equal to zero",
+		},
+		{
+			Field:   "Cache.Redis.DialTimeout",
+			Env:     envRedisDialTimeout,
+			Value:   "-1s",
+			Message: "must be greater than zero",
+		},
+		{
+			Field:   "Cache.Redis.ReadTimeout",
+			Env:     envRedisReadTimeout,
+			Value:   "0s",
+			Message: "must be greater than zero",
+		},
+		{
+			Field:   "Cache.Redis.WriteTimeout",
+			Env:     envRedisWriteTimeout,
+			Value:   "0s",
+			Message: "must be greater than zero",
+		},
 	}
 	if !reflect.DeepEqual([]FieldError(fieldErrors), want) {
 		t.Fatalf("Validate() field errors = %#v, want %#v", []FieldError(fieldErrors), want)
@@ -207,6 +290,13 @@ func TestValidateReportsExplicitFieldErrors(t *testing.T) {
 		envDatabaseMaxOpenConns,
 		envDatabaseMaxIdleConns,
 		envDatabaseConnMaxLifetime,
+		envCacheDriver,
+		envCacheNamespace,
+		envRedisAddr,
+		envRedisDB,
+		envRedisDialTimeout,
+		envRedisReadTimeout,
+		envRedisWriteTimeout,
 	} {
 		if !strings.Contains(message, wantPart) {
 			t.Fatalf("Validate() error = %q, want it to contain %q", message, wantPart)
@@ -236,6 +326,7 @@ func TestLoadFromEnvReturnsParseErrors(t *testing.T) {
 	_, err := LoadFromEnv(mapLookup(map[string]string{
 		envDatabaseMaxOpenConns:    "many",
 		envDatabaseConnMaxLifetime: "later",
+		envRedisTLS:                "maybe",
 	}))
 	if err == nil {
 		t.Fatal("LoadFromEnv() error = nil, want parse errors")
@@ -245,8 +336,8 @@ func TestLoadFromEnvReturnsParseErrors(t *testing.T) {
 	if !errors.As(err, &fieldErrors) {
 		t.Fatalf("LoadFromEnv() error type = %T, want FieldErrors", err)
 	}
-	if len(fieldErrors) != 2 {
-		t.Fatalf("LoadFromEnv() field error count = %d, want 2", len(fieldErrors))
+	if len(fieldErrors) != 3 {
+		t.Fatalf("LoadFromEnv() field error count = %d, want 3", len(fieldErrors))
 	}
 }
 

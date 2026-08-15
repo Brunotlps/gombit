@@ -50,7 +50,7 @@ steps that need their own runtime surfaces.
 | 2. logging initialization | Deferred to M1-6. |
 | 3. database connection | Owned in M1-4 through `database.Open`; applications open/close the handle and attach it with `framework.WithDatabase`. |
 | 4. migration state checks | Deferred to M2. |
-| 5. optional Redis/cache connection | Deferred to M1-5. |
+| 5. optional Redis/cache connection | Owned in M1-5 through `cache.Open`, the default memory cache, and `app.Redis()` for the Redis escape hatch. |
 | 6. auth infrastructure | Deferred to M5. |
 | 7. tracing and metrics | Deferred to M1-7. |
 | 8. HTTP server construction | Owned in M1-2 through `framework.Run` and `RunContext`. |
