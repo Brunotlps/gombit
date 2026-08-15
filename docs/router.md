@@ -20,10 +20,11 @@ return framework.Run(app)
 ```
 
 Each `registerXRoutes` function is the runtime equivalent of a feature
-package's `routes.go` (build plan §3.2 / `.cursor/skills/create-feature`):
-registration is **explicit**, called from `main`, and never discovered
-through reflection (principle 6.2). `examples/router` demonstrates this with
-two independent toy route groups, `ping` and `echo`.
+package's `routes.go` (build plan §3.2 /
+`.cursor/skills/create-feature/references/layout.md`): registration is
+**explicit**, called from `main`, and never discovered through reflection
+(principle 6.2). `examples/router` demonstrates this with two independent
+toy route groups, `ping` and `echo`.
 
 ## No module/registry abstraction
 

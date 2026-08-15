@@ -4,6 +4,7 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"reflect"
 	"sort"
 	"sync"
 	"testing"
@@ -22,13 +23,8 @@ func TestDefaultRouterMountsOnlyFrameworkEndpoints(t *testing.T) {
 	sort.Strings(got)
 
 	want := []string{"GET /livez", "GET /readyz"}
-	if len(got) != len(want) {
+	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Router().Routes() = %v, want %v", got, want)
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			t.Fatalf("Router().Routes() = %v, want %v", got, want)
-		}
 	}
 }
 
@@ -91,7 +87,7 @@ func TestApplicationOwnedRouteRegistrationComposesIndependently(t *testing.T) {
 	mu.Unlock()
 
 	wantAfterPing := []string{"ping-middleware", "ping-handler"}
-	if !equalStrings(afterPing, wantAfterPing) {
+	if !reflect.DeepEqual(afterPing, wantAfterPing) {
 		t.Fatalf("order after GET /ping = %v, want %v (no cross-module leakage, deterministic order)", afterPing, wantAfterPing)
 	}
 
@@ -107,21 +103,9 @@ func TestApplicationOwnedRouteRegistrationComposesIndependently(t *testing.T) {
 	mu.Unlock()
 
 	wantAfterEcho := []string{"ping-middleware", "ping-handler", "echo-middleware", "echo-handler"}
-	if !equalStrings(afterEcho, wantAfterEcho) {
+	if !reflect.DeepEqual(afterEcho, wantAfterEcho) {
 		t.Fatalf("order after POST /echo = %v, want %v (echo middleware must not have fired for /ping)", afterEcho, wantAfterEcho)
 	}
-}
-
-func equalStrings(got, want []string) bool {
-	if len(got) != len(want) {
-		return false
-	}
-	for i := range want {
-		if got[i] != want[i] {
-			return false
-		}
-	}
-	return true
 }
 
 func postHTTP(t *testing.T, app *App, path string) *http.Response {
