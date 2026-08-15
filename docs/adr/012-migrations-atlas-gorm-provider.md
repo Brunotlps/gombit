@@ -55,16 +55,23 @@ and execution for the supported drivers.
 
 ## Licensing and Feature Boundary
 
-The provider repository is Apache-2.0 licensed. Atlas describes its core
-engine as open source under Apache-2.0 and lists database inspection, schema
-diffing, versioned migrations, declarative migrations, PostgreSQL, MySQL, and
-SQLite as open features.
+The default M2 workflow will wrap the Atlas Community Edition CLI plus
+`ariga.io/atlas-provider-gorm`. The provider repository is Apache-2.0
+licensed, and Atlas Community Edition is the Apache-2.0 Atlas CLI build. It
+includes the v0.1 commands Gombit needs for the generated migration path:
+`atlas migrate diff`, `atlas migrate apply`, and `atlas migrate status`.
 
-M2 must not depend on Atlas Pro-only features unless a later issue explicitly
-changes the product decision. The following are outside the v0.1 open-source
-dependency surface:
+Do not conflate Atlas Community Edition with the standard Atlas CLI. Atlas's
+standard distribution is free to download and includes additional commands, but
+it is licensed under the Atlas MSA. The standard CLI may remain a user-selected
+escape hatch later, but the default v0.1 M2 implementation must not require it.
+
+M2 must not depend on commands or features that are absent from Community
+Edition unless a later issue explicitly changes the product decision. The
+following are outside the v0.1 Apache-2.0 dependency surface:
 
 - `atlas migrate lint` migration safety analysis.
+- `atlas migrate down`, `checkpoint`, `rebase`, `edit`, and `rm`.
 - Pre-migration checks and deploy-time drift detection.
 - Atlas Registry and Cloud-backed drift monitoring.
 - Atlas migration/schema testing framework.
@@ -90,10 +97,14 @@ part of M2 acceptance criteria.
   decision from D4: applied revisions are still tracked as
   `version, name, batch, applied_at`, with no checksum in Gombit's own
   revision table.
+- M2-2 rollback is a Gombit-owned runtime operation over the D4 revision table
+  and application-owned down SQL. It must not wrap `atlas migrate down`,
+  because that command is unavailable in Atlas Community Edition.
 - Safety checks in M2/M4 CI must use open-source mechanisms unless the project
-  intentionally accepts an Atlas Pro dependency. In particular, do not make
-  `atlas migrate lint`, drift detection, or the Atlas Registry required for
-  the default v0.1 workflow.
+  intentionally accepts a standard Atlas CLI or Atlas Pro dependency. In
+  particular, do not make `atlas migrate lint`, drift detection, Atlas
+  Registry, or advanced migration commands required for the default v0.1
+  workflow.
 - The database conformance matrix remains required for SQLite, PostgreSQL, and
   MySQL because Atlas support does not replace runtime verification against
   real drivers.
