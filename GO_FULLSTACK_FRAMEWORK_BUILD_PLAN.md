@@ -1,9 +1,11 @@
-# Go Full-Stack Web Framework — Build Plan & Locked Decisions
+# Gombit — Build Plan & Locked Decisions
 
 **Status:** Build-ready v1.0
 **Date:** 2026-08-14
 **Supersedes:** the "Open Decisions" (§57) of `GO_FULLSTACK_FRAMEWORK_DESIGN.md`, and the specific sections noted inline below.
 **Purpose:** This document is the authoritative source for creating GitHub issues and driving agent-based implementation. The original design doc remains the reference for *rationale and prose*; where the two conflict, **this document wins**.
+
+**Spiritual model — Django, not Laravel.** The identity line shifts from "Rails/Laravel/Django cohesion" to specifically **Django-for-Go**: Django's feature set (apps, migrations incl. `makemigrations`, `createsuperuser`, an auto-admin, management commands) and CLI ergonomics, implemented with a Go-idiomatic backend, a React + TypeScript (+ optional MUI) frontend, and **none of Django's runtime metaclass/reflection magic**. The rule is: copy Django's *what*, keep Go's *how* — the same stance principle 6.2 already takes toward Rails/Laravel. This reinforces C2 (Django "apps" ≈ feature-packages) and also differentiates positioning from the existing "Laravel-for-Go" (Goravel).
 
 ---
 
@@ -15,7 +17,7 @@
 4. §4 is the **issue backlog** — each entry maps 1:1 to a GitHub issue.
 5. §5 is the **agent working agreement** — the definition of done. Put this in `CONTRIBUTING.md` and reference it from every issue.
 
-There is exactly **one** human decision left blocking repo creation: the framework name (§2, D1). Everything else is decided here.
+Framework name is decided: **Gombit** (§2, D1). The one open item is picking the GitHub org/user for `<org>` in D2 before repo creation.
 
 ---
 
@@ -25,9 +27,9 @@ There is exactly **one** human decision left blocking repo creation: the framewo
 |---|---|---|---|---|
 | C1 | **Contract layer** | Bespoke `framework.Bind` + hand-built OpenAPI emission | **Adopt Huma over Gin** for typed handlers + validation + OpenAPI 3.1 | Building your own is the "second inferior framework inside the framework" trap (draft §55.4). Huma is the only low-magic way to make "Go is the source of truth" true without comment annotations. |
 | C2 | **App layout** | Laravel-style `app/controllers`, `app/models`, `app/services` | **Feature-package under `internal/<feature>/`** | The Laravel tree violates your own principle 6.2 and reads as non-Go. Buffalo/Bud partly died on feeling un-idiomatic; adoption risk you can't afford. Cohesion is kept per-feature. |
-| C3 | **Auth default** | Cookie/session default | **Bearer JWT default for v0.1**, cookie/session as M5 preset | Cookie+CSRF+SPA is greenfield and risky; bearer is what already exists (true extraction). Ships faster, de-risks v0.1. (Generated frontend stores the token **in memory, never localStorage**.) |
+| C3 | **Auth default** | Cookie/session default | **Bearer JWT is the v0.1 API default; session/cookie is a first-class mode** (no longer a mere preset) | Bearer is what already exists (true extraction) and stays the API default. But the Django admin **requires sessions**, so session/cookie auth is promoted to first-class and becomes a hard prerequisite of the admin milestone. Generated frontend stores the bearer token **in memory, never localStorage**. |
 | C4 | **UI preset default** | MUI default | **Minimal/headless default**, MUI opt-in (`--ui mui`) | Don't couple core to a design system's lifecycle (your own §24.2). Less surface to maintain solo. |
-| C5 | **Frontend embedding** | Embed-on-build default | **Split default**, embed via `fw build --embed` | Split is the simpler mental model and the common deploy; embedding is a nice-to-have, not the default path. |
+| C5 | **Frontend embedding** | Embed-on-build default | **Split default**, embed via `gombit build --embed` | Split is the simpler mental model and the common deploy; embedding is a nice-to-have, not the default path. |
 | C6 | **Per-resource repo/service** | Four-layer stack scaffolded per resource | **Thin controller-over-GORM default**, `--service`/`--repo` opt-in | Resolves the §15.1↔§15.2 contradiction. Pass-through service/repo layers for plain CRUD are boilerplate users delete. |
 
 If any of C1–C6 is wrong for you, say which — each has a cluster of issues hanging off it.
@@ -36,9 +38,9 @@ If any of C1–C6 is wrong for you, say which — each has a cluster of issues h
 
 ## 2. Locked decisions (closes original §57)
 
-- **D1 — Name (HUMAN TODO, blocking):** Framework name is the one decision left to you. Until set, all code uses module path `github.com/<org>/<fw>` and binary `fw`. Pick before M0 issue #1.
-- **D2 — Repo/org:** New dedicated public repo, not a fork of the template. License **MIT** (matches existing repo). Governance: BDFL/solo for now.
-- **D3 — Migration representation:** Go-file migrations with a small fluent `migration.Schema` builder over GORM's migrator. Locked.
+- **D1 — Name: DECIDED — `Gombit`.** Module path `github.com/<org>/gombit`, CLI binary `gombit`. No longer blocking — pick the `<org>` (GitHub org/user) to finish D2 and open M0 issue #1.
+- **D2 — Repo/org:** New dedicated public repo named `gombit`, not a fork of the template. Org/user (`<org>` in D1's module path) still to pick. License **MIT** (matches existing repo). Governance: BDFL/solo for now.
+- **D3 — Migration representation:** **Wrap Atlas, don't hand-roll a DSL.** `gombit db makemigrations` invokes the Apache-2.0 `ariga.io/atlas-provider-gorm` (Program Mode, so it reads GORM models spread across feature-packages) + `atlas migrate diff` to generate **versioned SQL migrations from model changes** — Django's `makemigrations` for Go+GORM. `gombit db migrate` applies them. This **replaces** the earlier fluent `migration.Schema` builder. Same rationale as C1/Huma: don't build a diff engine that already exists (§55.4). Locked, pending the licensing check in the ADR (M2-0). Escape hatch: hand-written SQL/HCL migrations remain droppable into the migration dir.
 - **D4 — Migration metadata:** Track `version, name, batch, applied_at`. **No checksums** — they are near-useless for Go-source migrations (formatting/comments change the hash without changing schema). Locked.
 - **D5 — OpenAPI → TS toolchain:** Go side emits OpenAPI 3.1 via Huma. TS side uses **`openapi-typescript`** (types) + **`openapi-fetch`** (client). Both are low-magic and generation-only. Locked.
 - **D6 — Package manager:** Detect (prefer `pnpm`, else `npm`). Default `npm` when none present. Locked.
@@ -60,7 +62,7 @@ The Go handler is the source of truth **via Huma typed handlers**, not comments 
 ```
 Huma-typed handler (input/output structs, validated)
         ↓  (Huma emits)
-OpenAPI 3.1 document  (served at /openapi.json, written by `fw openapi generate`)
+OpenAPI 3.1 document  (served at /openapi.json, written by `gombit openapi generate`)
         ↓  (openapi-typescript)
 TypeScript types
         ↓  (openapi-fetch, thin generated wrapper)
@@ -91,7 +93,7 @@ myapp/
 ├── database/seeds/
 ├── config/
 ├── frontend/                # Vite React app
-├── fw.yaml
+├── gombit.yaml
 ├── .env.example
 ├── go.mod
 └── README.md
@@ -101,20 +103,21 @@ myapp/
 
 ### 3.3 The generate-vs-runtime rule — NEW, resolves §55.7
 
-This single rule determines whether `fw upgrade` is ever feasible. State it as law:
+This single rule determines whether `gombit upgrade` is ever feasible. State it as law:
 
 > **Behavior lives in the versioned runtime. Generated code is a thin, one-time scaffold the user owns. The framework never rewrites user-owned files.**
 
 Consequences, enforced in review:
 - Generators are **idempotent and additive**. Re-running never clobbers edits. `--dry-run` and `--force` required.
 - Route registration is edited via `go/ast`, never regex, and only appends to a known registration point.
-- `fw upgrade` bumps dependencies and emits **reviewable codemod diffs** — it never edits in place.
+- `gombit upgrade` bumps dependencies and emits **reviewable codemod diffs** — it never edits in place.
 - If a feature can live in the runtime instead of in generated code, it must.
 
 ### 3.4 Auth — replaces §20 default
 
-- **v0.1 default:** Bearer JWT + refresh rotation (extracted from the template). Generated frontend holds the access token **in memory only**; refresh via the rotation endpoint. No localStorage.
-- **M5 preset:** Cookie/session + CSRF (`--auth cookie`). This is greenfield; it gets its own hardening issues and threat-model doc (SPA + separate dev origin + SameSite + double-submit).
+- **v0.1 API default:** Bearer JWT + refresh rotation (extracted from the template). Generated frontend holds the access token **in memory only**; refresh via the rotation endpoint. No localStorage.
+- **Session/cookie — first-class, not a preset:** HttpOnly/Secure/SameSite cookies + CSRF (`--auth cookie`). Still greenfield, still gets its own hardening issues and threat-model doc (SPA + separate dev origin + SameSite + double-submit), **but it is a required, first-class mode** because the admin (M6-Admin) depends on it. Session auth is a hard prerequisite of the admin milestone.
+- Django-style **users / groups / permissions** auth core underpins both modes and the admin's authorization checks.
 - The `X-API-Key` service gate stays available but is **off by default** for browser apps and documented as server-to-server only.
 
 ---
@@ -126,7 +129,7 @@ Milestones are dependency-ordered; do not start Mn+1 issues that depend on unfin
 
 ### M0 — Bootstrap + Contract Spike (the gate)
 
-- **[M0-1] Create repo, module path, CI skeleton** — new repo, `go.mod` with `github.com/<org>/<fw>`, MIT license, golangci-lint, GitHub Actions running `go test ./...` + lint. AC: green CI on an empty package; branch protection on `main`. deps: D1. size: S. labels: `infra`.
+- **[M0-1] Create repo, module path, CI skeleton** — new repo, `go.mod` with `github.com/<org>/gombit`, MIT license, golangci-lint, GitHub Actions running `go test ./...` + lint. AC: green CI on an empty package; branch protection on `main`. deps: D1. size: S. labels: `infra`.
 - **[M0-2] Contract-layer spike: Huma over Gin** — wire Huma to a Gin engine; implement two handlers: one Huma-typed resource (`GET/POST /widgets`) that appears in the emitted OpenAPI, and one raw `*gin.Engine` route (`/raw/ping`) that does not. Emit `openapi.json`. AC: OpenAPI 3.1 validates; typed handler shows request/response schema; raw route works and is absent from the spec; a short latency benchmark vs plain Gin recorded. **This issue is a go/no-go gate.** deps: M0-1. size: M. labels: `spike`, `contract`.
 - **[M0-3] ADR-011: Contract layer = Huma** — record the decision, the escape-hatch pattern, and the benchmark. If M0-2 fails the escape-hatch test, this ADR instead records the fallback (bespoke `Bind` + emission) and M3 issues are rewritten. deps: M0-2. size: S. labels: `adr`.
 
@@ -144,30 +147,50 @@ One issue per seam. Each must keep the existing tests green (see §5).
 
 **M1 exit gate:** a minimal example app boots through the runtime with no example-domain code in the runtime, on both SQLite and Postgres, all extracted tests green.
 
-### M2 — Migrations
+### M2 — Migrations (Atlas-backed, Django `makemigrations`)
 
-- **[M2-1] `migration.Schema` fluent builder** — `CreateTable/DropTable/AddColumn/...` over GORM migrator, mapping portable ops to SQLite + Postgres; `Exec` + `Driver()` escape hatch. AC: portable migration runs on both DBs. deps: M1-4. size: L. labels: `migrations`.
-- **[M2-2] `framework_migrations` tracking** — version/name/batch/applied_at (no checksum, D4). AC: up/down/status reflected in table. deps: M2-1. size: S. labels: `migrations`.
-- **[M2-3] `fw db` commands** — `migrate/rollback/status/seed/reset`. AC: each command works on both DBs. deps: M2-2. size: M. labels: `cli`, `migrations`.
-- **[M2-4] Multi-DB conformance CI** — matrix job runs the DB conformance suite (CRUD, tx, migrate up/down, timestamps, nullable, unique, index, decimal, pagination) on SQLite + Postgres. AC: matrix green; MySQL job added as allowed-failure stretch. deps: M2-3. size: M. labels: `ci`, `database`.
+- **[M2-0] ADR-012: Migrations = Atlas GORM provider** — confirm `ariga.io/atlas-provider-gorm` (Apache 2.0) covers the needed workflow on SQLite + Postgres via **Program Mode** (models across feature-packages), and verify which capabilities sit in the open core vs the paid Atlas Pro/cloud tier (versioned `migrate diff` is open; confirm nothing you depend on — lint checks, drift monitoring — is gated). Record the decision or the fallback (hand-rolled DSL). **Go/no-go gate for M2.** deps: M1-4. size: S. labels: `adr`, `migrations`.
+- **[M2-1] `gombit db makemigrations`** — wrap the Atlas provider loader + `atlas migrate diff` to generate a versioned migration from current GORM models; wire the loader to enumerate feature-package models. AC: changing a model and running `gombit db makemigrations` writes a correct versioned migration on SQLite + Postgres. deps: M2-0. size: L. labels: `migrations`, `cli`.
+- **[M2-2] `gombit db migrate` / `rollback` / `status`** — apply/roll back/report versioned migrations (Atlas apply + a `framework_migrations`-style revision record: version/name/batch/applied_at, no checksum per D4). AC: up/down/status reflected and correct on both DBs. deps: M2-1. size: M. labels: `migrations`, `cli`.
+- **[M2-3] `gombit db seed` / `reset`** — seeders and a dev reset (drop+migrate+seed). AC: seed and reset work on both DBs. deps: M2-2. size: S. labels: `migrations`, `cli`.
+- **[M2-4] Multi-DB conformance CI** — matrix job runs the DB conformance suite (CRUD, tx, migrate up/down, timestamps, nullable, unique, index, decimal, pagination) on SQLite + Postgres, using Atlas-generated migrations. AC: matrix green; MySQL job added as allowed-failure stretch. deps: M2-3. size: M. labels: `ci`, `database`.
 
 ### M3 — Contract pipeline
 
 - **[M3-1] Huma DTO + validation conventions** — request/response struct conventions, validation tags → D10 error envelope with `fields`. AC: invalid request returns structured field errors. deps: M0-3, M1-3. size: M. labels: `contract`, `http`.
 - **[M3-2] Response envelope + error mapping** — `{data, meta}` / `{error{code,message,fields,request_id}}`; error categories (draft §41) mapped centrally. AC: envelope covered by tests; category→status mapping table tested. deps: M3-1. size: M. labels: `contract`.
-- **[M3-3] OpenAPI emission + `fw openapi generate`** — serve `/openapi.json`; CLI writes it to disk. AC: spec validates; matches live routes. deps: M3-1. size: S. labels: `cli`, `contract`.
-- **[M3-4] TS types + client generation + `fw client generate`** — `openapi-typescript` + `openapi-fetch` wrapper; typed errors map to the D10 envelope. AC: generated client compiles against a sample spec. deps: M3-3, D5. size: M. labels: `cli`, `frontend`, `contract`.
+- **[M3-3] OpenAPI emission + `gombit openapi generate`** — serve `/openapi.json`; CLI writes it to disk. AC: spec validates; matches live routes. deps: M3-1. size: S. labels: `cli`, `contract`.
+- **[M3-4] TS types + client generation + `gombit client generate`** — `openapi-typescript` + `openapi-fetch` wrapper; typed errors map to the D10 envelope. AC: generated client compiles against a sample spec. deps: M3-3, D5. size: M. labels: `cli`, `frontend`, `contract`.
 - **[M3-5] Contract drift check in CI** — regenerate spec + client; fail if the working tree changes. AC: intentional server change without regen fails CI. deps: M3-4. size: S. labels: `ci`, `contract`.
 
 ### M4 — CLI + generators
 
-- **[M4-1] `fw new`** — interactive + non-interactive scaffold; DB/cache/auth/UI flags; feature-package layout (§3.2); `fw.yaml`, `.env.example` splitting server vs `VITE_*` public values. AC: `fw new demo --database sqlite` produces a compiling app. deps: M1 exit, M2, M3. size: L. labels: `cli`, `generator`.
-- **[M4-2] `fw dev`** — Go reload (air/watchexec), Vite, `/api` proxy, OpenAPI watch→regenerate, service table. AC: one command runs backend+frontend with HMR and live contract regen. deps: M4-1. size: L. labels: `cli`, `devx`.
-- **[M4-3] `fw make resource` (AST-safe)** — generates model, Huma handler (thin over GORM), routes, migration, and frontend pages/forms/table; registers routes via `go/ast`; idempotent; `--dry-run`/`--force`; `--service`/`--repo` opt-in (C6). AC: generated resource works backend→frontend with no manual type duplication; re-run doesn't clobber edits. deps: M4-1, M3-4. size: L. labels: `cli`, `generator`.
-- **[M4-4] Introspection: `fw routes`, `fw doctor`, `fw config show`** — routes table; doctor checks (Go/Node, config, DB/Redis connectivity, migration status, ports, insecure prod settings). AC: doctor flags a deliberately-broken config. deps: M4-1. size: M. labels: `cli`, `devx`.
+- **[M4-1] `gombit new`** — interactive + non-interactive scaffold; DB/cache/auth/UI flags; feature-package layout (§3.2); `gombit.yaml`, `.env.example` splitting server vs `VITE_*` public values. AC: `gombit new demo --database sqlite` produces a compiling app. deps: M1 exit, M2, M3. size: L. labels: `cli`, `generator`.
+- **[M4-2] `gombit dev`** — Go reload (air/watchexec), Vite, `/api` proxy, OpenAPI watch→regenerate, service table. AC: one command runs backend+frontend with HMR and live contract regen. deps: M4-1. size: L. labels: `cli`, `devx`.
+- **[M4-3] `gombit make resource` (AST-safe)** — generates model, Huma handler (thin over GORM), routes, migration, and frontend pages/forms/table; registers routes via `go/ast`; idempotent; `--dry-run`/`--force`; `--service`/`--repo` opt-in (C6). AC: generated resource works backend→frontend with no manual type duplication; re-run doesn't clobber edits. deps: M4-1, M3-4. size: L. labels: `cli`, `generator`.
+- **[M4-4] Introspection: `gombit routes`, `gombit doctor`, `gombit config show`** — routes table; doctor checks (Go/Node, config, DB/Redis connectivity, migration status, ports, insecure prod settings). AC: doctor flags a deliberately-broken config. deps: M4-1. size: M. labels: `cli`, `devx`.
 - **[M4-5] Generator golden tests** — for each generator: run against a fixture, diff against golden, compile backend, typecheck frontend, verify idempotency. AC: golden suite green in CI. deps: M4-3. size: M. labels: `tests`, `generator`.
+- **[M4-6] `gombit createsuperuser`** — interactive (and flag-driven) command that creates an admin user against the users/groups/permissions core. AC: creates an admin user on a fresh DB; refuses duplicates; hashes password per the framework hasher. deps: M2-2, M5-2. size: S. labels: `cli`, `auth`.
+- **[M4-7] Management-command extensibility (`gombit make command`)** — Django-style: a feature-package registers custom `gombit <command>`s; generator scaffolds one. AC: a generated command is discoverable and runnable via `gombit`. deps: M4-1. size: M. labels: `cli`, `generator`.
 
-**M4 exit gate:** `fw new` → `fw dev` → `fw make resource` → working authenticated CRUD app, backend-to-frontend, no hand-written contract, on SQLite + Postgres.
+**Django → `gombit` command map** (target surface; issues above cover the v0.1 subset):
+
+| Django `manage.py` | `gombit` | Milestone |
+|---|---|---|
+| `startproject` | `gombit new` | M4-1 |
+| `startapp` | `gombit make app` | M4-3 (variant) |
+| — | `gombit make resource` | M4-3 |
+| `makemigrations` | `gombit db makemigrations` | M2-1 |
+| `migrate` | `gombit db migrate` | M2-2 |
+| `createsuperuser` | `gombit createsuperuser` | M4-6 |
+| `runserver` | `gombit dev` | M4-2 |
+| `show_urls` | `gombit routes` | M4-4 |
+| `check` | `gombit doctor` | M4-4 |
+| custom commands | `gombit make command` | M4-7 |
+| `collectstatic` | folded into `gombit build --embed` | M5-5 |
+| `shell` | *skipped for v0.1* (poor fit in Go) | — |
+
+**M4 exit gate:** `gombit new` → `gombit dev` → `gombit make resource` → working authenticated CRUD app, backend-to-frontend, no hand-written contract, on SQLite + Postgres.
 
 ### M5 — Frontend + auth polish
 
@@ -175,11 +198,20 @@ One issue per seam. Each must keep the existing tests green (see §5).
 - **[M5-2] Bearer auth integration** — in-memory access token, refresh rotation, protected routes. AC: login→access protected route→refresh→logout E2E. deps: M5-1. size: M. labels: `frontend`, `auth`.
 - **[M5-3] Cookie/session + CSRF preset (`--auth cookie`)** — HttpOnly/Secure/SameSite cookies, CSRF for state-changing requests, threat-model doc. AC: CSRF + cookie-attribute security tests pass. deps: M5-2. size: L. labels: `auth`, `security`, `greenfield`.
 - **[M5-4] MUI preset (`--ui mui`)** — port the monorepo's MUI CRUD patterns as an opt-in preset. AC: `--ui mui` scaffolds MUI screens. deps: M5-1. size: M. labels: `frontend`, `preset`.
-- **[M5-5] Optional `go:embed` build (`fw build --embed`)** — single-binary with SPA fallback. AC: embedded binary serves API + static + index fallback. deps: M4-2. size: M. labels: `build`.
+- **[M5-5] Optional `go:embed` build (`gombit build --embed`)** — single-binary with SPA fallback. AC: embedded binary serves API + static + index fallback. deps: M4-2. size: M. labels: `build`.
+
+### M6-Admin — Django-style admin (POST-v0.1 flagship)
+
+The single biggest differentiator — **no Go web framework has a real Django-style admin** (not Gin/Echo/Fiber/Encore). This is the headline of the first release *after* v0.1, not part of the v0.1 loop. Architecture follows the §3.3 law: the admin is a **runtime** surface, not generated pages.
+
+- **[ADMIN-0] ADR-013: runtime generic admin over an introspection API** — decide the model-registry/introspection contract (models, fields, relations, permissions a feature-package registers) and confirm the admin is a framework-owned React app driven by that metadata endpoint — **not** `--admin` scaffolded pages. Prerequisite: session auth (C3). deps: M5-3. size: M. labels: `adr`, `admin`.
+- **[ADMIN-1] Model registry + introspection endpoint** — explicit `admin.Register(Model, opts)`; framework serves the metadata (no deep runtime reflection — principle 6.2). AC: registered models expose fields/permissions over the endpoint. deps: ADMIN-0. size: L. labels: `admin`, `runtime`.
+- **[ADMIN-2] Generic React admin app** — list/detail/create/edit/delete with filter/search/pagination, rendered from the metadata; permission-aware. AC: registering a model makes a working admin screen appear with zero per-model frontend code. deps: ADMIN-1, M5-1. size: L. labels: `admin`, `frontend`.
+- **[ADMIN-3] Admin auth + authorization** — session-gated admin, groups/permissions enforced. AC: non-permitted users are refused; superuser (M4-6) has full access. deps: ADMIN-2, M5-3. size: M. labels: `admin`, `auth`, `security`.
 
 ### M6 — Deferred batteries (POST-v0.1, not on the critical path)
 
-Each is a **future epic**, explicitly out of v0.1. Do not create these as active issues until v0.1 ships: jobs/queues, events, scheduler, mail, storage, optional gRPC, multi-tenancy hooks, i18n. Park them in a "post-v0.1" project column.
+Each is a **future epic**, explicitly out of v0.1. Do not create these as active issues until v0.1 ships: jobs/queues, events, scheduler, mail, storage, optional gRPC, multi-tenancy hooks, i18n. Park them in a "post-v0.1" project column. **The admin (M6-Admin) is the prioritized post-v0.1 flagship** and comes first among post-v0.1 work.
 
 ---
 
@@ -200,23 +232,27 @@ Put this in `CONTRIBUTING.md`; reference from every issue. A PR is **not** done 
 
 ## 6. Suggested GitHub labels & milestones
 
-Milestones: `M0 spike`, `M1 runtime`, `M2 migrations`, `M3 contract`, `M4 cli`, `M5 frontend-auth`, `post-v0.1`.
-Labels: `infra`, `runtime`, `config`, `lifecycle`, `http`, `database`, `cache`, `logging`, `migrations`, `contract`, `cli`, `generator`, `devx`, `frontend`, `auth`, `security`, `build`, `preset`, `tests`, `ci`, `adr`, `spike`, `greenfield`, `good-first-issue`.
+Milestones: `M0 spike`, `M1 runtime`, `M2 migrations`, `M3 contract`, `M4 cli`, `M5 frontend-auth`, `M6 admin`, `post-v0.1`.
+Labels: `infra`, `runtime`, `config`, `lifecycle`, `http`, `database`, `cache`, `logging`, `migrations`, `contract`, `cli`, `generator`, `devx`, `frontend`, `auth`, `security`, `build`, `preset`, `admin`, `tests`, `ci`, `adr`, `spike`, `greenfield`, `good-first-issue`.
 
-`good-first-issue` candidates for agents to warm up on: M0-1, M1-6, M2-2, M3-3, M4-4.
+`good-first-issue` candidates for agents to warm up on: M0-1, M1-6, M2-3, M3-3, M4-4.
 
 ---
 
 ## 7. Critical-path summary
 
 ```
-D1 (name) → M0-1 → M0-2/M0-3 (GATE) → M1 (extraction) → M2 (migrations)
-                                              ↓
-                                     M3 (contract pipeline)
-                                              ↓
-                                   M4 (cli + generators) → v0.1 GATE
-                                              ↓
-                                     M5 (frontend + auth polish) → v0.1 release
+D2-org (pick GitHub org/user) → M0-1 → M0-2/M0-3 (Huma GATE) → M1 (extraction)
+                                                  ↓
+                              M2-0 (Atlas GATE) → M2 (migrations)
+                                                  ↓
+                                         M3 (contract pipeline)
+                                                  ↓
+                                       M4 (cli + generators) → v0.1 GATE
+                                                  ↓
+                                    M5 (frontend + auth, incl. session mode) → v0.1 release
+                                                  ↓
+                                       M6-Admin (post-v0.1 flagship; needs session auth)
 ```
 
-Everything in M6 waits behind the v0.1 release. If the M0-2 spike fails its escape-hatch test, pause and rework M3 before proceeding — that is the one place a bad result invalidates downstream issues.
+Two go/no-go gates invalidate downstream work if they fail: **M0-2** (Huma escape hatch → reshapes M3) and **M2-0** (Atlas licensing/coverage → falls back to a hand-rolled migration DSL). Everything after the v0.1 release is post-v0.1; the **admin is the prioritized flagship** among that work and depends on session auth landing in M5-3.
