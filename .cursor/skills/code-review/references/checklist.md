@@ -39,7 +39,7 @@ Walk only the sections that the diff touches.
 
 ## Persistence
 
-- [ ] SQLite + PostgreSQL both considered; MySQL not required for v0.1
+- [ ] SQLite + PostgreSQL + MySQL all considered for DB-touching changes
 - [ ] Migrations go through Atlas GORM provider + `atlas migrate diff`, not a new DSL
 - [ ] Migration metadata is `version, name, batch, applied_at` (no checksums)
 - [ ] `repository.New[T]` is runtime-only, not copied per model

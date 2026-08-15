@@ -13,7 +13,9 @@ import (
 	"time"
 
 	"github.com/LAA-Software-Engineering/gombit/config"
+	"github.com/LAA-Software-Engineering/gombit/database"
 	"github.com/gin-gonic/gin"
+	"gorm.io/gorm"
 )
 
 const defaultShutdownTimeout = 10 * time.Second
@@ -28,6 +30,7 @@ type Option func(*App) error
 type App struct {
 	cfg             config.Config
 	cfgSet          bool
+	db              *database.DB
 	router          *gin.Engine
 	startHooks      []Hook
 	stopHooks       []Hook
@@ -88,6 +91,17 @@ func WithConfig(cfg config.Config) Option {
 	}
 }
 
+// WithDatabase attaches an opened database handle to the app.
+func WithDatabase(db *database.DB) Option {
+	return func(app *App) error {
+		if db == nil || db.DB == nil {
+			return errors.New("framework: nil database")
+		}
+		app.db = db
+		return nil
+	}
+}
+
 // WithRouter sets the app router.
 func WithRouter(router *gin.Engine) Option {
 	return func(app *App) error {
@@ -115,6 +129,23 @@ func (a *App) Config() config.Config {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.cfg
+}
+
+// Database returns the opened database handle with driver metadata.
+func (a *App) Database() *database.DB {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.db
+}
+
+// DB returns the underlying GORM database escape hatch.
+func (a *App) DB() *gorm.DB {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	if a.db == nil {
+		return nil
+	}
+	return a.db.DB
 }
 
 // Router returns the underlying Gin router escape hatch.

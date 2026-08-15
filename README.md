@@ -25,3 +25,4 @@ Accepted architecture decisions are recorded under [`docs/adr/`](docs/adr/).
 Runtime configuration is documented in [`docs/config.md`](docs/config.md).
 Application lifecycle is documented in [`docs/lifecycle.md`](docs/lifecycle.md).
 Application-owned route registration is documented in [`docs/router.md`](docs/router.md).
+Database runtime support is documented in [`docs/database.md`](docs/database.md).

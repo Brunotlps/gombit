@@ -67,7 +67,7 @@ Cite `path:line` (or a hunk) for every finding. Suggest the fix; do not implemen
 
 All of build plan §5 / `AGENTS.md` working agreement:
 
-1. Tests for new behavior; DB changes green on SQLite + PostgreSQL.
+1. Tests for new behavior; DB changes green on SQLite + PostgreSQL + MySQL.
 2. Docs + example for stable features.
 3. Extraction, not rewrite, of code that already passes tests.
 4. Generator safety (`go/ast`, idempotent, `--dry-run` / `--force`, no silent overwrite).

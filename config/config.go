@@ -4,14 +4,21 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 )
 
 const (
-	envAppName   = "GOMBIT_APP_NAME"
-	envEnv       = "GOMBIT_ENV"
-	envHTTPAddr  = "GOMBIT_HTTP_ADDR"
-	envAPIPrefix = "GOMBIT_API_PREFIX"
+	envAppName                 = "GOMBIT_APP_NAME"
+	envEnv                     = "GOMBIT_ENV"
+	envHTTPAddr                = "GOMBIT_HTTP_ADDR"
+	envAPIPrefix               = "GOMBIT_API_PREFIX"
+	envDatabaseDriver          = "GOMBIT_DATABASE_DRIVER"
+	envDatabaseDSN             = "GOMBIT_DATABASE_DSN"
+	envDatabaseMaxOpenConns    = "GOMBIT_DATABASE_MAX_OPEN_CONNS"
+	envDatabaseMaxIdleConns    = "GOMBIT_DATABASE_MAX_IDLE_CONNS"
+	envDatabaseConnMaxLifetime = "GOMBIT_DATABASE_CONN_MAX_LIFETIME"
 )
 
 // Environment is the runtime environment name.
@@ -32,6 +39,7 @@ type Config struct {
 	Environment Environment
 	HTTP        HTTPConfig
 	API         APIConfig
+	Database    DatabaseConfig
 }
 
 // HTTPConfig contains HTTP server configuration.
@@ -42,6 +50,27 @@ type HTTPConfig struct {
 // APIConfig contains public API configuration.
 type APIConfig struct {
 	Prefix string
+}
+
+// DatabaseDriver names a supported SQL database driver.
+type DatabaseDriver string
+
+const (
+	// DatabaseDriverSQLite selects the GORM SQLite dialector.
+	DatabaseDriverSQLite DatabaseDriver = "sqlite"
+	// DatabaseDriverPostgres selects the GORM PostgreSQL dialector.
+	DatabaseDriverPostgres DatabaseDriver = "postgres"
+	// DatabaseDriverMySQL selects the GORM MySQL dialector.
+	DatabaseDriverMySQL DatabaseDriver = "mysql"
+)
+
+// DatabaseConfig contains SQL database configuration consumed by database.Open.
+type DatabaseConfig struct {
+	Driver          DatabaseDriver
+	DSN             string
+	MaxOpenConns    int
+	MaxIdleConns    int
+	ConnMaxLifetime time.Duration
 }
 
 // EnvLookup reads an environment variable by name.
@@ -57,6 +86,10 @@ func Default() Config {
 		},
 		API: APIConfig{
 			Prefix: "/api/v1",
+		},
+		Database: DatabaseConfig{
+			Driver: DatabaseDriverSQLite,
+			DSN:    "file:gombit.db?cache=shared&_fk=1",
 		},
 	}
 }
@@ -78,8 +111,28 @@ func LoadFromEnv(lookup EnvLookup) (Config, error) {
 	applyString(lookup, envHTTPAddr, &cfg.HTTP.Addr)
 	applyString(lookup, envAPIPrefix, &cfg.API.Prefix)
 
+	var errs FieldErrors
+	applyDatabaseDriver(lookup, envDatabaseDriver, &cfg.Database.Driver)
+	applyString(lookup, envDatabaseDSN, &cfg.Database.DSN)
+	applyInt(lookup, envDatabaseMaxOpenConns, "Database.MaxOpenConns", &cfg.Database.MaxOpenConns, &errs)
+	applyInt(lookup, envDatabaseMaxIdleConns, "Database.MaxIdleConns", &cfg.Database.MaxIdleConns, &errs)
+	applyDuration(
+		lookup,
+		envDatabaseConnMaxLifetime,
+		"Database.ConnMaxLifetime",
+		&cfg.Database.ConnMaxLifetime,
+		&errs,
+	)
+
 	if err := cfg.Validate(); err != nil {
-		return Config{}, err
+		var fieldErrors FieldErrors
+		if !errors.As(err, &fieldErrors) {
+			return Config{}, err
+		}
+		errs = append(errs, fieldErrors...)
+	}
+	if len(errs) > 0 {
+		return Config{}, errs
 	}
 
 	return cfg, nil
@@ -127,11 +180,80 @@ func (c Config) Validate() error {
 		})
 	}
 
+	validateDatabaseConfig(&errs, c.Database)
+
 	if len(errs) > 0 {
 		return errs
 	}
 
 	return nil
+}
+
+// ValidateDatabase returns explicit field errors for invalid database settings.
+func ValidateDatabase(cfg DatabaseConfig) error {
+	var errs FieldErrors
+	validateDatabaseConfig(&errs, cfg)
+	if len(errs) > 0 {
+		return errs
+	}
+	return nil
+}
+
+func validateDatabaseConfig(errs *FieldErrors, cfg DatabaseConfig) {
+	switch cfg.Driver {
+	case DatabaseDriverSQLite, DatabaseDriverPostgres, DatabaseDriverMySQL:
+	default:
+		*errs = append(*errs, FieldError{
+			Field:   "Database.Driver",
+			Env:     envDatabaseDriver,
+			Value:   string(cfg.Driver),
+			Message: "must be one of sqlite, postgres, mysql",
+		})
+	}
+
+	if strings.TrimSpace(cfg.DSN) == "" {
+		*errs = append(*errs, FieldError{
+			Field:   "Database.DSN",
+			Env:     envDatabaseDSN,
+			Message: "must not be empty",
+		})
+	}
+
+	if cfg.MaxOpenConns < 0 {
+		*errs = append(*errs, FieldError{
+			Field:   "Database.MaxOpenConns",
+			Env:     envDatabaseMaxOpenConns,
+			Value:   strconv.Itoa(cfg.MaxOpenConns),
+			Message: "must be greater than or equal to zero",
+		})
+	}
+
+	if cfg.MaxIdleConns < 0 {
+		*errs = append(*errs, FieldError{
+			Field:   "Database.MaxIdleConns",
+			Env:     envDatabaseMaxIdleConns,
+			Value:   strconv.Itoa(cfg.MaxIdleConns),
+			Message: "must be greater than or equal to zero",
+		})
+	}
+
+	if cfg.MaxOpenConns != 0 && cfg.MaxIdleConns > cfg.MaxOpenConns {
+		*errs = append(*errs, FieldError{
+			Field:   "Database.MaxIdleConns",
+			Env:     envDatabaseMaxIdleConns,
+			Value:   strconv.Itoa(cfg.MaxIdleConns),
+			Message: "must be less than or equal to Database.MaxOpenConns",
+		})
+	}
+
+	if cfg.ConnMaxLifetime < 0 {
+		*errs = append(*errs, FieldError{
+			Field:   "Database.ConnMaxLifetime",
+			Env:     envDatabaseConnMaxLifetime,
+			Value:   cfg.ConnMaxLifetime.String(),
+			Message: "must be greater than or equal to zero",
+		})
+	}
 }
 
 func applyString(lookup EnvLookup, key string, dest *string) {
@@ -144,6 +266,48 @@ func applyEnvironment(lookup EnvLookup, key string, dest *Environment) {
 	if value, ok := lookup(key); ok {
 		*dest = Environment(strings.TrimSpace(value))
 	}
+}
+
+func applyDatabaseDriver(lookup EnvLookup, key string, dest *DatabaseDriver) {
+	if value, ok := lookup(key); ok {
+		*dest = DatabaseDriver(strings.TrimSpace(value))
+	}
+}
+
+func applyInt(lookup EnvLookup, key string, field string, dest *int, errs *FieldErrors) {
+	value, ok := lookup(key)
+	if !ok {
+		return
+	}
+	parsed, err := strconv.Atoi(strings.TrimSpace(value))
+	if err != nil {
+		*errs = append(*errs, FieldError{
+			Field:   field,
+			Env:     key,
+			Value:   value,
+			Message: "must be an integer",
+		})
+		return
+	}
+	*dest = parsed
+}
+
+func applyDuration(lookup EnvLookup, key string, field string, dest *time.Duration, errs *FieldErrors) {
+	value, ok := lookup(key)
+	if !ok {
+		return
+	}
+	parsed, err := time.ParseDuration(strings.TrimSpace(value))
+	if err != nil {
+		*errs = append(*errs, FieldError{
+			Field:   field,
+			Env:     key,
+			Value:   value,
+			Message: "must be a duration such as 30m or 1h",
+		})
+		return
+	}
+	*dest = parsed
 }
 
 // FieldError is one explicit configuration validation failure.

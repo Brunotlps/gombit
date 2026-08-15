@@ -12,6 +12,8 @@ runtime packages.
 - environment: `development`
 - HTTP address: `:8080`
 - API prefix: `/api/v1`
+- database driver: `sqlite`
+- database DSN: `file:gombit.db?cache=shared&_fk=1`
 
 ## Environment
 
@@ -24,18 +26,26 @@ configuration. The M1-1 boundary recognizes:
 | `GOMBIT_ENV` | `Config.Environment` | `development` |
 | `GOMBIT_HTTP_ADDR` | `Config.HTTP.Addr` | `:8080` |
 | `GOMBIT_API_PREFIX` | `Config.API.Prefix` | `/api/v1` |
+| `GOMBIT_DATABASE_DRIVER` | `Config.Database.Driver` | `sqlite` |
+| `GOMBIT_DATABASE_DSN` | `Config.Database.DSN` | `file:gombit.db?cache=shared&_fk=1` |
+| `GOMBIT_DATABASE_MAX_OPEN_CONNS` | `Config.Database.MaxOpenConns` | `0` |
+| `GOMBIT_DATABASE_MAX_IDLE_CONNS` | `Config.Database.MaxIdleConns` | `0` |
+| `GOMBIT_DATABASE_CONN_MAX_LIFETIME` | `Config.Database.ConnMaxLifetime` | `0` |
 
 `GOMBIT_ENV` accepts the exact lowercase values `development`, `test`, and
 `production`.
+`GOMBIT_DATABASE_DRIVER` accepts `sqlite`, `postgres`, and `mysql`.
+`GOMBIT_DATABASE_CONN_MAX_LIFETIME` uses Go duration syntax such as `30m` or
+`1h`.
 
 Validation returns `config.FieldErrors`, which names the typed field, the
 environment variable, the invalid value, and the validation message.
 
 Appendix C production checks, such as JWT secret strength, secure cookies,
-CORS credentials, debug Gin mode, database settings, and Redis settings, land
-with the features that introduce those typed fields. This boundary only
-validates the keys listed above. Future secret-bearing fields must not copy
-secret values into `FieldError.Value`.
+CORS credentials, debug Gin mode, and Redis settings land with the features
+that introduce those typed fields. Future secret-bearing fields must not copy
+secret values into `FieldError.Value`; `Config.Database.DSN` validation does
+not echo the DSN value.
 
 Runtime extraction work should accept `config.Config` values instead of calling
 `os.Getenv` or `os.LookupEnv` directly.
