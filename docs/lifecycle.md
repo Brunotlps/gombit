@@ -48,7 +48,7 @@ steps that need their own runtime surfaces.
 | --- | --- |
 | 1. config loading | Owned in M1-1/M1-2 through `config.Config` and `framework.New`. |
 | 2. logging initialization | Deferred to M1-6. |
-| 3. database connection | Deferred to M1-4. |
+| 3. database connection | Owned in M1-4 through `database.Open`; applications attach the opened handle with `framework.WithDatabase`. |
 | 4. migration state checks | Deferred to M2. |
 | 5. optional Redis/cache connection | Deferred to M1-5. |
 | 6. auth infrastructure | Deferred to M5. |

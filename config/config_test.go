@@ -5,6 +5,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestDefault(t *testing.T) {
@@ -22,6 +23,12 @@ func TestDefault(t *testing.T) {
 	if got.API.Prefix != "/api/v1" {
 		t.Fatalf("API.Prefix = %q, want %q", got.API.Prefix, "/api/v1")
 	}
+	if got.Database.Driver != DatabaseDriverSQLite {
+		t.Fatalf("Database.Driver = %q, want %q", got.Database.Driver, DatabaseDriverSQLite)
+	}
+	if got.Database.DSN != "file:gombit.db?cache=shared&_fk=1" {
+		t.Fatalf("Database.DSN = %q, want default sqlite DSN", got.Database.DSN)
+	}
 	if err := got.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v, want nil", err)
 	}
@@ -29,10 +36,15 @@ func TestDefault(t *testing.T) {
 
 func TestLoadFromEnv(t *testing.T) {
 	env := map[string]string{
-		envAppName:   " Example ",
-		envEnv:       " test ",
-		envHTTPAddr:  " 127.0.0.1:9000 ",
-		envAPIPrefix: " /api ",
+		envAppName:                 " Example ",
+		envEnv:                     " test ",
+		envHTTPAddr:                " 127.0.0.1:9000 ",
+		envAPIPrefix:               " /api ",
+		envDatabaseDriver:          " postgres ",
+		envDatabaseDSN:             " postgres://user:pass@localhost:5432/app?sslmode=disable ",
+		envDatabaseMaxOpenConns:    " 20 ",
+		envDatabaseMaxIdleConns:    " 4 ",
+		envDatabaseConnMaxLifetime: " 45m ",
 	}
 
 	got, err := LoadFromEnv(mapLookup(env))
@@ -48,6 +60,13 @@ func TestLoadFromEnv(t *testing.T) {
 		},
 		API: APIConfig{
 			Prefix: "/api",
+		},
+		Database: DatabaseConfig{
+			Driver:          DatabaseDriverPostgres,
+			DSN:             "postgres://user:pass@localhost:5432/app?sslmode=disable",
+			MaxOpenConns:    20,
+			MaxIdleConns:    4,
+			ConnMaxLifetime: 45 * time.Minute,
 		},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -71,6 +90,8 @@ func TestLoadUsesProcessEnvironment(t *testing.T) {
 	t.Setenv(envEnv, string(EnvironmentProduction))
 	t.Setenv(envHTTPAddr, ":9090")
 	t.Setenv(envAPIPrefix, "/api")
+	t.Setenv(envDatabaseDriver, string(DatabaseDriverMySQL))
+	t.Setenv(envDatabaseDSN, "user:pass@tcp(localhost:3306)/app?parseTime=true")
 
 	got, err := Load()
 	if err != nil {
@@ -85,6 +106,10 @@ func TestLoadUsesProcessEnvironment(t *testing.T) {
 		},
 		API: APIConfig{
 			Prefix: "/api",
+		},
+		Database: DatabaseConfig{
+			Driver: DatabaseDriverMySQL,
+			DSN:    "user:pass@tcp(localhost:3306)/app?parseTime=true",
 		},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -112,6 +137,13 @@ func TestValidateReportsExplicitFieldErrors(t *testing.T) {
 		API: APIConfig{
 			Prefix: "api",
 		},
+		Database: DatabaseConfig{
+			Driver:          "oracle",
+			DSN:             "",
+			MaxOpenConns:    -1,
+			MaxIdleConns:    2,
+			ConnMaxLifetime: -time.Second,
+		},
 	}
 
 	err := cfg.Validate()
@@ -134,13 +166,48 @@ func TestValidateReportsExplicitFieldErrors(t *testing.T) {
 		},
 		{Field: "HTTP.Addr", Env: envHTTPAddr, Value: "", Message: "must not be empty"},
 		{Field: "API.Prefix", Env: envAPIPrefix, Value: "api", Message: "must start with /"},
+		{
+			Field:   "Database.Driver",
+			Env:     envDatabaseDriver,
+			Value:   "oracle",
+			Message: "must be one of sqlite, postgres, mysql",
+		},
+		{Field: "Database.DSN", Env: envDatabaseDSN, Message: "must not be empty"},
+		{
+			Field:   "Database.MaxOpenConns",
+			Env:     envDatabaseMaxOpenConns,
+			Value:   "-1",
+			Message: "must be greater than or equal to zero",
+		},
+		{
+			Field:   "Database.MaxIdleConns",
+			Env:     envDatabaseMaxIdleConns,
+			Value:   "2",
+			Message: "must be less than or equal to Database.MaxOpenConns",
+		},
+		{
+			Field:   "Database.ConnMaxLifetime",
+			Env:     envDatabaseConnMaxLifetime,
+			Value:   "-1s",
+			Message: "must be greater than or equal to zero",
+		},
 	}
 	if !reflect.DeepEqual([]FieldError(fieldErrors), want) {
 		t.Fatalf("Validate() field errors = %#v, want %#v", []FieldError(fieldErrors), want)
 	}
 
 	message := err.Error()
-	for _, wantPart := range []string{envAppName, envEnv, envHTTPAddr, envAPIPrefix} {
+	for _, wantPart := range []string{
+		envAppName,
+		envEnv,
+		envHTTPAddr,
+		envAPIPrefix,
+		envDatabaseDriver,
+		envDatabaseDSN,
+		envDatabaseMaxOpenConns,
+		envDatabaseMaxIdleConns,
+		envDatabaseConnMaxLifetime,
+	} {
 		if !strings.Contains(message, wantPart) {
 			t.Fatalf("Validate() error = %q, want it to contain %q", message, wantPart)
 		}
@@ -154,6 +221,24 @@ func TestLoadFromEnvReturnsValidationErrors(t *testing.T) {
 	}))
 	if err == nil {
 		t.Fatal("LoadFromEnv() error = nil, want validation errors")
+	}
+
+	var fieldErrors FieldErrors
+	if !errors.As(err, &fieldErrors) {
+		t.Fatalf("LoadFromEnv() error type = %T, want FieldErrors", err)
+	}
+	if len(fieldErrors) != 2 {
+		t.Fatalf("LoadFromEnv() field error count = %d, want 2", len(fieldErrors))
+	}
+}
+
+func TestLoadFromEnvReturnsParseErrors(t *testing.T) {
+	_, err := LoadFromEnv(mapLookup(map[string]string{
+		envDatabaseMaxOpenConns:    "many",
+		envDatabaseConnMaxLifetime: "later",
+	}))
+	if err == nil {
+		t.Fatal("LoadFromEnv() error = nil, want parse errors")
 	}
 
 	var fieldErrors FieldErrors

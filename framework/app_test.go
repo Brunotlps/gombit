@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/LAA-Software-Engineering/gombit/config"
+	"github.com/LAA-Software-Engineering/gombit/database"
 	"github.com/gin-gonic/gin"
 )
 
@@ -190,10 +191,38 @@ func TestProductionConfigSetsGinReleaseMode(t *testing.T) {
 	}
 }
 
+func TestAppExposesDatabaseEscapeHatch(t *testing.T) {
+	db, err := database.Open(config.DatabaseConfig{
+		Driver: config.DatabaseDriverSQLite,
+		DSN:    "file::memory:?cache=shared&_fk=1",
+	})
+	if err != nil {
+		t.Fatalf("database.Open() error = %v, want nil", err)
+	}
+	t.Cleanup(func() {
+		if err := db.Close(); err != nil {
+			t.Fatalf("database.Close() error = %v, want nil", err)
+		}
+	})
+
+	app := newTestApp(t, WithDatabase(db))
+	if got := app.Database(); got != db {
+		t.Fatalf("Database() = %p, want %p", got, db)
+	}
+	if got := app.DB(); got != db.DB {
+		t.Fatalf("DB() = %p, want %p", got, db.DB)
+	}
+}
+
 func TestNewValidatesOptions(t *testing.T) {
 	_, err := New(WithShutdownTimeout(0))
 	if err == nil {
 		t.Fatal("New(WithShutdownTimeout(0)) error = nil, want error")
+	}
+
+	_, err = New(WithDatabase(nil))
+	if err == nil {
+		t.Fatal("New(WithDatabase(nil)) error = nil, want error")
 	}
 }
 
