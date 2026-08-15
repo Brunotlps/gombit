@@ -23,14 +23,44 @@ return framework.Run(app)
 
 Start hooks run in registration order. Stop hooks run in reverse registration
 order so cleanup unwinds deterministically. Stop hooks receive a bounded
-shutdown context; the default timeout is 10 seconds.
+shutdown context; the default timeout is 10 seconds. Stop hooks also run after
+a start-hook failure, so they must tolerate partial application startup and be
+safe to call when the resource they clean up was never initialized.
+
+`RunContext` binds the listener before start hooks run, which lets hooks read
+`App.Addr()` even when the configured HTTP address uses port `0`. The HTTP
+server starts serving only after all start hooks succeed.
 
 `App.Router()` exposes the underlying `*gin.Engine` as the raw Gin escape hatch
 required by ADR-011. Public API routes that belong in OpenAPI still need Huma
 typed handlers in later contract work.
 
-The M1-2 runtime owns the lifecycle skeleton from the design doc: typed config,
-HTTP server construction, basic runtime probes, signal handling, graceful
-shutdown, and dependency cleanup hooks. Database, migrations, cache, auth,
-observability, middleware parity, and embedded frontend mounting remain scoped
-to later backlog issues.
+The default router installs `gin.Recovery()` so panics in runtime probes or raw
+Gin escape-hatch handlers do not terminate the process. Production config sets
+Gin release mode before the default router is constructed.
+
+## Lifecycle Ownership
+
+M1-2 introduces the framework-owned skeleton. Later issues fill in the lifecycle
+steps that need their own runtime surfaces.
+
+| Step | Status |
+| --- | --- |
+| 1. config loading | Owned in M1-1/M1-2 through `config.Config` and `framework.New`. |
+| 2. logging initialization | Deferred to M1-6. |
+| 3. database connection | Deferred to M1-4. |
+| 4. migration state checks | Deferred to M2. |
+| 5. optional Redis/cache connection | Deferred to M1-5. |
+| 6. auth infrastructure | Deferred to M5. |
+| 7. tracing and metrics | Deferred to M1-7. |
+| 8. HTTP server construction | Owned in M1-2 through `framework.Run` and `RunContext`. |
+| 9. middleware installation | Recovery is owned in M1-2; full middleware parity is deferred to M1-3/M1-7. |
+| 10. module registration | Deferred to M1-3. |
+| 11. readiness/liveness endpoints | Basic raw Gin probes are owned in M1-2; DB/cache-aware readiness is deferred to M1-4/M1-5. |
+| 12. frontend static asset mounting when embedded | Deferred to M5-5. |
+| 13. signal handling | Owned in M1-2 through `framework.Run`. |
+| 14. graceful shutdown | Owned in M1-2 through bounded `http.Server.Shutdown`. |
+| 15. dependency cleanup | Owned in M1-2 through `OnStop`; concrete DB/cache/log sink cleanup lands with those features. |
+
+The current probes are raw Gin routes with D10-style success bodies. They must
+remain outside generated OpenAPI when Huma is mounted in later contract work.

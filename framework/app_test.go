@@ -3,6 +3,7 @@ package framework
 import (
 	"context"
 	"errors"
+	"io"
 	"net/http"
 	"reflect"
 	"sync"
@@ -143,6 +144,52 @@ func TestStopHooksReceiveBoundedShutdownContext(t *testing.T) {
 	}
 }
 
+func TestDefaultRouterRecoversFromPanics(t *testing.T) {
+	app := newTestApp(t)
+	app.Router().GET("/panic", func(c *gin.Context) {
+		panic("boom")
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	done := make(chan error, 1)
+	go func() {
+		done <- RunContext(ctx, app)
+	}()
+
+	waitForHTTP(t, app, "/livez")
+	resp := getHTTP(t, app, "/panic")
+	_, _ = io.Copy(io.Discard, resp.Body)
+	_ = resp.Body.Close()
+	if resp.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("GET /panic status = %d, want %d", resp.StatusCode, http.StatusInternalServerError)
+	}
+
+	cancel()
+	if err := waitRun(done); err != nil {
+		t.Fatalf("RunContext() error = %v, want nil", err)
+	}
+}
+
+func TestProductionConfigSetsGinReleaseMode(t *testing.T) {
+	previousMode := gin.Mode()
+	t.Cleanup(func() {
+		gin.SetMode(previousMode)
+	})
+
+	cfg := config.Default()
+	cfg.Environment = config.EnvironmentProduction
+	cfg.HTTP.Addr = "127.0.0.1:0"
+
+	_, err := New(WithConfig(cfg))
+	if err != nil {
+		t.Fatalf("New() error = %v, want nil", err)
+	}
+	if got := gin.Mode(); got != gin.ReleaseMode {
+		t.Fatalf("gin.Mode() = %q, want %q", got, gin.ReleaseMode)
+	}
+}
+
 func TestNewValidatesOptions(t *testing.T) {
 	_, err := New(WithShutdownTimeout(0))
 	if err == nil {
@@ -168,6 +215,7 @@ func newTestApp(t *testing.T, options ...Option) *App {
 func waitForHTTP(t *testing.T, app *App, path string) {
 	t.Helper()
 
+	client := &http.Client{Timeout: 100 * time.Millisecond}
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
 		addr := app.Addr()
@@ -176,7 +224,7 @@ func waitForHTTP(t *testing.T, app *App, path string) {
 			continue
 		}
 
-		resp, err := http.Get("http://" + addr + path)
+		resp, err := client.Get("http://" + addr + path)
 		if err == nil {
 			_ = resp.Body.Close()
 			if resp.StatusCode == http.StatusOK {
@@ -186,6 +234,28 @@ func waitForHTTP(t *testing.T, app *App, path string) {
 		time.Sleep(10 * time.Millisecond)
 	}
 	t.Fatalf("timed out waiting for %s on %s", path, app.Addr())
+}
+
+func getHTTP(t *testing.T, app *App, path string) *http.Response {
+	t.Helper()
+
+	client := &http.Client{Timeout: 100 * time.Millisecond}
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		addr := app.Addr()
+		if addr == "" {
+			time.Sleep(10 * time.Millisecond)
+			continue
+		}
+
+		resp, err := client.Get("http://" + addr + path)
+		if err == nil {
+			return resp
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s on %s", path, app.Addr())
+	return nil
 }
 
 func waitRun(done <-chan error) error {

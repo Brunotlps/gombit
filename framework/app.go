@@ -42,7 +42,6 @@ type App struct {
 func New(options ...Option) (*App, error) {
 	app := &App{
 		cfg:             config.Default(),
-		router:          newRouter(),
 		shutdownTimeout: defaultShutdownTimeout,
 	}
 
@@ -66,11 +65,12 @@ func New(options ...Option) (*App, error) {
 	if err := app.cfg.Validate(); err != nil {
 		return nil, err
 	}
-	if app.router == nil {
-		return nil, errors.New("framework: nil router")
-	}
 	if app.shutdownTimeout <= 0 {
 		return nil, errors.New("framework: shutdown timeout must be positive")
+	}
+	configureHTTPMode(app.cfg)
+	if app.router == nil {
+		app.router = newRouter()
 	}
 
 	return app, nil
@@ -285,6 +285,7 @@ func (a *App) runStopHooksWithContext(ctx context.Context) error {
 
 func newRouter() *gin.Engine {
 	router := gin.New()
+	router.Use(gin.Recovery())
 	router.GET("/livez", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"data": gin.H{
@@ -300,4 +301,10 @@ func newRouter() *gin.Engine {
 		})
 	})
 	return router
+}
+
+func configureHTTPMode(cfg config.Config) {
+	if cfg.Environment == config.EnvironmentProduction {
+		gin.SetMode(gin.ReleaseMode)
+	}
 }
