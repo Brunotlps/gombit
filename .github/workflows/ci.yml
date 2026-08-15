@@ -92,6 +92,27 @@ jobs:
           -database.mysql-dsn
           'gombit:gombit@tcp(127.0.0.1:3306)/gombit?parseTime=true'
 
+  migrations:
+    name: Migrations
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install Atlas Community Edition
+        run: curl -sSf https://atlasgo.sh | sh -s -- --community
+
+      - name: Run migration tests
+        env:
+          ATLAS_BINARY: atlas
+        run: go test ./migrations
+
   lint:
     name: Lint
     runs-on: ubuntu-latest

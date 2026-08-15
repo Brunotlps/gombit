@@ -28,3 +28,4 @@ Application-owned route registration is documented in [`docs/router.md`](docs/ro
 Database runtime support is documented in [`docs/database.md`](docs/database.md).
 Cache runtime support is documented in [`docs/cache.md`](docs/cache.md).
 Runtime logging is documented in [`docs/logging.md`](docs/logging.md).
+Migration generation is documented in [`docs/migrations.md`](docs/migrations.md).
