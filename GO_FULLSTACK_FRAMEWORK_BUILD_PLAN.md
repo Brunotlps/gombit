@@ -17,7 +17,7 @@
 4. §4 is the **issue backlog** — each entry maps 1:1 to a GitHub issue.
 5. §5 is the **agent working agreement** — the definition of done. Put this in `CONTRIBUTING.md` and reference it from every issue.
 
-Framework name is decided: **Gombit** (§2, D1). The one open item is picking the GitHub org/user for `<org>` in D2 before repo creation.
+Framework identity is fully decided: **Gombit**, `github.com/LAA-Software-Engineering/gombit`. Nothing left blocking repo creation — M0 issue #1 can be opened.
 
 ---
 
@@ -38,8 +38,8 @@ If any of C1–C6 is wrong for you, say which — each has a cluster of issues h
 
 ## 2. Locked decisions (closes original §57)
 
-- **D1 — Name: DECIDED — `Gombit`.** Module path `github.com/<org>/gombit`, CLI binary `gombit`. No longer blocking — pick the `<org>` (GitHub org/user) to finish D2 and open M0 issue #1.
-- **D2 — Repo/org:** New dedicated public repo named `gombit`, not a fork of the template. Org/user (`<org>` in D1's module path) still to pick. License **MIT** (matches existing repo). Governance: BDFL/solo for now.
+- **D1 — Name: DECIDED — `Gombit`.** Module path `github.com/LAA-Software-Engineering/gombit`, CLI binary `gombit`. Fully closed.
+- **D2 — Repo/org:** New dedicated public repo `LAA-Software-Engineering/gombit`, not a fork of the template. License **MIT** (matches existing repo). Governance: BDFL/solo for now.
 - **D3 — Migration representation:** **Wrap Atlas, don't hand-roll a DSL.** `gombit db makemigrations` invokes the Apache-2.0 `ariga.io/atlas-provider-gorm` (Program Mode, so it reads GORM models spread across feature-packages) + `atlas migrate diff` to generate **versioned SQL migrations from model changes** — Django's `makemigrations` for Go+GORM. `gombit db migrate` applies them. This **replaces** the earlier fluent `migration.Schema` builder. Same rationale as C1/Huma: don't build a diff engine that already exists (§55.4). Locked, pending the licensing check in the ADR (M2-0). Escape hatch: hand-written SQL/HCL migrations remain droppable into the migration dir.
 - **D4 — Migration metadata:** Track `version, name, batch, applied_at`. **No checksums** — they are near-useless for Go-source migrations (formatting/comments change the hash without changing schema). Locked.
 - **D5 — OpenAPI → TS toolchain:** Go side emits OpenAPI 3.1 via Huma. TS side uses **`openapi-typescript`** (types) + **`openapi-fetch`** (client). Both are low-magic and generation-only. Locked.
@@ -129,7 +129,7 @@ Milestones are dependency-ordered; do not start Mn+1 issues that depend on unfin
 
 ### M0 — Bootstrap + Contract Spike (the gate)
 
-- **[M0-1] Create repo, module path, CI skeleton** — new repo, `go.mod` with `github.com/<org>/gombit`, MIT license, golangci-lint, GitHub Actions running `go test ./...` + lint. AC: green CI on an empty package; branch protection on `main`. deps: D1. size: S. labels: `infra`.
+- **[M0-1] Create repo, module path, CI skeleton** — new repo, `go.mod` with `github.com/LAA-Software-Engineering/gombit`, MIT license, golangci-lint, GitHub Actions running `go test ./...` + lint. AC: green CI on an empty package; branch protection on `main`. deps: D1. size: S. labels: `infra`.
 - **[M0-2] Contract-layer spike: Huma over Gin** — wire Huma to a Gin engine; implement two handlers: one Huma-typed resource (`GET/POST /widgets`) that appears in the emitted OpenAPI, and one raw `*gin.Engine` route (`/raw/ping`) that does not. Emit `openapi.json`. AC: OpenAPI 3.1 validates; typed handler shows request/response schema; raw route works and is absent from the spec; a short latency benchmark vs plain Gin recorded. **This issue is a go/no-go gate.** deps: M0-1. size: M. labels: `spike`, `contract`.
 - **[M0-3] ADR-011: Contract layer = Huma** — record the decision, the escape-hatch pattern, and the benchmark. If M0-2 fails the escape-hatch test, this ADR instead records the fallback (bespoke `Bind` + emission) and M3 issues are rewritten. deps: M0-2. size: S. labels: `adr`.
 
@@ -242,7 +242,7 @@ Labels: `infra`, `runtime`, `config`, `lifecycle`, `http`, `database`, `cache`, 
 ## 7. Critical-path summary
 
 ```
-D2-org (pick GitHub org/user) → M0-1 → M0-2/M0-3 (Huma GATE) → M1 (extraction)
+M0-1 (github.com/LAA-Software-Engineering/gombit) → M0-2/M0-3 (Huma GATE) → M1 (extraction)
                                                   ↓
                               M2-0 (Atlas GATE) → M2 (migrations)
                                                   ↓
