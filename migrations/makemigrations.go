@@ -20,6 +20,7 @@ const (
 )
 
 var goIdentifierPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+var migrationNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
 
 // Model identifies one GORM model type imported by the generated Atlas loader.
 type Model struct {
@@ -79,6 +80,7 @@ func MakeMigrations(ctx context.Context, opts Options) error {
 	}
 
 	opts = withDefaults(opts)
+	opts.Name = strings.TrimSpace(opts.Name)
 	if err := validateOptions(opts); err != nil {
 		return err
 	}
@@ -173,6 +175,9 @@ func validateOptions(opts Options) error {
 	if strings.TrimSpace(opts.Name) == "" {
 		return errors.New("migrations: migration name is required")
 	}
+	if !migrationNamePattern.MatchString(opts.Name) {
+		return errors.New("migrations: migration name must contain only letters, numbers, underscores, or hyphens and must not start with a hyphen")
+	}
 	switch opts.Driver {
 	case config.DatabaseDriverSQLite, config.DatabaseDriverPostgres, config.DatabaseDriverMySQL:
 	default:
@@ -204,7 +209,7 @@ func atlasHCL(loaderRel string, migrationDir string, dev string) string {
     "go",
     "run",
     "-mod=mod",
-    "./%s",
+    %q,
   ]
 }
 
@@ -212,7 +217,7 @@ env "gombit" {
   src = data.external_schema.gorm.url
   dev = %q
   migration {
-    dir = "file://%s"
+    dir = %q
   }
   format {
     migrate {
@@ -220,7 +225,7 @@ env "gombit" {
     }
   }
 }
-`, filepath.ToSlash(loaderRel), dev, filepath.ToSlash(migrationDir))
+`, "./"+filepath.ToSlash(loaderRel), dev, "file://"+filepath.ToSlash(migrationDir))
 }
 
 func loaderSource(driver config.DatabaseDriver, models []Model) string {
