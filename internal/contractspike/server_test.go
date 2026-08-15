@@ -11,6 +11,8 @@ import (
 	"testing"
 
 	"github.com/gin-gonic/gin"
+	"github.com/pb33f/libopenapi"
+	openapivalidator "github.com/pb33f/libopenapi-validator"
 )
 
 func TestTypedWidgetRoutes(t *testing.T) {
@@ -95,6 +97,7 @@ func TestOpenAPI31IncludesTypedWidgetSchemas(t *testing.T) {
 	if !strings.HasPrefix(openapi, "3.1.") {
 		t.Fatalf("openapi = %q, want OpenAPI 3.1.x", openapi)
 	}
+	validateOpenAPI31Document(t, response.Body.Bytes())
 
 	paths := specObject[map[string]any](t, spec, "paths")
 	widgets := specObject[map[string]any](t, paths, "/widgets")
@@ -270,4 +273,23 @@ func jsonEqual(left, right []byte) bool {
 	}
 
 	return reflect.DeepEqual(leftValue, rightValue)
+}
+
+func validateOpenAPI31Document(t *testing.T, data []byte) {
+	t.Helper()
+
+	document, err := libopenapi.NewDocument(data)
+	if err != nil {
+		t.Fatalf("parse OpenAPI document: %v", err)
+	}
+
+	validator, validatorErrs := openapivalidator.NewValidator(document)
+	if len(validatorErrs) > 0 {
+		t.Fatalf("create OpenAPI validator: %v", validatorErrs)
+	}
+
+	valid, documentErrs := validator.ValidateDocument()
+	if !valid || len(documentErrs) > 0 {
+		t.Fatalf("validate OpenAPI 3.1 document: valid=%v errors=%v", valid, documentErrs)
+	}
 }
