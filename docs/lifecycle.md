@@ -47,7 +47,7 @@ steps that need their own runtime surfaces.
 | Step | Status |
 | --- | --- |
 | 1. config loading | Owned in M1-1/M1-2 through `config.Config` and `framework.New`. |
-| 2. logging initialization | Deferred to M1-6. |
+| 2. logging initialization | Owned in M1-6 through Zap-backed `logging.New`; Mongo sinks are external modules. |
 | 3. database connection | Owned in M1-4 through `database.Open`; applications open/close the handle and attach it with `framework.WithDatabase`. |
 | 4. migration state checks | Deferred to M2. |
 | 5. optional Redis/cache connection | Deferred to M1-5. |

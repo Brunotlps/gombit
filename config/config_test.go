@@ -29,6 +29,12 @@ func TestDefault(t *testing.T) {
 	if got.Database.DSN != "file:gombit.db?cache=shared&_fk=1" {
 		t.Fatalf("Database.DSN = %q, want default sqlite DSN", got.Database.DSN)
 	}
+	if got.Logging.Level != LogLevelInfo {
+		t.Fatalf("Logging.Level = %q, want %q", got.Logging.Level, LogLevelInfo)
+	}
+	if got.Logging.Sink != LogSinkStderr {
+		t.Fatalf("Logging.Sink = %q, want %q", got.Logging.Sink, LogSinkStderr)
+	}
 	if err := got.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v, want nil", err)
 	}
@@ -45,6 +51,8 @@ func TestLoadFromEnv(t *testing.T) {
 		envDatabaseMaxOpenConns:    " 20 ",
 		envDatabaseMaxIdleConns:    " 4 ",
 		envDatabaseConnMaxLifetime: " 45m ",
+		envLogLevel:                " debug ",
+		envLogSink:                 " stdout ",
 	}
 
 	got, err := LoadFromEnv(mapLookup(env))
@@ -67,6 +75,10 @@ func TestLoadFromEnv(t *testing.T) {
 			MaxOpenConns:    20,
 			MaxIdleConns:    4,
 			ConnMaxLifetime: 45 * time.Minute,
+		},
+		Logging: LoggingConfig{
+			Level: LogLevelDebug,
+			Sink:  LogSinkStdout,
 		},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -92,6 +104,8 @@ func TestLoadUsesProcessEnvironment(t *testing.T) {
 	t.Setenv(envAPIPrefix, "/api")
 	t.Setenv(envDatabaseDriver, string(DatabaseDriverMySQL))
 	t.Setenv(envDatabaseDSN, "gombit@tcp(localhost:3306)/app?parseTime=true")
+	t.Setenv(envLogLevel, string(LogLevelError))
+	t.Setenv(envLogSink, string(LogSinkMongo))
 
 	got, err := Load()
 	if err != nil {
@@ -110,6 +124,10 @@ func TestLoadUsesProcessEnvironment(t *testing.T) {
 		Database: DatabaseConfig{
 			Driver: DatabaseDriverMySQL,
 			DSN:    "gombit@tcp(localhost:3306)/app?parseTime=true",
+		},
+		Logging: LoggingConfig{
+			Level: LogLevelError,
+			Sink:  LogSinkMongo,
 		},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -143,6 +161,10 @@ func TestValidateReportsExplicitFieldErrors(t *testing.T) {
 			MaxOpenConns:    -1,
 			MaxIdleConns:    2,
 			ConnMaxLifetime: -time.Second,
+		},
+		Logging: LoggingConfig{
+			Level: "trace",
+			Sink:  "file",
 		},
 	}
 
@@ -191,6 +213,18 @@ func TestValidateReportsExplicitFieldErrors(t *testing.T) {
 			Value:   "-1s",
 			Message: "must be greater than or equal to zero",
 		},
+		{
+			Field:   "Logging.Level",
+			Env:     envLogLevel,
+			Value:   "trace",
+			Message: "must be one of debug, info, warn, error",
+		},
+		{
+			Field:   "Logging.Sink",
+			Env:     envLogSink,
+			Value:   "file",
+			Message: "must be one of stderr, stdout, mongo",
+		},
 	}
 	if !reflect.DeepEqual([]FieldError(fieldErrors), want) {
 		t.Fatalf("Validate() field errors = %#v, want %#v", []FieldError(fieldErrors), want)
@@ -207,6 +241,8 @@ func TestValidateReportsExplicitFieldErrors(t *testing.T) {
 		envDatabaseMaxOpenConns,
 		envDatabaseMaxIdleConns,
 		envDatabaseConnMaxLifetime,
+		envLogLevel,
+		envLogSink,
 	} {
 		if !strings.Contains(message, wantPart) {
 			t.Fatalf("Validate() error = %q, want it to contain %q", message, wantPart)

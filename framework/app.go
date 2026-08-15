@@ -14,7 +14,9 @@ import (
 
 	"github.com/LAA-Software-Engineering/gombit/config"
 	"github.com/LAA-Software-Engineering/gombit/database"
+	"github.com/LAA-Software-Engineering/gombit/logging"
 	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
 	"gorm.io/gorm"
 )
 
@@ -31,6 +33,7 @@ type App struct {
 	cfg             config.Config
 	cfgSet          bool
 	db              *database.DB
+	logger          *zap.Logger
 	router          *gin.Engine
 	startHooks      []Hook
 	stopHooks       []Hook
@@ -72,6 +75,13 @@ func New(options ...Option) (*App, error) {
 		return nil, errors.New("framework: shutdown timeout must be positive")
 	}
 	configureHTTPMode(app.cfg)
+	if app.logger == nil {
+		logger, err := logging.New(app.cfg.Logging)
+		if err != nil {
+			return nil, err
+		}
+		app.logger = logger
+	}
 	if app.router == nil {
 		app.router = newRouter()
 	}
@@ -98,6 +108,17 @@ func WithDatabase(db *database.DB) Option {
 			return errors.New("framework: nil database")
 		}
 		app.db = db
+		return nil
+	}
+}
+
+// WithLogger attaches a Zap logger to the app.
+func WithLogger(logger *zap.Logger) Option {
+	return func(app *App) error {
+		if logger == nil {
+			return errors.New("framework: nil logger")
+		}
+		app.logger = logger
 		return nil
 	}
 }
@@ -129,6 +150,13 @@ func (a *App) Config() config.Config {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.cfg
+}
+
+// Logger returns the app's Zap logger.
+func (a *App) Logger() *zap.Logger {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.logger
 }
 
 // Database returns the opened database handle with driver metadata.
