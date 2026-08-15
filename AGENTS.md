@@ -68,6 +68,10 @@ A change is not done unless:
 ## Working conventions
 
 - One issue → one PR where practical; reference the issue number in the PR.
+- Every PR must follow `.github/pull_request_template.md` (Summary, linked
+  issue, acceptance criteria, scope notes, validation commands, working
+  agreement checklist). Don't strip sections to shorten the PR body — mark
+  items N/A with a reason instead.
 - Conventional commit prefixes (`feat:`, `fix:`, `docs:`, `chore:`) are fine;
   the build plan doesn't mandate anything stricter.
 - Don't create milestones/labels beyond build plan §6, and don't create
