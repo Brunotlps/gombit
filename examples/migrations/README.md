@@ -40,4 +40,35 @@ gombit db rollback
 `migrate` wraps `atlas migrate apply` and records the applied versions in
 `framework_migrations` as one batch. `rollback` executes the latest batch's
 `downs/*.down.sql` files and clears both Gombit and Atlas revision rows for those
-versions. Seed/reset commands are tracked separately in M2-3.
+versions.
+
+## Seed and reset
+
+Add SQL seed files under `database/seeds/` (lexical order). This example includes
+[`database/seeds/01_demo.sql`](database/seeds/01_demo.sql):
+
+```sh
+# from the repository root, after configuring GOMBIT_DATABASE_* as above.
+# --dir points at the app migration directory (default/repo-root
+# database/migrations from makemigrations); --seeds can point at this example.
+gombit db seed --seeds examples/migrations/database/seeds
+gombit db reset --dir database/migrations --seeds examples/migrations/database/seeds
+```
+
+Or create seeds next to your app migrations:
+
+```sh
+mkdir -p database/seeds
+cat > database/seeds/01_demo.sql <<'SQL'
+-- Example seed. Adjust to match your migrated schema.
+-- INSERT INTO products (name) VALUES ('demo');
+SELECT 1;
+SQL
+
+gombit db seed
+gombit db reset
+```
+
+`seed` runs every `*.sql` file in `--seeds` (default `database/seeds`).
+`reset` drops the schema, migrates, then seeds. In production, pass `--force`
+to allow reset.

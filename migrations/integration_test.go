@@ -51,6 +51,34 @@ CREATE TABLE IF NOT EXISTS widgets (
 );`, `DROP TABLE IF EXISTS widgets;`)
 }
 
+func TestSeedResetPostgres(t *testing.T) {
+	if *postgresDSN == "" {
+		t.Skip("set -migrations.postgres-dsn to run Postgres migration integration tests")
+	}
+	runSeedResetRoundTrip(t, config.DatabaseConfig{
+		Driver: config.DatabaseDriverPostgres,
+		DSN:    *postgresDSN,
+	}, `
+CREATE TABLE IF NOT EXISTS widgets (
+  id BIGSERIAL PRIMARY KEY,
+  name TEXT NOT NULL
+);`, `INSERT INTO widgets (id, name) VALUES (1, 'seeded');`)
+}
+
+func TestSeedResetMySQL(t *testing.T) {
+	if *mysqlDSN == "" {
+		t.Skip("set -migrations.mysql-dsn to run MySQL migration integration tests")
+	}
+	runSeedResetRoundTrip(t, config.DatabaseConfig{
+		Driver: config.DatabaseDriverMySQL,
+		DSN:    *mysqlDSN,
+	}, `
+CREATE TABLE IF NOT EXISTS widgets (
+  id BIGINT AUTO_INCREMENT PRIMARY KEY,
+  name VARCHAR(255) NOT NULL
+);`, `INSERT INTO widgets (id, name) VALUES (1, 'seeded');`)
+}
+
 func runDriverRoundTrip(t *testing.T, cfg config.DatabaseConfig, upSQL string, downSQL string) {
 	t.Helper()
 
@@ -106,16 +134,81 @@ func runDriverRoundTrip(t *testing.T, cfg config.DatabaseConfig, upSQL string, d
 	}
 }
 
-func cleanupDriverDB(t *testing.T, cfg config.DatabaseConfig) {
+func runSeedResetRoundTrip(t *testing.T, cfg config.DatabaseConfig, upSQL string, seedSQL string) {
 	t.Helper()
+
+	workDir := t.TempDir()
+	migrationDir := filepath.Join(workDir, "database", "migrations")
+	seedDir := filepath.Join(workDir, "database", "seeds")
+	if err := os.MkdirAll(migrationDir, 0o750); err != nil {
+		t.Fatalf("mkdir migrations: %v", err)
+	}
+	if err := os.MkdirAll(seedDir, 0o750); err != nil {
+		t.Fatalf("mkdir seeds: %v", err)
+	}
+	writeFile(t, filepath.Join(migrationDir, "20260101000000_create_widgets.sql"), upSQL)
+	writeFile(t, filepath.Join(seedDir, "01_widgets.sql"), seedSQL)
+
+	cleanupDriverDB(t, cfg)
+	t.Cleanup(func() { cleanupDriverDB(t, cfg) })
+
+	runner := &sqlApplyRunner{t: t, cfg: cfg}
+	stdout := new(bytes.Buffer)
+	opts := ResetOptions{
+		ApplyOptions: ApplyOptions{
+			WorkDir:      workDir,
+			MigrationDir: "database/migrations",
+			Database:     cfg,
+			Stdout:       stdout,
+			Stderr:       io.Discard,
+			runner:       runner,
+			now:          func() time.Time { return time.Date(2026, 8, 15, 12, 0, 0, 0, time.UTC) },
+		},
+		SeedDir: "database/seeds",
+	}
+
+	if err := Reset(context.Background(), opts); err != nil {
+		t.Fatalf("Reset() error = %v", err)
+	}
+
 	db, err := database.Open(cfg)
 	if err != nil {
-		t.Fatalf("cleanup open: %v", err)
+		t.Fatalf("database.Open() error = %v", err)
 	}
 	defer func() { _ = db.Close() }()
-	_ = db.Migrator().DropTable("widgets")
-	_ = db.Migrator().DropTable(revisionsTable)
-	_ = db.Migrator().DropTable(atlasRevisionsTable)
+	if !db.Migrator().HasTable("widgets") {
+		t.Fatal("expected widgets after reset")
+	}
+	var name string
+	if err := db.Raw("SELECT name FROM widgets WHERE id = 1").Scan(&name).Error; err != nil {
+		t.Fatalf("select seeded row: %v", err)
+	}
+	if name != "seeded" {
+		t.Fatalf("name = %q, want seeded", name)
+	}
+
+	stdout.Reset()
+	if err := Reset(context.Background(), opts); err != nil {
+		t.Fatalf("Reset() second error = %v", err)
+	}
+	var count int64
+	if err := db.Table("widgets").Count(&count).Error; err != nil {
+		t.Fatalf("count widgets: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("widgets count = %d, want 1 after re-seed", count)
+	}
+}
+
+func cleanupDriverDB(t *testing.T, cfg config.DatabaseConfig) {
+	t.Helper()
+	if err := DropSchema(context.Background(), ApplyOptions{
+		Database: cfg,
+		Stdout:   io.Discard,
+		Stderr:   io.Discard,
+	}); err != nil {
+		t.Fatalf("cleanup DropSchema: %v", err)
+	}
 }
 
 type sqlApplyRunner struct {

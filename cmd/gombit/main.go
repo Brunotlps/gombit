@@ -43,6 +43,10 @@ func run(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer)
 		return runRollback(ctx, args[2:], stdout, stderr)
 	case "status":
 		return runStatus(ctx, args[2:], stdout, stderr)
+	case "seed":
+		return runSeed(ctx, args[2:], stdout, stderr)
+	case "reset":
+		return runReset(ctx, args[2:], stdout, stderr)
 	default:
 		dbUsage(stderr)
 		return fmt.Errorf("gombit db: unknown subcommand %q", args[1])
@@ -119,6 +123,67 @@ func runStatus(ctx context.Context, args []string, stdout io.Writer, stderr io.W
 	return migrations.Status(ctx, opts.withWriters(stdout, stderr))
 }
 
+func runSeed(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) error {
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+
+	flags := flag.NewFlagSet("gombit db seed", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	seedDir := flags.String("seeds", "database/seeds", "seed directory")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		flags.Usage()
+		return fmt.Errorf("gombit db seed: unexpected argument %q", flags.Arg(0))
+	}
+
+	return migrations.Seed(ctx, migrations.SeedOptions{
+		WorkDir:  ".",
+		SeedDir:  *seedDir,
+		Database: cfg.Database,
+		Stdout:   stdout,
+		Stderr:   stderr,
+	})
+}
+
+func runReset(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) error {
+	cfg, err := loadConfig()
+	if err != nil {
+		return err
+	}
+
+	flags := flag.NewFlagSet("gombit db reset", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	migrationDir := flags.String("dir", "database/migrations", "migration directory")
+	seedDir := flags.String("seeds", "database/seeds", "seed directory")
+	atlasBin := flags.String("atlas-bin", "atlas", "Atlas CLI binary path")
+	force := flags.Bool("force", false, "allow reset when GOMBIT_ENV=production")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		flags.Usage()
+		return fmt.Errorf("gombit db reset: unexpected argument %q", flags.Arg(0))
+	}
+
+	return migrations.Reset(ctx, migrations.ResetOptions{
+		ApplyOptions: migrations.ApplyOptions{
+			WorkDir:      ".",
+			MigrationDir: *migrationDir,
+			AtlasBinary:  *atlasBin,
+			Database:     cfg.Database,
+			Stdout:       stdout,
+			Stderr:       stderr,
+		},
+		SeedDir:     *seedDir,
+		Force:       *force,
+		Environment: cfg.Environment,
+	})
+}
+
 type applyFlagValues struct {
 	opts migrations.ApplyOptions
 }
@@ -177,4 +242,6 @@ func dbUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  migrate [--dir database/migrations] [--atlas-bin atlas]")
 	_, _ = fmt.Fprintln(w, "  rollback [--dir database/migrations]")
 	_, _ = fmt.Fprintln(w, "  status [--dir database/migrations] [--atlas-bin atlas]")
+	_, _ = fmt.Fprintln(w, "  seed [--seeds database/seeds]")
+	_, _ = fmt.Fprintln(w, "  reset [--dir database/migrations] [--seeds database/seeds] [--atlas-bin atlas] [--force]")
 }
