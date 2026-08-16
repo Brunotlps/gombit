@@ -25,6 +25,7 @@ Accepted architecture decisions are recorded under [`docs/adr/`](docs/adr/).
 Runtime configuration is documented in [`docs/config.md`](docs/config.md).
 Application lifecycle is documented in [`docs/lifecycle.md`](docs/lifecycle.md).
 Application-owned route registration is documented in [`docs/router.md`](docs/router.md).
+Huma DTO and validation conventions are documented in [`docs/contract.md`](docs/contract.md).
 Database runtime support is documented in [`docs/database.md`](docs/database.md).
 Cache runtime support is documented in [`docs/cache.md`](docs/cache.md).
 Runtime logging is documented in [`docs/logging.md`](docs/logging.md).

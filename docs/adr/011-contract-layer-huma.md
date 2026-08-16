@@ -67,10 +67,12 @@ OpenAPI 3.1 emission without a custom contract framework.
 - Raw Gin routes must remain tested as an escape hatch and must not silently
   leak into the OpenAPI document.
 - The current spike `openapi.json` includes Huma's default RFC 9457 Problem
-  Details error schema. That is not the Gombit public error contract. M3-1 and
-  M3-2 remain responsible for mapping validation and application errors to the
-  locked D10 envelope. The `fields` member is optional and should appear only
-  when field-level details exist:
+  Details error schema. That is not the Gombit public error contract. **M3-1
+  replaces validation (and other Huma-generated) errors with the locked D10
+  envelope** via `contract.Install` / `framework.App.API()` — see
+  [`docs/contract.md`](../contract.md). M3-2 still owns application error
+  categories and the category→status mapping table. The `fields` member is
+  optional and should appear only when field-level details exist:
 
 ```json
 {"error":{"code":"...","message":"...","fields":{},"request_id":"..."}}
