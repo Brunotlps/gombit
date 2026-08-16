@@ -61,8 +61,30 @@ Recovery
 XSS sanitization is a fundamental security default (M1-8): response headers
 alone are not enough. The runtime strips HTML tags from JSON string fields
 (POST/PUT/PATCH) and GET query values using a first-party sanitizer built on
-`golang.org/x/net/html`. Fields named `password` are left unchanged. Invalid
-JSON is passed through so Gin/Huma can return normal validation errors.
+`golang.org/x/net/html`.
+
+**Why first-party (not the template wrapper):** the template's
+`pkg/middleware/xss.go` is a thin wrapper around
+`gin-gonic-xss-middleware` (Bluemonday). M1-8 keeps the *behavior*
+(strip HTML tags from request input before handlers) but does not take that
+Gin wrapper or Bluemonday as a dependency — both were rejected for hygiene
+(stale/unmaintained surface). The framework owns a small sanitizer on
+`golang.org/x/net/html`, which was already in the module graph. This is an
+intentional, documented divergence from extract-preserve for that one package.
+
+Other behavior notes:
+
+- The `password` exemption is an **exact, case-sensitive** JSON/query key
+  match (`password` only). `Password` and other casings are still sanitized.
+- Invalid JSON is passed through so Gin/Huma can return normal validation
+  errors.
+- Non-JSON bodies (form/multipart) are not sanitized in v0.1; the public API
+  path is JSON/Huma. Form/multipart coverage can land before browser/admin
+  session work if needed.
+- Sanitization re-marshals JSON, so key order and whitespace may change.
+  Callers that hash the raw body must hash the bytes handlers actually see.
+- Unclosed dangerous elements (for example a truncated `<script>...`) discard
+  the remainder of the string (fail-closed).
 
 Canonical design order (draft §13.3) also includes CORS, body-size limit, rate
 limiting, and auth context. Those remain deferred; when body-size lands it

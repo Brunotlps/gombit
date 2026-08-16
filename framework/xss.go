@@ -6,12 +6,15 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"strconv"
 	"strings"
 
 	"github.com/gin-gonic/gin"
 	"golang.org/x/net/html"
 )
 
+// xssPasswordField is exempt from sanitization (exact JSON/query key match,
+// case-sensitive). Keys like "Password" or nested paths still get stripped.
 const xssPasswordField = "password"
 
 // Elements whose text content must not reach handlers (matched to HTML
@@ -29,8 +32,11 @@ var xssSkipElementContent = map[string]struct{}{
 
 // xssMiddleware sanitizes HTML tags from request input before handlers run.
 // JSON string values (POST/PUT/PATCH) and GET query values are stripped to
-// plain text via golang.org/x/net/html. Fields named "password" are left
-// unchanged.
+// plain text via golang.org/x/net/html. The exact key "password" is left
+// unchanged. Non-JSON bodies (form/multipart) pass through unchanged.
+//
+// Re-encoding JSON may change key order and whitespace; callers that hash
+// the raw body must hash the sanitized bytes handlers actually receive.
 func xssMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		switch c.Request.Method {
@@ -100,6 +106,7 @@ func sanitizeJSONBody(c *gin.Context) {
 	}
 	c.Request.Body = io.NopCloser(bytes.NewReader(cleaned))
 	c.Request.ContentLength = int64(len(cleaned))
+	c.Request.Header.Set("Content-Length", strconv.FormatInt(int64(len(cleaned)), 10))
 }
 
 func isJSONContentType(contentType string) bool {
@@ -144,6 +151,10 @@ func sanitizeJSONValue(value any, fieldName string) {
 
 // stripHTML removes HTML tags and discards content inside dangerous elements.
 // Plain strings without "<" or ">" are returned unchanged.
+//
+// An unclosed skip element (for example `<script src=x>...`) discards the
+// remainder of the string — fail-closed for truncated markup. Self-closing
+// skip tags do not enter skip mode.
 func stripHTML(s string) string {
 	if !strings.ContainsAny(s, "<>") {
 		return s
@@ -166,6 +177,8 @@ func stripHTML(s string) string {
 			if _, skip := xssSkipElementContent[string(name)]; skip {
 				skipDepth++
 			}
+		case html.SelfClosingTagToken:
+			// Self-closing skip tags have no body; do not raise skipDepth.
 		case html.EndTagToken:
 			name, _ := tokenizer.TagName()
 			if _, skip := xssSkipElementContent[string(name)]; skip && skipDepth > 0 {

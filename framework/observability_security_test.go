@@ -476,3 +476,25 @@ func TestDefaultRouterLeavesPasswordFieldUnsanitized(t *testing.T) {
 		t.Fatalf("note = %q, want %q", body["note"], "hi")
 	}
 }
+
+func TestDefaultRouterSanitizesXSSInQuery(t *testing.T) {
+	app := newTestApp(t)
+	app.Router().GET("/search", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"q": c.Query("q")})
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, "/search?q=<script>x</script>hi", nil)
+	app.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /search status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v; body: %s", err, rec.Body.String())
+	}
+	if body["q"] != "hi" {
+		t.Fatalf("q = %q, want %q", body["q"], "hi")
+	}
+}
