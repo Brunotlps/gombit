@@ -207,7 +207,7 @@ func validateOptions(opts Options) error {
 }
 
 func (execRunner) Run(ctx context.Context, dir string, name string, args []string, stdout io.Writer, stderr io.Writer) error {
-	// #nosec G204 -- makemigrations intentionally executes the configured Atlas CLI binary.
+	// #nosec G204,G702 -- migrations intentionally executes the configured Atlas CLI binary.
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Dir = dir
 	cmd.Stdout = stdout

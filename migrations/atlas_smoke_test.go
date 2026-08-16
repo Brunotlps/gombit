@@ -3,6 +3,7 @@ package migrations
 import (
 	"bytes"
 	"context"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -33,12 +34,15 @@ func TestMigrateStatusRollbackAtlasCLISQLiteWhenAvailable(t *testing.T) {
 	writeFile(t, filepath.Join(migrationDir, "20260101000000_create_widgets.down.sql"),
 		"DROP TABLE IF EXISTS `widgets`;\n")
 
-	// #nosec G204 -- smoke test runs the Atlas CLI from ATLAS_BINARY or PATH.
-	// #nosec G204 -- smoke test intentionally runs the configured Atlas CLI binary.
-	hash := exec.Command(atlasBin, "migrate", "hash", "--dir", "file://"+filepath.ToSlash(migrationDir))
-	hash.Dir = workDir
-	if out, err := hash.CombinedOutput(); err != nil {
-		t.Fatalf("atlas migrate hash: %v\n%s", err, out)
+	hashArgs := []string{
+		"migrate",
+		"hash",
+		"--dir",
+		"file://" + filepath.ToSlash(migrationDir),
+	}
+	var hashErr bytes.Buffer
+	if err := (execRunner{}).Run(context.Background(), workDir, atlasBin, hashArgs, io.Discard, &hashErr); err != nil {
+		t.Fatalf("atlas migrate hash: %v\n%s", err, hashErr.String())
 	}
 
 	dbPath := filepath.Join(workDir, "app.db")
