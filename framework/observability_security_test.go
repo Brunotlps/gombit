@@ -452,12 +452,12 @@ func TestDefaultRouterLeavesPasswordFieldUnsanitized(t *testing.T) {
 		})
 	})
 
-	const password = `<b>secret</b>`
+	const rawMarkup = `<b>secret</b>`
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(
 		http.MethodPost,
 		"/login",
-		strings.NewReader(`{"password":"`+password+`","note":"<i>hi</i>"}`),
+		strings.NewReader(`{"password":"`+rawMarkup+`","note":"<i>hi</i>"}`),
 	)
 	req.Header.Set("Content-Type", "application/json")
 	app.Router().ServeHTTP(rec, req)
@@ -469,8 +469,8 @@ func TestDefaultRouterLeavesPasswordFieldUnsanitized(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("unmarshal response: %v; body: %s", err, rec.Body.String())
 	}
-	if body["password"] != password {
-		t.Fatalf("password = %q, want unsanitized %q", body["password"], password)
+	if body["password"] != rawMarkup {
+		t.Fatalf("password = %q, want unsanitized %q", body["password"], rawMarkup)
 	}
 	if body["note"] != "hi" {
 		t.Fatalf("note = %q, want %q", body["note"], "hi")
