@@ -24,10 +24,28 @@ func registerPingRoutes(router *gin.Engine) {
 }
 
 // registerEchoRoutes stands in for a second, independent feature package.
+// The default XSS middleware strips HTML tags from JSON string fields before
+// this handler runs, so the echoed comment is the sanitized value.
 func registerEchoRoutes(router *gin.Engine) {
 	echo := router.Group("/echo")
 	echo.POST("", func(c *gin.Context) {
-		c.JSON(http.StatusOK, gin.H{"data": gin.H{"status": "ok"}})
+		var body struct {
+			Comment string `json:"comment"`
+		}
+		if err := c.ShouldBindJSON(&body); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{
+				"error": gin.H{
+					"code":    "invalid_json",
+					"message": "request body must be JSON with a comment field",
+				},
+			})
+			return
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"data": gin.H{
+				"comment": body.Comment,
+			},
+		})
 	})
 }
 

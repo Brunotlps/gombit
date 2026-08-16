@@ -11,6 +11,7 @@ require (
 	github.com/redis/go-redis/v9 v9.22.0
 	github.com/shopspring/decimal v1.4.0
 	go.uber.org/zap v1.28.0
+	golang.org/x/net v0.57.0
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/driver/postgres v1.6.2
 	gorm.io/driver/sqlite v1.6.0
@@ -107,7 +108,6 @@ require (
 	go.yaml.in/yaml/v4 v4.0.0-rc.6 // indirect
 	golang.org/x/arch v0.29.0 // indirect
 	golang.org/x/crypto v0.54.0 // indirect
-	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/oauth2 v0.30.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect

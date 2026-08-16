@@ -504,6 +504,7 @@ func runtimeMiddlewareStack(cfg config.Config, metrics *httpMetrics) []namedMidd
 			name:    "security_headers",
 			handler: securityHeadersMiddleware(cfg.Environment == config.EnvironmentProduction),
 		},
+		{name: "xss", handler: xssMiddleware()},
 		{name: "request_timeout", handler: requestTimeoutMiddleware(cfg.HTTP.RequestTimeout)},
 	}
 }
