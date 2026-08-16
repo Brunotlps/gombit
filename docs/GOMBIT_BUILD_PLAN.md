@@ -63,7 +63,7 @@ The Go handler is the source of truth **via Huma typed handlers**, not comments 
 ```
 Huma-typed handler (input/output structs, validated)
         ↓  (Huma emits)
-OpenAPI 3.1 document  (served at /openapi.json, written by `gombit openapi generate`)
+OpenAPI 3.1 document  (served at /openapi.json; interactive docs at /docs; written by `gombit openapi generate`)
         ↓  (openapi-typescript)
 TypeScript types
         ↓  (openapi-fetch, thin generated wrapper)
@@ -145,6 +145,7 @@ One issue per seam. Each must keep the existing tests green (see §5).
 - **[M1-5] Normalize cache interface** — replace the go-redis-leaking interface with `Get/Set/Delete/Increment` value semantics; memory + redis + noop drivers; `app.Redis()` escape hatch when redis is enabled. AC: rate limiter and cache users compile against new interface; memory driver used in tests. deps: M1-1. size: M. labels: `runtime`, `cache`.
 - **[M1-6] Optional Mongo log sink** — Zap stays; Mongo becomes a selectable sink/module, not a runtime dependency; default sink stdout/stderr. AC: app boots and logs with Mongo absent. deps: M1-1. size: S. labels: `runtime`, `logging`.
 - **[M1-7] Preserve observability + security tests** — carry over metrics, tracing, probes, request-id/timeout, security headers, trusted-proxy tests into the runtime package. AC: parity test suite green. deps: M1-2. size: M. labels: `runtime`, `tests`.
+- **[M1-8] XSS HTML sanitization middleware** — extract/preserve the template's request-input XSS middleware (HTML-tag sanitization) into the runtime default stack after body-size limit and before handlers; document it as a fundamental security default (headers alone are not enough). AC: markup/script payloads in request fields are sanitized before handlers see them; middleware order tested; docs + example coverage. deps: M1-7. size: S. labels: `runtime`, `http`, `security`, `tests`.
 
 **M1 exit gate:** a minimal example app boots through the runtime with no example-domain code in the runtime, on SQLite, Postgres, and MySQL, all extracted tests green.
 
@@ -160,14 +161,14 @@ One issue per seam. Each must keep the existing tests green (see §5).
 
 - **[M3-1] Huma DTO + validation conventions** — request/response struct conventions, validation tags → D10 error envelope with `fields`. AC: invalid request returns structured field errors. deps: M0-3, M1-3. size: M. labels: `contract`, `http`.
 - **[M3-2] Response envelope + error mapping** — `{data, meta}` / `{error{code,message,fields,request_id}}`; error categories (draft §41) mapped centrally. AC: envelope covered by tests; category→status mapping table tested. deps: M3-1. size: M. labels: `contract`.
-- **[M3-3] OpenAPI emission + `gombit openapi generate`** — serve `/openapi.json`; CLI writes it to disk. AC: spec validates; matches live routes. deps: M3-1. size: S. labels: `cli`, `contract`.
+- **[M3-3] OpenAPI emission + `gombit openapi generate`** — serve `/openapi.json` and a FastAPI-style interactive docs UI at `/docs` by default (local/dev; production may disable/protect); CLI writes the spec to disk. AC: spec validates; matches live routes; `/docs` try-it-out works; raw Gin routes absent from spec/docs. deps: M3-1. size: S. labels: `cli`, `contract`.
 - **[M3-4] TS types + client generation + `gombit client generate`** — `openapi-typescript` + `openapi-fetch` wrapper; typed errors map to the D10 envelope. AC: generated client compiles against a sample spec. deps: M3-3, D5. size: M. labels: `cli`, `frontend`, `contract`.
 - **[M3-5] Contract drift check in CI** — regenerate spec + client; fail if the working tree changes. AC: intentional server change without regen fails CI. deps: M3-4. size: S. labels: `ci`, `contract`.
 
 ### M4 — CLI + generators
 
 - **[M4-1] `gombit new`** — adopt Cobra (D13 / ADR-014) as the `gombit` command tree; migrate existing `db` subcommands onto Cobra; interactive + non-interactive scaffold; DB/cache/auth/UI flags; feature-package layout (§3.2); `gombit.yaml`, `.env.example` splitting server vs `VITE_*` public values. AC: root help lists command families; `gombit db …` still works via Cobra; `gombit new demo --database sqlite` produces a compiling app. deps: M1 exit, M2, M3. size: L. labels: `cli`, `generator`.
-- **[M4-2] `gombit dev`** — Go reload (air/watchexec), Vite, `/api` proxy, OpenAPI watch→regenerate, service table. AC: one command runs backend+frontend with HMR and live contract regen. deps: M4-1. size: L. labels: `cli`, `devx`.
+- **[M4-2] `gombit dev`** — Go reload (air/watchexec), Vite, `/api` proxy, OpenAPI watch→regenerate, service table (includes `/openapi.json` and `/docs`). AC: one command runs backend+frontend with HMR and live contract regen; service table prints API docs URL. deps: M4-1. size: L. labels: `cli`, `devx`.
 - **[M4-3] `gombit make resource` (AST-safe)** — generates model, Huma handler (thin over GORM), routes, migration, and frontend pages/forms/table; registers routes via `go/ast`; idempotent; `--dry-run`/`--force`; `--service`/`--repo` opt-in (C6). AC: generated resource works backend→frontend with no manual type duplication; re-run doesn't clobber edits. deps: M4-1, M3-4. size: L. labels: `cli`, `generator`.
 - **[M4-4] Introspection: `gombit routes`, `gombit doctor`, `gombit config show`** — routes table; doctor checks (Go/Node, config, DB/Redis connectivity, migration status, ports, insecure prod settings). AC: doctor flags a deliberately-broken config. deps: M4-1. size: M. labels: `cli`, `devx`.
 - **[M4-5] Generator golden tests** — for each generator: run against a fixture, diff against golden, compile backend, typecheck frontend, verify idempotency. AC: golden suite green in CI. deps: M4-3. size: M. labels: `tests`, `generator`.
