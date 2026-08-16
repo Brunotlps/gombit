@@ -1,6 +1,6 @@
 # Migrations
 
-M2-1 introduces `gombit db makemigrations`, a thin wrapper around Atlas
+M2 introduces `gombit db` migration commands as a thin wrapper around Atlas
 versioned migrations and `ariga.io/atlas-provider-gorm` Program Mode. Gombit
 does not define its own migration DSL.
 
@@ -54,9 +54,82 @@ exits without writing a new migration.
 Migration names may contain letters, numbers, underscores, and hyphens, and
 must not start with a hyphen.
 
+## Apply / Status / Rollback
+
+M2-2 adds apply, status, and rollback. These commands read the configured
+database from `config.Load()` (`GOMBIT_DATABASE_DRIVER` / `GOMBIT_DATABASE_DSN`)
+and the migration directory (default `database/migrations`).
+
+```sh
+gombit db migrate [--dir database/migrations] [--atlas-bin atlas]
+gombit db status  [--dir database/migrations] [--atlas-bin atlas]
+gombit db rollback [--dir database/migrations]
+```
+
+### Apply
+
+`gombit db migrate`:
+
+1. Ensures the Gombit revision table `framework_migrations` exists.
+2. Runs Atlas Community Edition `atlas migrate apply --url ... --dir file://...`.
+3. Mirrors newly applied versions into `framework_migrations` as one batch:
+   `version`, `name`, `batch`, `applied_at` (no checksum; D4).
+
+If nothing is pending relative to `framework_migrations`, migrate prints
+`No pending migrations.` and does not invoke Atlas apply.
+
+### Status
+
+`gombit db status` prints Gombit applied/pending rows from the migration
+directory plus `framework_migrations`, then runs `atlas migrate status` for
+Atlas bookkeeping.
+
+### Rollback
+
+Rollback is Gombit-owned and does **not** wrap `atlas migrate down` (that
+command is outside Atlas Community Edition).
+
+`gombit db rollback` rolls back the **latest batch** only:
+
+1. Loads the highest `batch` from `framework_migrations`.
+2. Requires a companion down file for every version in that batch.
+3. Executes those down files in reverse version order.
+4. Deletes matching rows from `framework_migrations` and
+   `atlas_schema_revisions` so a later `gombit db migrate` can re-apply.
+
+### Down files
+
+Atlas writes up migrations such as:
+
+```text
+20260101000000_create_products.sql
+```
+
+Gombit expects an application-owned companion for rollback:
+
+```text
+20260101000000_create_products.down.sql
+```
+
+If any down file in the latest batch is missing, rollback fails before
+executing any down SQL.
+
+## Revision metadata
+
+| Column | Notes |
+| --- | --- |
+| `version` | Atlas migration version prefix |
+| `name` | Migration name suffix |
+| `batch` | Incremented once per successful migrate that applies files |
+| `applied_at` | UTC timestamp when the batch was recorded |
+
+Atlas may still maintain `atlas.sum` and `atlas_schema_revisions` for apply
+integrity. That is separate from D4: Gombit does not store checksums in
+`framework_migrations`.
+
 ## Drivers
 
-`--driver` accepts the supported v0.1 database drivers:
+`--driver` (makemigrations) accepts the supported v0.1 database drivers:
 
 | Driver | Atlas dev database |
 | --- | --- |
@@ -66,6 +139,9 @@ must not start with a hyphen.
 
 SQLite runs without Docker. PostgreSQL and MySQL use Atlas dev-database Docker
 URLs, so Docker must be available when generating those migrations.
+
+Apply/status convert the configured GORM DSN into an Atlas `--url` for the
+same three drivers.
 
 ## Model Registration
 

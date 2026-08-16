@@ -1,0 +1,7 @@
+# Local Go tooling caches (never commit)
+.gocache/
+.gomodcache/
+.tmp/
+
+# Atlas / makemigrations scratch
+.gombit/
