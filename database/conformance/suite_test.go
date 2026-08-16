@@ -62,27 +62,33 @@ func TestConformanceSuite(t *testing.T) {
 		if err := db.Create(&item).Error; err != nil {
 			t.Fatalf("Create: %v", err)
 		}
-		if item.CreatedAt.IsZero() || item.UpdatedAt.IsZero() {
-			t.Fatalf("timestamps not set: created=%v updated=%v", item.CreatedAt, item.UpdatedAt)
+		// Reload so CreatedAt/UpdatedAt match driver storage precision
+		// (Postgres timestamptz drops Go's nanosecond remainder).
+		var before models.Item
+		if err := db.First(&before, item.ID).Error; err != nil {
+			t.Fatalf("First after create: %v", err)
 		}
-		createdAt := item.CreatedAt
-		updatedAt := item.UpdatedAt
+		if before.CreatedAt.IsZero() || before.UpdatedAt.IsZero() {
+			t.Fatalf("timestamps not set: created=%v updated=%v", before.CreatedAt, before.UpdatedAt)
+		}
+		createdAt := before.CreatedAt
+		updatedAt := before.UpdatedAt
 		// MySQL DATETIME is second-precision by default; wait past one second so
 		// GORM's auto UpdatedAt is guaranteed to advance on every driver.
 		time.Sleep(1100 * time.Millisecond)
-		item.Name = "timestamps-updated"
-		if err := db.Save(&item).Error; err != nil {
+		before.Name = "timestamps-updated"
+		if err := db.Save(&before).Error; err != nil {
 			t.Fatalf("Save: %v", err)
 		}
-		var reloaded models.Item
-		if err := db.First(&reloaded, item.ID).Error; err != nil {
+		var after models.Item
+		if err := db.First(&after, before.ID).Error; err != nil {
 			t.Fatalf("First after update: %v", err)
 		}
-		if !reloaded.CreatedAt.Equal(createdAt) {
-			t.Fatalf("CreatedAt changed: got %v want %v", reloaded.CreatedAt, createdAt)
+		if !after.CreatedAt.Equal(createdAt) {
+			t.Fatalf("CreatedAt changed: got %v want %v", after.CreatedAt, createdAt)
 		}
-		if !reloaded.UpdatedAt.After(updatedAt) {
-			t.Fatalf("UpdatedAt not bumped: before=%v after=%v", updatedAt, reloaded.UpdatedAt)
+		if !after.UpdatedAt.After(updatedAt) {
+			t.Fatalf("UpdatedAt not bumped: before=%v after=%v", updatedAt, after.UpdatedAt)
 		}
 	})
 
