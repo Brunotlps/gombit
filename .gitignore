@@ -1,7 +1,70 @@
-# Local Go tooling caches (never commit)
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+/bin/
+/dist/
+/build/
+
+# Go workspace / module tooling
+vendor/
 .gocache/
 .gomodcache/
 .tmp/
+*.coverprofile
+coverage.out
+coverage.html
+profile.out
+cpu.prof
+mem.prof
+
+# Secrets and local env (keep *.example tracked)
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Local databases and runtime data
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+*.sqlite
+*.sqlite3
 
 # Atlas / makemigrations scratch
 .gombit/
+
+# Node / frontend (future Vite apps)
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+.next/
+.vite/
+*.tsbuildinfo
+
+# IDE / editors
+.idea/
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json.example
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Logs and temp
+*.log
+tmp/
+temp/
