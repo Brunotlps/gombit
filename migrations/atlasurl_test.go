@@ -33,33 +33,33 @@ func TestAtlasURL(t *testing.T) {
 			name: "postgres url",
 			cfg: config.DatabaseConfig{
 				Driver: config.DatabaseDriverPostgres,
-				DSN:    "postgres://gombit:gombit@127.0.0.1:5432/gombit?sslmode=disable",
+				DSN:    "postgres://gombit:gombit@127.0.0.1:5432/gombit?sslmode=disable", // #nosec G101 -- fake local test DSN.
 			},
-			want: "postgres://gombit:gombit@127.0.0.1:5432/gombit?sslmode=disable",
+			want: "postgres://gombit:gombit@127.0.0.1:5432/gombit?sslmode=disable", // #nosec G101 -- fake local test DSN.
 		},
 		{
 			name: "postgres key value",
 			cfg: config.DatabaseConfig{
 				Driver: config.DatabaseDriverPostgres,
-				DSN:    "host=localhost user=gombit password=secret dbname=app sslmode=disable",
+				DSN:    "host=localhost user=gombit password=secret dbname=app sslmode=disable", // #nosec G101 -- fake local test DSN.
 			},
-			want: "postgres://gombit:secret@localhost:5432/app?sslmode=disable",
+			want: "postgres://gombit:secret@localhost:5432/app?sslmode=disable", // #nosec G101 -- fake local test DSN.
 		},
 		{
 			name: "mysql tcp",
 			cfg: config.DatabaseConfig{
 				Driver: config.DatabaseDriverMySQL,
-				DSN:    "gombit:gombit@tcp(127.0.0.1:3306)/gombit?parseTime=true",
+				DSN:    "gombit:gombit@tcp(127.0.0.1:3306)/gombit?parseTime=true", // #nosec G101 -- fake local test DSN.
 			},
-			want: "mysql://gombit:gombit@127.0.0.1:3306/gombit?parseTime=true",
+			want: "mysql://gombit:gombit@127.0.0.1:3306/gombit?parseTime=true", // #nosec G101 -- fake local test DSN.
 		},
 		{
 			name: "mysql already atlas",
 			cfg: config.DatabaseConfig{
 				Driver: config.DatabaseDriverMySQL,
-				DSN:    "mysql://gombit:gombit@127.0.0.1:3306/gombit",
+				DSN:    "mysql://gombit:gombit@127.0.0.1:3306/gombit", // #nosec G101 -- fake local test DSN.
 			},
-			want: "mysql://gombit:gombit@127.0.0.1:3306/gombit",
+			want: "mysql://gombit:gombit@127.0.0.1:3306/gombit", // #nosec G101 -- fake local test DSN.
 		},
 		{
 			name: "mysql unsupported",
