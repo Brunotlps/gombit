@@ -71,7 +71,10 @@ gombit db rollback [--dir database/migrations]
 `gombit db migrate`:
 
 1. Ensures the Gombit revision table `framework_migrations` exists.
-2. Runs Atlas Community Edition `atlas migrate apply --url ... --dir file://...`.
+2. Runs Atlas Community Edition
+   `atlas migrate apply --url ... --dir file://... --allow-dirty`.
+   `--allow-dirty` is required because Gombit creates `framework_migrations`
+   before apply, and real apps already have schema tables.
 3. Records into `framework_migrations` only the pending versions that appear in
    `atlas_schema_revisions` after apply (`version`, `name`, `batch`,
    `applied_at`; no checksum; D4). This keeps the Gombit ledger aligned with

@@ -134,6 +134,8 @@ func Migrate(ctx context.Context, opts ApplyOptions) error {
 		atlasURL,
 		"--dir",
 		"file://" + filepath.ToSlash(migrationDir),
+		// framework_migrations (and later app tables) make the DB non-empty before Atlas runs.
+		"--allow-dirty",
 	}
 	if err := opts.runner.Run(ctx, absWorkDir, opts.AtlasBinary, args, opts.Stdout, opts.Stderr); err != nil {
 		return fmt.Errorf("migrations: atlas migrate apply: %w", err)
