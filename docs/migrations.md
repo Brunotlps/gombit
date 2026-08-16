@@ -246,3 +246,10 @@ gombit db makemigrations create_products \
 This explicit list is the Program Mode equivalent of importing each feature
 package and passing concrete model values to Atlas. It avoids runtime
 reflection discovery and keeps the loader reviewable.
+
+## Multi-DB Conformance
+
+M2-4 gates official SQLite / PostgreSQL / MySQL support with a conformance
+matrix that applies Atlas-generated migrations and exercises CRUD, transactions,
+timestamps, nullable/unique/index columns, decimal, pagination, and migrate
+up/down. See [`docs/database.md`](database.md#conformance-m2-4).

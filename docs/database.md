@@ -73,11 +73,52 @@ Appendix C hardening work.
 ## Integration Tests
 
 The default unit suite exercises SQLite without external services. Postgres and
-MySQL conformance can be run with the `integration` build tag and explicit DSN
-flags:
+MySQL open round-trips can be run with the `integration` build tag and explicit
+DSN flags:
 
 ```sh
 go test -tags integration ./database \
   -database.postgres-dsn 'postgres://gombit:gombit@127.0.0.1:5432/gombit?sslmode=disable' \
   -database.mysql-dsn 'gombit:gombit@tcp(127.0.0.1:3306)/gombit?parseTime=true'
 ```
+
+## Conformance (M2-4)
+
+Official multi-DB support is gated by the conformance suite under
+`database/conformance`. It generates a versioned migration with
+`migrations.MakeMigrations` (Atlas Community Edition), applies it with
+`migrations.Migrate`, then asserts portable behavior on each driver:
+
+- migrate up / migrate down (Gombit-owned companion downs)
+- timestamps, nullable columns, unique constraints, indexes
+- decimal round-trip
+- CRUD, transactions, pagination (`Offset` / `Limit`)
+
+The suite uses the `conformance` build tag so default `go test ./...` stays
+offline. Install Atlas Community Edition and set `ATLAS_BINARY` (or have
+`atlas` on `PATH`). Postgres and MySQL makemigrations also need Docker for
+Atlas `docker://` dev databases.
+
+SQLite (temp file DSN when `-conformance.dsn` is empty):
+
+```sh
+go test -tags conformance ./database/conformance \
+  -conformance.driver sqlite -count=1
+```
+
+Postgres / MySQL:
+
+```sh
+go test -tags conformance ./database/conformance \
+  -conformance.driver postgres \
+  -conformance.dsn 'postgres://gombit:gombit@127.0.0.1:5432/gombit?sslmode=disable' \
+  -count=1
+
+go test -tags conformance ./database/conformance \
+  -conformance.driver mysql \
+  -conformance.dsn 'gombit:gombit@tcp(127.0.0.1:3306)/gombit?parseTime=true' \
+  -count=1
+```
+
+CI runs the same matrix in `.github/workflows/ci.yml` (`Conformance (sqlite|postgres|mysql)`).
+See also [`docs/migrations.md`](migrations.md) for the Atlas migration workflow.
