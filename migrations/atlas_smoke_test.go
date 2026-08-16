@@ -33,6 +33,8 @@ func TestMigrateStatusRollbackAtlasCLISQLiteWhenAvailable(t *testing.T) {
 	writeFile(t, filepath.Join(migrationDir, "20260101000000_create_widgets.down.sql"),
 		"DROP TABLE IF EXISTS `widgets`;\n")
 
+	// #nosec G204 -- smoke test runs the Atlas CLI from ATLAS_BINARY or PATH.
+	// #nosec G204 -- smoke test intentionally runs the configured Atlas CLI binary.
 	hash := exec.Command(atlasBin, "migrate", "hash", "--dir", "file://"+filepath.ToSlash(migrationDir))
 	hash.Dir = workDir
 	if out, err := hash.CombinedOutput(); err != nil {
