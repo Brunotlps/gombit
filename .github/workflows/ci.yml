@@ -9,7 +9,7 @@ on:
 permissions:
   contents: read
 
-# Pipeline: lint → build → test → (database ∥ migrations)
+# Pipeline: lint → build → test → (database ∥ migrations ∥ conformance)
 jobs:
   lint:
     name: Lint
@@ -239,3 +239,111 @@ jobs:
           go test -tags integration ./migrations
           -migrations.mysql-dsn
           'gombit:gombit@tcp(127.0.0.1:3306)/gombit?parseTime=true'
+
+  conformance-sqlite:
+    name: Conformance (sqlite)
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install Atlas Community Edition
+        run: curl -sSf https://atlasgo.sh | sh -s -- --community
+
+      - name: Run SQLite conformance suite
+        env:
+          ATLAS_BINARY: atlas
+        run: >-
+          go test -tags conformance ./database/conformance
+          -conformance.driver sqlite
+          -count=1
+
+  conformance-postgres:
+    name: Conformance (postgres)
+    needs: test
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: gombit
+          POSTGRES_PASSWORD: gombit
+          POSTGRES_DB: gombit
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gombit -d gombit"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install Atlas Community Edition
+        run: curl -sSf https://atlasgo.sh | sh -s -- --community
+
+      - name: Run Postgres conformance suite
+        env:
+          ATLAS_BINARY: atlas
+        run: >-
+          go test -tags conformance ./database/conformance
+          -conformance.driver postgres
+          -conformance.dsn
+          'postgres://gombit:gombit@127.0.0.1:5432/gombit?sslmode=disable'
+          -count=1
+
+  conformance-mysql:
+    name: Conformance (mysql)
+    needs: test
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: gombit
+          MYSQL_USER: gombit
+          MYSQL_PASSWORD: gombit
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -ugombit -pgombit"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install Atlas Community Edition
+        run: curl -sSf https://atlasgo.sh | sh -s -- --community
+
+      - name: Run MySQL conformance suite
+        env:
+          ATLAS_BINARY: atlas
+        run: >-
+          go test -tags conformance ./database/conformance
+          -conformance.driver mysql
+          -conformance.dsn
+          'gombit:gombit@tcp(127.0.0.1:3306)/gombit?parseTime=true'
+          -count=1

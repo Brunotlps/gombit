@@ -9,6 +9,7 @@ require (
 	github.com/pb33f/libopenapi v0.38.7
 	github.com/pb33f/libopenapi-validator v0.14.0
 	github.com/redis/go-redis/v9 v9.22.0
+	github.com/shopspring/decimal v1.4.0
 	go.uber.org/zap v1.28.0
 	gorm.io/driver/mysql v1.6.0
 	gorm.io/driver/postgres v1.6.2

@@ -87,6 +87,7 @@ func Status(ctx context.Context, opts ApplyOptions) error {
 		"--dir",
 		"file://" + filepath.ToSlash(migrationDir),
 	}
+	args = withAtlasRevisionsSchema(opts.Database.Driver, args)
 	if err := opts.runner.Run(ctx, absWorkDir, opts.AtlasBinary, args, opts.Stdout, opts.Stderr); err != nil {
 		return fmt.Errorf("migrations: atlas migrate status: %w", err)
 	}

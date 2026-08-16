@@ -72,7 +72,10 @@ gombit db rollback [--dir database/migrations]
 
 1. Ensures the Gombit revision table `framework_migrations` exists.
 2. Runs Atlas Community Edition
-   `atlas migrate apply --url ... --dir file://... --allow-dirty`.
+   `atlas migrate apply --url ... --dir file://... --allow-dirty`
+   (PostgreSQL also passes `--revisions-schema public` so
+   `atlas_schema_revisions` is a table in `public`, matching Gombit's ledger
+   sync; Atlas's default dedicated revisions schema is not used).
    `--allow-dirty` is required because Gombit creates `framework_migrations`
    before apply, and real apps already have schema tables.
 3. Records into `framework_migrations` only the pending versions that appear in
@@ -246,3 +249,10 @@ gombit db makemigrations create_products \
 This explicit list is the Program Mode equivalent of importing each feature
 package and passing concrete model values to Atlas. It avoids runtime
 reflection discovery and keeps the loader reviewable.
+
+## Multi-DB Conformance
+
+M2-4 gates official SQLite / PostgreSQL / MySQL support with a conformance
+matrix that applies Atlas-generated migrations and exercises CRUD, transactions,
+timestamps, nullable/unique/index columns, decimal, pagination, and migrate
+up/down. See [`docs/database.md`](database.md#conformance-m2-4).

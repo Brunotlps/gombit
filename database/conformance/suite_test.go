@@ -1,0 +1,283 @@
+//go:build conformance
+
+package conformance_test
+
+import (
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/LAA-Software-Engineering/gombit/database"
+	"github.com/LAA-Software-Engineering/gombit/database/conformance/models"
+	"github.com/shopspring/decimal"
+	"gorm.io/gorm"
+)
+
+func TestConformanceSuite(t *testing.T) {
+	h := newHarness(t)
+	db := h.openDB()
+
+	t.Run("migrate_up", func(t *testing.T) {
+		if !db.Migrator().HasTable(&models.Item{}) {
+			t.Fatal("expected items table after Atlas migrate apply")
+		}
+		if !db.Migrator().HasTable("framework_migrations") {
+			t.Fatal("expected framework_migrations after migrate")
+		}
+		if !db.Migrator().HasTable("atlas_schema_revisions") {
+			t.Fatal("expected atlas_schema_revisions after Atlas apply")
+		}
+	})
+
+	t.Run("indexes", func(t *testing.T) {
+		indexes, err := db.Migrator().GetIndexes(&models.Item{})
+		if err != nil {
+			t.Fatalf("GetIndexes: %v", err)
+		}
+		var hasUniqueCode, hasNameIndex bool
+		for _, idx := range indexes {
+			cols := idx.Columns()
+			unique, _ := idx.Unique()
+			if len(cols) == 1 && cols[0] == "code" && unique {
+				hasUniqueCode = true
+			}
+			if len(cols) == 1 && cols[0] == "name" {
+				hasNameIndex = true
+			}
+		}
+		if !hasUniqueCode {
+			t.Fatalf("expected unique index on code; indexes=%#v", indexes)
+		}
+		if !hasNameIndex {
+			t.Fatalf("expected index on name; indexes=%#v", indexes)
+		}
+	})
+
+	t.Run("timestamps", func(t *testing.T) {
+		item := models.Item{
+			Code:  "ts-1",
+			Name:  "timestamps",
+			Price: decimal.RequireFromString("1.0000"),
+		}
+		if err := db.Create(&item).Error; err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		// Reload so CreatedAt/UpdatedAt match driver storage precision
+		// (Postgres timestamptz drops Go's nanosecond remainder).
+		var before models.Item
+		if err := db.First(&before, item.ID).Error; err != nil {
+			t.Fatalf("First after create: %v", err)
+		}
+		if before.CreatedAt.IsZero() || before.UpdatedAt.IsZero() {
+			t.Fatalf("timestamps not set: created=%v updated=%v", before.CreatedAt, before.UpdatedAt)
+		}
+		createdAt := before.CreatedAt
+		updatedAt := before.UpdatedAt
+		// MySQL DATETIME is second-precision by default; wait past one second so
+		// GORM's auto UpdatedAt is guaranteed to advance on every driver.
+		time.Sleep(1100 * time.Millisecond)
+		before.Name = "timestamps-updated"
+		if err := db.Save(&before).Error; err != nil {
+			t.Fatalf("Save: %v", err)
+		}
+		var after models.Item
+		if err := db.First(&after, before.ID).Error; err != nil {
+			t.Fatalf("First after update: %v", err)
+		}
+		if !after.CreatedAt.Equal(createdAt) {
+			t.Fatalf("CreatedAt changed: got %v want %v", after.CreatedAt, createdAt)
+		}
+		if !after.UpdatedAt.After(updatedAt) {
+			t.Fatalf("UpdatedAt not bumped: before=%v after=%v", updatedAt, after.UpdatedAt)
+		}
+	})
+
+	t.Run("nullable", func(t *testing.T) {
+		nullItem := models.Item{
+			Code:  "null-1",
+			Name:  "nullable-null",
+			Price: decimal.RequireFromString("2.5000"),
+		}
+		if err := db.Create(&nullItem).Error; err != nil {
+			t.Fatalf("Create null notes: %v", err)
+		}
+		var loaded models.Item
+		if err := db.First(&loaded, nullItem.ID).Error; err != nil {
+			t.Fatalf("First: %v", err)
+		}
+		if loaded.Notes != nil {
+			t.Fatalf("Notes = %v, want nil", loaded.Notes)
+		}
+
+		note := "hello"
+		withNotes := models.Item{
+			Code:  "null-2",
+			Name:  "nullable-set",
+			Notes: &note,
+			Price: decimal.RequireFromString("3.2500"),
+		}
+		if err := db.Create(&withNotes).Error; err != nil {
+			t.Fatalf("Create with notes: %v", err)
+		}
+		loaded = models.Item{}
+		if err := db.First(&loaded, withNotes.ID).Error; err != nil {
+			t.Fatalf("First with notes: %v", err)
+		}
+		if loaded.Notes == nil || *loaded.Notes != note {
+			t.Fatalf("Notes = %v, want %q", loaded.Notes, note)
+		}
+	})
+
+	t.Run("unique", func(t *testing.T) {
+		first := models.Item{
+			Code:  "unique-1",
+			Name:  "unique-a",
+			Price: decimal.RequireFromString("4.0000"),
+		}
+		if err := db.Create(&first).Error; err != nil {
+			t.Fatalf("Create first: %v", err)
+		}
+		dup := models.Item{
+			Code:  "unique-1",
+			Name:  "unique-b",
+			Price: decimal.RequireFromString("5.0000"),
+		}
+		if err := db.Create(&dup).Error; err == nil {
+			t.Fatal("Create duplicate unique code error = nil, want error")
+		}
+	})
+
+	t.Run("decimal", func(t *testing.T) {
+		want := decimal.RequireFromString("19.9900")
+		item := models.Item{
+			Code:  "dec-1",
+			Name:  "decimal",
+			Price: want,
+		}
+		if err := db.Create(&item).Error; err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		var loaded models.Item
+		if err := db.First(&loaded, item.ID).Error; err != nil {
+			t.Fatalf("First: %v", err)
+		}
+		if !loaded.Price.Equal(want) {
+			t.Fatalf("Price = %s, want %s", loaded.Price.StringFixed(4), want.StringFixed(4))
+		}
+	})
+
+	t.Run("crud", func(t *testing.T) {
+		item := models.Item{
+			Code:  "crud-1",
+			Name:  "create",
+			Price: decimal.RequireFromString("10.0000"),
+		}
+		if err := db.Create(&item).Error; err != nil {
+			t.Fatalf("Create: %v", err)
+		}
+		var loaded models.Item
+		if err := db.First(&loaded, "code = ?", "crud-1").Error; err != nil {
+			t.Fatalf("Read: %v", err)
+		}
+		loaded.Name = "updated"
+		if err := db.Save(&loaded).Error; err != nil {
+			t.Fatalf("Update: %v", err)
+		}
+		if err := db.Delete(&loaded).Error; err != nil {
+			t.Fatalf("Delete: %v", err)
+		}
+		var soft models.Item
+		if err := db.First(&soft, loaded.ID).Error; err == nil {
+			t.Fatal("soft-deleted row still visible to default First")
+		}
+		if err := db.Unscoped().First(&soft, loaded.ID).Error; err != nil {
+			t.Fatalf("Unscoped First after soft delete: %v", err)
+		}
+		if !soft.DeletedAt.Valid {
+			t.Fatal("DeletedAt not set after Delete")
+		}
+	})
+
+	t.Run("tx", func(t *testing.T) {
+		err := db.Transaction(func(tx *gorm.DB) error {
+			return tx.Create(&models.Item{
+				Code:  "tx-commit",
+				Name:  "commit",
+				Price: decimal.RequireFromString("11.0000"),
+			}).Error
+		})
+		if err != nil {
+			t.Fatalf("commit tx: %v", err)
+		}
+		var count int64
+		if err := db.Model(&models.Item{}).Where("code = ?", "tx-commit").Count(&count).Error; err != nil {
+			t.Fatalf("Count committed: %v", err)
+		}
+		if count != 1 {
+			t.Fatalf("committed count = %d, want 1", count)
+		}
+
+		err = db.Transaction(func(tx *gorm.DB) error {
+			if err := tx.Create(&models.Item{
+				Code:  "tx-rollback",
+				Name:  "rollback",
+				Price: decimal.RequireFromString("12.0000"),
+			}).Error; err != nil {
+				return err
+			}
+			return errors.New("force rollback")
+		})
+		if err == nil {
+			t.Fatal("rollback tx error = nil, want error")
+		}
+		count = 0
+		if err := db.Model(&models.Item{}).Where("code = ?", "tx-rollback").Count(&count).Error; err != nil {
+			t.Fatalf("Count rolled back: %v", err)
+		}
+		if count != 0 {
+			t.Fatalf("rolled-back count = %d, want 0", count)
+		}
+	})
+
+	t.Run("pagination", func(t *testing.T) {
+		for i := 1; i <= 5; i++ {
+			item := models.Item{
+				Code:  "page-" + decimal.NewFromInt(int64(i)).String(),
+				Name:  "page",
+				Price: decimal.NewFromInt(int64(i)),
+			}
+			if err := db.Create(&item).Error; err != nil {
+				t.Fatalf("Create page item %d: %v", i, err)
+			}
+		}
+		var page []models.Item
+		if err := db.Where("name = ?", "page").Order("code asc").Offset(2).Limit(2).Find(&page).Error; err != nil {
+			t.Fatalf("Find page: %v", err)
+		}
+		if len(page) != 2 {
+			t.Fatalf("page len = %d, want 2", len(page))
+		}
+		if page[0].Code != "page-3" || page[1].Code != "page-4" {
+			t.Fatalf("page codes = [%s, %s], want [page-3, page-4]", page[0].Code, page[1].Code)
+		}
+	})
+
+	t.Run("migrate_down", func(t *testing.T) {
+		h.rollback()
+		check, err := database.Open(h.cfg)
+		if err != nil {
+			t.Fatalf("reopen after rollback: %v", err)
+		}
+		defer func() { _ = check.Close() }()
+		if check.Migrator().HasTable(&models.Item{}) {
+			t.Fatal("items table should be gone after rollback")
+		}
+		var revCount int64
+		if err := check.Table("framework_migrations").Count(&revCount).Error; err != nil {
+			t.Fatalf("count framework_migrations: %v", err)
+		}
+		if revCount != 0 {
+			t.Fatalf("framework_migrations count = %d, want 0", revCount)
+		}
+	})
+}
