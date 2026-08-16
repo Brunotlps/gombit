@@ -55,6 +55,8 @@ Recovery
     -> feature handler
 ```
 
+Canonical design order (draft §13.3) also includes CORS, body-size limit, **XSS HTML-tag sanitization of request input**, rate limiting, and auth context. XSS sanitization is a fundamental security default and is owned by **M1-8**; it is not yet installed on the default router.
+
 Request IDs use the `X-Request-Id` header. If the caller provides one, the
 runtime preserves it; otherwise it generates one and stores it on both Gin's
 context and `c.Request.Context()` for downstream code:
@@ -82,7 +84,8 @@ headers and uses the direct TCP peer.
 `framework.WithRouter` is the custom-router escape hatch. When an application
 passes its own `*gin.Engine`, Gombit applies trusted-proxy configuration only;
 the application owns recovery, request ID, trace context, metrics, security
-headers, and timeout middleware for that router.
+headers, timeout, and (once M1-8 lands) XSS HTML sanitization middleware for
+that router.
 
 `framework/router_test.go`'s `TestDefaultRouterMountsOnlyFrameworkEndpoints`
 and `TestApplicationOwnedRouteRegistrationComposesIndependently` cover this;
@@ -91,12 +94,13 @@ Recovery still applying to an application-registered route.
 
 ## What is not here yet
 
-This surface does not include CORS, rate limiting, or authentication
-middleware. Those are extracted with their own runtime dependencies in later
-issues:
+This surface does not include CORS, rate limiting, XSS HTML sanitization, or
+authentication middleware. Those are extracted with their own runtime
+dependencies in later issues:
 
 - rate limiting and the cache interface: M1-5
 - Mongo-backed access logging: M1-6
+- XSS HTML-tag sanitization of request input: M1-8
 - auth middleware: M5
 
 Until then, an application that needs one of these can add it directly via

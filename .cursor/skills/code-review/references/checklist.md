@@ -52,7 +52,7 @@ Walk only the sections that the diff touches.
 - [ ] Cookie mode uses HttpOnly / Secure / SameSite + CSRF
 - [ ] `X-API-Key` is not enabled by default for browser apps
 - [ ] Production validation still fails loud for draft Appendix C cases
-- [ ] Middleware order preserved if the HTTP stack moved (recovery → request ID → tracing → access log → proxy/IP → security headers → CORS → body limit → timeout → rate limit → auth → app → handler)
+- [ ] Middleware order preserved if the HTTP stack moved (recovery → request ID → tracing → access log → proxy/IP → security headers → CORS → body limit → XSS HTML sanitization → timeout → rate limit → auth → app → handler)
 
 ## Go idiom (when Go exists)
 
@@ -66,5 +66,5 @@ Walk only the sections that the diff touches.
 ## Extraction discipline
 
 - [ ] Existing tests from the template still pass
-- [ ] Contracts (JWT/RBAC, request ID, timeouts, rate limit, security headers, metrics, probes, graceful shutdown) were moved, not rewritten
+- [ ] Contracts (JWT/RBAC, request ID, timeouts, rate limit, security headers, XSS HTML sanitization, metrics, probes, graceful shutdown) were moved, not rewritten
 - [ ] If a "small extraction" became a rewrite, the review must block and ask for a discussion issue

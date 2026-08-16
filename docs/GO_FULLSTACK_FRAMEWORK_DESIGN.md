@@ -34,7 +34,7 @@ The framework will provide a blessed path for ordinary database-backed web appli
 
 The project starts from two existing assets:
 
-1. **`golang-rest-api-template`**, which already contains a substantial production-oriented Go backend foundation: Gin, GORM/PostgreSQL, JWT authentication, RBAC, Redis-backed rate limiting/cache, Swagger/OpenAPI, Prometheus metrics, OpenTelemetry tracing, request IDs/timeouts, security middleware, health probes, MongoDB access logging, Docker, unit tests, and E2E tests.
+1. **`golang-rest-api-template`**, which already contains a substantial production-oriented Go backend foundation: Gin, GORM/PostgreSQL, JWT authentication, RBAC, Redis-backed rate limiting/cache, Swagger/OpenAPI, Prometheus metrics, OpenTelemetry tracing, request IDs/timeouts, security middleware (including XSS HTML-tag sanitization of request input), health probes, MongoDB access logging, Docker, unit tests, and E2E tests.
 2. **`crud-template-monorepo`**, which already proves the full-stack composition of a Go/Gin backend with a React/TypeScript frontend, protected routes, CRUD screens, forms, Axios integration, and authentication.
 
 The principal engineering task is therefore **extraction, generalization, convention design, code generation, and developer tooling** rather than greenfield implementation of every primitive.
@@ -95,6 +95,7 @@ The current backend template already includes:
 - request timeouts;
 - maximum request-body limits;
 - CORS and security middleware;
+- XSS protection via HTML-tag sanitization of request input;
 - liveness/readiness probes;
 - Zap logging;
 - MongoDB-backed request/access logging;
@@ -138,6 +139,7 @@ The following existing investments should be retained where their contracts rema
 - request-ID and timeout middleware;
 - rate limiting;
 - security headers;
+- XSS HTML-tag sanitization middleware (request input);
 - metrics and tracing;
 - health probes;
 - Redis configuration logic;
@@ -411,10 +413,14 @@ Example:
 Backend      http://localhost:8001
 Frontend     http://localhost:5173
 OpenAPI      http://localhost:8001/openapi.json
-Swagger UI   http://localhost:8001/docs
+API docs     http://localhost:8001/docs
 Database     postgres://localhost:5432/bookstore
 Redis        redis://localhost:6379
 ```
+
+`/docs` is the FastAPI-style interactive explorer (try-it-out against the live
+server). `/openapi.json` is the same contract consumed by codegen and CI. See
+§23.2.
 
 ## 7.3 Generate a Resource
 
@@ -802,11 +808,12 @@ The framework defines a canonical global order:
 6. security headers;
 7. CORS;
 8. body-size limit;
-9. request timeout;
-10. rate limiting;
-11. authentication context;
-12. application middleware;
-13. route handler.
+9. XSS HTML-tag sanitization (request input);
+10. request timeout;
+11. rate limiting;
+12. authentication context;
+13. application middleware;
+14. route handler.
 
 Middleware order is a framework compatibility concern and should be tested.
 
@@ -1250,6 +1257,7 @@ Framework-owned defaults:
 - secure headers;
 - CORS policy;
 - CSRF for cookie-authenticated browser requests;
+- XSS protection via HTML-tag sanitization of request input (fundamental; extract/preserve the template middleware, do not treat headers alone as sufficient);
 - request size limits;
 - request timeouts;
 - rate limits;
@@ -1287,7 +1295,35 @@ Go request/response DTOs + route metadata
 
 OpenAPI is an intermediate representation and public artifact.
 
-## 23.2 Generated TypeScript
+## 23.2 Interactive API docs (Swagger-like UI)
+
+Like FastAPI, the framework should expose a browser-based API explorer **by
+default** so a developer can open the docs, inspect operations and schemas, and
+send live requests without a separate HTTP client.
+
+Default endpoints:
+
+| Surface | URL | Role |
+| --- | --- | --- |
+| OpenAPI document | `/openapi.json` | Machine-readable contract (CI, codegen, external tools) |
+| Interactive docs | `/docs` | Human-facing Swagger-style UI backed by that document |
+
+Expected developer experience:
+
+- `fw dev` (and a normal local `fw run`) print both URLs in the service table;
+- `/docs` loads without extra configuration or third-party hosting;
+- the UI reflects Huma-registered public routes only — raw Gin escape-hatch
+  routes stay out of the OpenAPI document and therefore out of the docs;
+- try-it-out requests hit the same running server (auth headers and the D10
+  error envelope appear as they would for any client).
+
+Production may disable or protect `/docs` (and optionally `/openapi.json`) via
+config, but the **local default is on**, matching FastAPI’s “open `/docs` and
+try the API” ergonomics. The exact UI implementation may use Huma’s built-in
+docs route or an equivalent OpenAPI renderer; the product requirement is the
+browser surface, not a particular Swagger fork.
+
+## 23.3 Generated TypeScript
 
 Generated output must not be hand-edited:
 
@@ -1314,7 +1350,7 @@ export interface CreateProductRequest {
 }
 ```
 
-## 23.3 Generated Client
+## 23.4 Generated Client
 
 ```ts
 const product = await api.products.get({ id });
@@ -1323,7 +1359,7 @@ await api.products.create({ body: input });
 
 The client should expose typed error objects that map to the framework error envelope.
 
-## 23.4 Contract Stability
+## 23.5 Contract Stability
 
 Breaking API changes should be detectable in CI through OpenAPI diffing once the project reaches stable release maturity.
 
@@ -1854,6 +1890,7 @@ Test:
 - CSRF;
 - CORS;
 - rate limiting;
+- XSS HTML-tag sanitization of request input (script/markup stripped or neutralized before handlers see it);
 - token refresh/revocation;
 - cookie attributes;
 - request size limits;
