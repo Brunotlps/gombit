@@ -32,7 +32,7 @@ type createWidgetOutput struct {
 }
 
 type listWidgetsOutput struct {
-	Body contract.DataMeta[[]Widget]
+	Body contract.DataMeta[[]Widget, contract.PageMeta]
 }
 
 type getWidgetInput struct {
@@ -52,11 +52,11 @@ func registerWidgetRoutes(api huma.API, prefix string) {
 		Tags:        []string{"Widgets"},
 	}, func(ctx context.Context, input *struct{}) (*listWidgetsOutput, error) {
 		return &listWidgetsOutput{
-			Body: contract.DataMeta[[]Widget]{
+			Body: contract.DataMeta[[]Widget, contract.PageMeta]{
 				Data: []Widget{
 					{ID: "widget-1", Name: "First widget", Color: "blue"},
 				},
-				Meta: contract.PageMeta{Page: 1, PerPage: 20, Total: 1},
+				Meta: &contract.PageMeta{Page: 1, PerPage: 20, Total: 1},
 			},
 		}, nil
 	})

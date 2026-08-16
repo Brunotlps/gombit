@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -84,5 +85,40 @@ func TestConflictWithFieldsKeepsCategoryCode(t *testing.T) {
 	}
 	if len(body.Body.Fields["name"]) == 0 {
 		t.Fatalf("fields.name missing: %#v", body.Body.Fields)
+	}
+}
+
+func TestDataMetaPageMetaAppearsInOpenAPI(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	api := humagin.New(router, HumaConfig("contract-test", "0.0.0"))
+
+	type item struct {
+		Name string `json:"name"`
+	}
+	type listOut struct {
+		Body DataMeta[[]item, PageMeta]
+	}
+	huma.Register(api, huma.Operation{
+		OperationID: "list-items",
+		Method:      http.MethodGet,
+		Path:        "/items",
+	}, func(ctx context.Context, input *struct{}) (*listOut, error) {
+		return &listOut{Body: DataMeta[[]item, PageMeta]{
+			Data: []item{{Name: "a"}},
+			Meta: &PageMeta{Page: 1, PerPage: 20, Total: 1},
+		}}, nil
+	})
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/openapi.json", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("openapi status = %d; body: %s", rec.Code, rec.Body.String())
+	}
+	spec := rec.Body.String()
+	for _, want := range []string{`"page"`, `"per_page"`, `"total"`, `"PageMeta"`} {
+		if !strings.Contains(spec, want) {
+			t.Fatalf("OpenAPI missing %s; body: %s", want, spec)
+		}
 	}
 }

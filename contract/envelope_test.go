@@ -27,9 +27,9 @@ func TestDataJSONShape(t *testing.T) {
 func TestDataMetaPageJSONShape(t *testing.T) {
 	t.Parallel()
 
-	body := DataMeta[[]string]{
+	body := DataMeta[[]string, PageMeta]{
 		Data: []string{"a", "b"},
-		Meta: PageMeta{Page: 1, PerPage: 20, Total: 125},
+		Meta: &PageMeta{Page: 1, PerPage: 20, Total: 125},
 	}
 	raw, err := json.Marshal(body)
 	if err != nil {
@@ -58,14 +58,29 @@ func TestDataMetaPageJSONShape(t *testing.T) {
 	}
 }
 
-func TestDataMetaOmitsEmptyMeta(t *testing.T) {
+func TestDataMetaOmitsNilMeta(t *testing.T) {
 	t.Parallel()
 
-	raw, err := json.Marshal(DataMeta[string]{Data: "ok"})
+	raw, err := json.Marshal(DataMeta[string, PageMeta]{Data: "ok"})
 	if err != nil {
 		t.Fatalf("marshal: %v", err)
 	}
 	if string(raw) != `{"data":"ok"}` {
 		t.Fatalf("json = %s, want data-only when meta is nil", raw)
+	}
+}
+
+func TestDataMetaZeroPageMetaStillSerializes(t *testing.T) {
+	t.Parallel()
+
+	raw, err := json.Marshal(DataMeta[string, PageMeta]{
+		Data: "ok",
+		Meta: &PageMeta{},
+	})
+	if err != nil {
+		t.Fatalf("marshal: %v", err)
+	}
+	if !strings.Contains(string(raw), `"meta"`) {
+		t.Fatalf("non-nil zero PageMeta should serialize; got %s", raw)
 	}
 }

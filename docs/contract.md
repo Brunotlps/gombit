@@ -41,11 +41,21 @@ type createWidgetOutput struct {
 }
 
 type listWidgetsOutput struct {
-    Body contract.DataMeta[[]Widget] // {"data": [...], "meta": {...}}
+    // Typed meta so OpenAPI emits PageMeta fields (not empty object).
+    Body contract.DataMeta[[]Widget, contract.PageMeta]
 }
 ```
 
-`contract.PageMeta` is the conventional pagination object:
+`contract.PageMeta` is the v0.1 pagination meta for collection responses.
+Pass a non-nil pointer when meta should appear; a nil `Meta` is omitted.
+A non-nil zero `PageMeta` still serializes (JSON `omitempty` does not drop empty structs).
+
+```go
+Body: contract.DataMeta[[]Widget, contract.PageMeta]{
+    Data: items,
+    Meta: &contract.PageMeta{Page: 1, PerPage: 20, Total: 125},
+},
+```
 
 ```json
 {
@@ -136,7 +146,8 @@ return nil, contract.WithContext(ctx, contract.NotFound("widget not found"))
 
 Helpers: `Validation`, `Authentication`, `Authorization`, `NotFound`,
 `Conflict`, `RateLimited`, `DependencyUnavailable`, `Internal`, plus
-`New(category, message)`.
+`New(category, message)`. Always wrap with `WithContext` in handlers so
+`request_id` is set — constructors alone leave it empty.
 
 `WithFields` attaches D10 `fields` without forcing the code to
 `validation_error` (for example a `conflict` with a field detail). Huma tag
