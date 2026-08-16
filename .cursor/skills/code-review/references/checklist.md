@@ -19,6 +19,8 @@ Walk only the sections that the diff touches.
 - [ ] `*gin.Engine` and `*gorm.DB` remain reachable; no universal ORM interface
 - [ ] Cache uses value semantics (`Get/Set/Delete/Increment`), not leaked go-redis types
 - [ ] `os.Getenv` stays in the typed config boundary
+- [ ] New or expanded CLI surface uses Cobra (D13 / ADR-014), not Kong or a
+      parallel long-term hand-rolled router
 
 ## Generators and AST
 

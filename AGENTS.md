@@ -50,6 +50,10 @@ describing "how the code works."
 - **Generators:** idempotent and additive, with `--dry-run`/`--force`. Go
   source is modified via `go/ast`/`go/format` only — never regex — and never
   overwrites user-owned files.
+- **CLI:** Cobra (`spf13/cobra`) is the command framework (D13 / ADR-014).
+  Nested families and M4-7 app-registered management commands use Cobra
+  `AddCommand`. Do not introduce Kong or a parallel hand-rolled router as the
+  long-term CLI architecture; pre-M4 stdlib `flag` is temporary until M4-1.
 
 ## Agent working agreement (definition of done — build plan §5)
 

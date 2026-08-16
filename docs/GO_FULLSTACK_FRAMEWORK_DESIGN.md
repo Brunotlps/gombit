@@ -1437,6 +1437,11 @@ The framework must not require single-binary deployment.
 
 The CLI is a first-class product component.
 
+**Implementation library:** Cobra (`spf13/cobra`) — locked as build plan D13 /
+ADR-014. Prefer Cobra's command tree and `AddCommand` for nested families and
+for Django-style app-registered management commands (M4-7). Do not adopt Kong
+or grow the pre-M4 stdlib `flag` router into the long-term architecture.
+
 ## 26.1 Command Families
 
 ```text

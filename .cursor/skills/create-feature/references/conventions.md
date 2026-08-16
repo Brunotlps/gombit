@@ -49,6 +49,13 @@ Do not emit `{"error":"string"}` or a new wrapper.
 - Migration metadata: `version, name, batch, applied_at`. No checksums (D4).
 - Optional generic repo `repository.New[T]` lives in the **runtime**, never generated per model.
 
+## CLI
+
+- Cobra (`spf13/cobra`) is the command framework (D13 / ADR-014).
+- Nested families and M4-7 app-registered management commands use Cobra
+  `AddCommand`. Do not adopt Kong or grow the pre-M4 stdlib `flag` router as
+  the long-term architecture; M4-1 is the adoption / migration point.
+
 ## Frontend
 
 - Vite + React + TypeScript. Minimal/headless UI is the default; MUI is `--ui mui`.

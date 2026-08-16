@@ -50,6 +50,7 @@ If any of C1–C6 is wrong for you, say which — each has a cluster of issues h
 - **D10 — Response envelope:** `{"data": ..., "meta"?: ...}` success; `{"error": {code, message, fields?, request_id}}` error. This is a **redesign** of the existing `{"error":"string"}`; acceptable for a new framework, but note it in the migration guide. Locked.
 - **D11 — Pre-v1 compatibility:** No guarantees before v1.0. Breaking changes documented in CHANGELOG. Locked.
 - **D12 — Databases in v0.1:** SQLite + PostgreSQL + MySQL are required and CI-gated. MySQL is promoted back into the first supported database set so generated apps can target common MySQL deployments without application code changes.
+- **D13 — CLI framework: DECIDED — Cobra (`spf13/cobra`).** Nested command families (`db`, `make`, `client`, …), help/completions, and M4-7 runtime-registered management commands use Cobra's `AddCommand` model. Kong (and other struct-tag CLIs) are rejected because dynamic app-registered commands fit poorly. Pre-M4 `cmd/gombit` may keep stdlib `flag` until M4-1 adopts Cobra and migrates existing `db` subcommands onto the tree. Recorded in ADR-014.
 
 ---
 
@@ -165,13 +166,13 @@ One issue per seam. Each must keep the existing tests green (see §5).
 
 ### M4 — CLI + generators
 
-- **[M4-1] `gombit new`** — interactive + non-interactive scaffold; DB/cache/auth/UI flags; feature-package layout (§3.2); `gombit.yaml`, `.env.example` splitting server vs `VITE_*` public values. AC: `gombit new demo --database sqlite` produces a compiling app. deps: M1 exit, M2, M3. size: L. labels: `cli`, `generator`.
+- **[M4-1] `gombit new`** — adopt Cobra (D13 / ADR-014) as the `gombit` command tree; migrate existing `db` subcommands onto Cobra; interactive + non-interactive scaffold; DB/cache/auth/UI flags; feature-package layout (§3.2); `gombit.yaml`, `.env.example` splitting server vs `VITE_*` public values. AC: root help lists command families; `gombit db …` still works via Cobra; `gombit new demo --database sqlite` produces a compiling app. deps: M1 exit, M2, M3. size: L. labels: `cli`, `generator`.
 - **[M4-2] `gombit dev`** — Go reload (air/watchexec), Vite, `/api` proxy, OpenAPI watch→regenerate, service table. AC: one command runs backend+frontend with HMR and live contract regen. deps: M4-1. size: L. labels: `cli`, `devx`.
 - **[M4-3] `gombit make resource` (AST-safe)** — generates model, Huma handler (thin over GORM), routes, migration, and frontend pages/forms/table; registers routes via `go/ast`; idempotent; `--dry-run`/`--force`; `--service`/`--repo` opt-in (C6). AC: generated resource works backend→frontend with no manual type duplication; re-run doesn't clobber edits. deps: M4-1, M3-4. size: L. labels: `cli`, `generator`.
 - **[M4-4] Introspection: `gombit routes`, `gombit doctor`, `gombit config show`** — routes table; doctor checks (Go/Node, config, DB/Redis connectivity, migration status, ports, insecure prod settings). AC: doctor flags a deliberately-broken config. deps: M4-1. size: M. labels: `cli`, `devx`.
 - **[M4-5] Generator golden tests** — for each generator: run against a fixture, diff against golden, compile backend, typecheck frontend, verify idempotency. AC: golden suite green in CI. deps: M4-3. size: M. labels: `tests`, `generator`.
 - **[M4-6] `gombit createsuperuser`** — interactive (and flag-driven) command that creates an admin user against the users/groups/permissions core. AC: creates an admin user on a fresh DB; refuses duplicates; hashes password per the framework hasher. deps: M2-2, M5-2. size: S. labels: `cli`, `auth`.
-- **[M4-7] Management-command extensibility (`gombit make command`)** — Django-style: a feature-package registers custom `gombit <command>`s; generator scaffolds one. AC: a generated command is discoverable and runnable via `gombit`. deps: M4-1. size: M. labels: `cli`, `generator`.
+- **[M4-7] Management-command extensibility (`gombit make command`)** — Django-style: a feature-package registers custom `gombit <command>`s via Cobra `AddCommand` (D13); generator scaffolds one. AC: a generated command is discoverable and runnable via `gombit`. deps: M4-1. size: M. labels: `cli`, `generator`.
 
 **Django → `gombit` command map** (target surface; issues above cover the v0.1 subset):
 
