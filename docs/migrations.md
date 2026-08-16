@@ -149,11 +149,17 @@ warning on stderr. A missing or empty seed directory prints `No seed files.` and
 exits successfully.
 
 Each seed file may contain multiple SQL statements separated by `;`. Gombit
-splits on semicolons outside quotes and comments, then executes statements in
-order (so multi-`INSERT` files work without relying on driver multi-statement
-support). Seed files are application-owned SQL. Keep them idempotent if you plan
-to run `seed` more than once against the same database; Gombit does not wrap
-seeds in a cross-driver transaction.
+splits on semicolons outside single/double quotes and `--` / `/* */` comments,
+then executes statements in order (so multi-`INSERT` files work without relying
+on driver multi-statement support). **Known limit (v0.1):** the splitter does
+not treat MySQL backtick identifiers (`` `ident` ``) or PostgreSQL dollar-quoted
+strings (`$tag$...$tag$`) as quoted regions — a `;` inside those forms can
+mis-split. Prefer one statement per file, or avoid semicolons inside backticks /
+dollar-quotes, until the splitter is extended.
+
+Seed files are application-owned SQL. Keep them idempotent if you plan to run
+`seed` more than once against the same database; Gombit does not wrap seeds in a
+cross-driver transaction.
 
 Example layout (flat directory only):
 

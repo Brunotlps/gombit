@@ -162,6 +162,9 @@ func warnSkippedSeedDirs(stderr io.Writer, skippedDirs []string) {
 
 // splitSQLStatements splits SQL on semicolons outside quotes and comments.
 // Empty / comment-only fragments are dropped.
+//
+// v0.1 known limits: MySQL backtick identifiers and PostgreSQL dollar-quoted
+// strings are not treated as quoted regions, so a ';' inside them can mis-split.
 func splitSQLStatements(sql string) []string {
 	var (
 		stmts                                             []string
