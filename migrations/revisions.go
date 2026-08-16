@@ -3,6 +3,7 @@ package migrations
 import (
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -70,16 +71,30 @@ func DownFilename(upFilename string) (string, error) {
 }
 
 // ListMigrationFiles lists Atlas up migrations in dir, with optional down paths.
+// Non-matching *.sql filenames (other than atlas.sum / *.down.sql) are skipped
+// with a warning printed to stderr when provided via the optional writers in
+// Migrate/Status/Rollback; use ListMigrationFilesWithSkipped to inspect them.
 func ListMigrationFiles(dir string) ([]MigrationFile, error) {
+	files, _, err := listMigrationFiles(dir)
+	return files, err
+}
+
+// ListMigrationFilesWithSkipped lists migrations and returns skipped *.sql names.
+func ListMigrationFilesWithSkipped(dir string) ([]MigrationFile, []string, error) {
+	return listMigrationFiles(dir)
+}
+
+func listMigrationFiles(dir string) ([]MigrationFile, []string, error) {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, nil
+			return nil, nil, nil
 		}
-		return nil, fmt.Errorf("migrations: read dir: %w", err)
+		return nil, nil, fmt.Errorf("migrations: read dir: %w", err)
 	}
 
 	files := make([]MigrationFile, 0, len(entries))
+	skipped := make([]string, 0)
 	for _, entry := range entries {
 		if entry.IsDir() {
 			continue
@@ -90,6 +105,9 @@ func ListMigrationFiles(dir string) ([]MigrationFile, error) {
 		}
 		version, migName, err := ParseMigrationFilename(name)
 		if err != nil {
+			if strings.HasSuffix(name, ".sql") {
+				skipped = append(skipped, name)
+			}
 			continue
 		}
 		downName := fmt.Sprintf("%s_%s.down.sql", version, migName)
@@ -97,7 +115,7 @@ func ListMigrationFiles(dir string) ([]MigrationFile, error) {
 		if _, statErr := os.Stat(downPath); errors.Is(statErr, os.ErrNotExist) {
 			downPath = ""
 		} else if statErr != nil {
-			return nil, fmt.Errorf("migrations: stat down file: %w", statErr)
+			return nil, nil, fmt.Errorf("migrations: stat down file: %w", statErr)
 		}
 		files = append(files, MigrationFile{
 			Version:  version,
@@ -112,7 +130,16 @@ func ListMigrationFiles(dir string) ([]MigrationFile, error) {
 		}
 		return files[i].Version < files[j].Version
 	})
-	return files, nil
+	return files, skipped, nil
+}
+
+func warnSkippedMigrationFiles(stderr io.Writer, skipped []string) {
+	if stderr == nil || len(skipped) == 0 {
+		return
+	}
+	for _, name := range skipped {
+		_, _ = fmt.Fprintf(stderr, "migrations: warning: skipping unrecognized SQL file %q\n", name)
+	}
 }
 
 func ensureRevisionsTable(db *gorm.DB) error {
@@ -210,6 +237,31 @@ func deleteAtlasRevisions(db *gorm.DB, versions []string) error {
 		return fmt.Errorf("migrations: delete atlas revisions: %w", err)
 	}
 	return nil
+}
+
+func listAtlasVersions(db *gorm.DB) (map[string]struct{}, error) {
+	out := make(map[string]struct{})
+	if db == nil || !db.Migrator().HasTable(atlasRevisionsTable) {
+		return out, nil
+	}
+	var versions []string
+	if err := db.Table(atlasRevisionsTable).Select("version").Find(&versions).Error; err != nil {
+		return nil, fmt.Errorf("migrations: list atlas revisions: %w", err)
+	}
+	for _, version := range versions {
+		out[version] = struct{}{}
+	}
+	return out, nil
+}
+
+func pendingPresentInAtlas(pending []MigrationFile, atlas map[string]struct{}) []MigrationFile {
+	out := make([]MigrationFile, 0, len(pending))
+	for _, file := range pending {
+		if _, ok := atlas[file.Version]; ok {
+			out = append(out, file)
+		}
+	}
+	return out
 }
 
 func pendingFiles(files []MigrationFile, applied map[string]Revision) []MigrationFile {

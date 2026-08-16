@@ -40,10 +40,11 @@ func Status(ctx context.Context, opts ApplyOptions) error {
 		return err
 	}
 
-	files, err := ListMigrationFiles(migrationDir)
+	files, skipped, err := listMigrationFiles(migrationDir)
 	if err != nil {
 		return err
 	}
+	warnSkippedMigrationFiles(opts.Stderr, skipped)
 	revisions, err := listRevisions(db.DB)
 	if err != nil {
 		return err

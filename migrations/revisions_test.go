@@ -67,19 +67,23 @@ func TestListMigrationFiles(t *testing.T) {
 	writeFile(t, filepath.Join(dir, "20260101000000_create_products.down.sql"), "DROP TABLE products;")
 	writeFile(t, filepath.Join(dir, "atlas.sum"), "h1:fake")
 	writeFile(t, filepath.Join(dir, "readme.txt"), "ignore")
+	writeFile(t, filepath.Join(dir, "typo_migration.sql"), "CREATE TABLE broken;")
 
-	files, err := ListMigrationFiles(dir)
+	files, skipped, err := ListMigrationFilesWithSkipped(dir)
 	if err != nil {
-		t.Fatalf("ListMigrationFiles() error = %v", err)
+		t.Fatalf("ListMigrationFilesWithSkipped() error = %v", err)
 	}
 	if len(files) != 2 {
-		t.Fatalf("ListMigrationFiles() len = %d, want 2", len(files))
+		t.Fatalf("ListMigrationFilesWithSkipped() len = %d, want 2", len(files))
 	}
 	if files[0].Version != "20260101000000" || files[0].DownPath == "" {
 		t.Fatalf("first file = %#v, want version with down path", files[0])
 	}
 	if files[1].Version != "20260102000000" || files[1].DownPath != "" {
 		t.Fatalf("second file = %#v, want version without down path", files[1])
+	}
+	if len(skipped) != 1 || skipped[0] != "typo_migration.sql" {
+		t.Fatalf("skipped = %v, want typo_migration.sql", skipped)
 	}
 }
 

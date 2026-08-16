@@ -204,9 +204,109 @@ func TestRollbackNothingToDo(t *testing.T) {
 	}
 }
 
+func TestMigrateRecordsOnlyVersionsPresentInAtlas(t *testing.T) {
+	workDir := t.TempDir()
+	migrationDir := filepath.Join(workDir, "database", "migrations")
+	if err := os.MkdirAll(migrationDir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	writeFile(t, filepath.Join(migrationDir, "20260101000000_create_widgets.sql"),
+		"CREATE TABLE widgets (id INTEGER PRIMARY KEY);")
+	writeFile(t, filepath.Join(migrationDir, "20260102000000_create_gadgets.sql"),
+		"CREATE TABLE gadgets (id INTEGER PRIMARY KEY);")
+
+	dsn := "file:" + filepath.Join(workDir, "app.db") + "?cache=shared&_fk=1"
+	cfg := config.DatabaseConfig{Driver: config.DatabaseDriverSQLite, DSN: dsn}
+	stderr := new(bytes.Buffer)
+	opts := ApplyOptions{
+		WorkDir:      workDir,
+		MigrationDir: migrationDir,
+		Database:     cfg,
+		Stdout:       io.Discard,
+		Stderr:       stderr,
+		runner: &applyFakeAtlas{
+			t:            t,
+			applyVersions: map[string]bool{"20260101000000": true},
+		},
+	}
+	if err := Migrate(context.Background(), opts); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+
+	db, err := database.Open(cfg)
+	if err != nil {
+		t.Fatalf("database.Open() error = %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	revisions, err := listRevisions(db.DB)
+	if err != nil {
+		t.Fatalf("listRevisions() error = %v", err)
+	}
+	if len(revisions) != 1 || revisions[0].Version != "20260101000000" {
+		t.Fatalf("revisions = %#v, want only 20260101000000", revisions)
+	}
+	if !strings.Contains(stderr.String(), "recording 1 of 2 pending") {
+		t.Fatalf("stderr = %q, want partial-record warning", stderr.String())
+	}
+}
+
+func TestRollbackMidBatchFailureAbortsTransaction(t *testing.T) {
+	workDir := t.TempDir()
+	migrationDir := filepath.Join(workDir, "database", "migrations")
+	if err := os.MkdirAll(migrationDir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	writeFile(t, filepath.Join(migrationDir, "20260101000000_create_widgets.sql"),
+		"CREATE TABLE widgets (id INTEGER PRIMARY KEY);")
+	writeFile(t, filepath.Join(migrationDir, "20260101000000_create_widgets.down.sql"),
+		"THIS IS NOT VALID SQL;")
+	writeFile(t, filepath.Join(migrationDir, "20260102000000_create_gadgets.sql"),
+		"CREATE TABLE gadgets (id INTEGER PRIMARY KEY);")
+	writeFile(t, filepath.Join(migrationDir, "20260102000000_create_gadgets.down.sql"),
+		"DROP TABLE gadgets;")
+
+	dsn := "file:" + filepath.Join(workDir, "app.db") + "?cache=shared&_fk=1"
+	cfg := config.DatabaseConfig{Driver: config.DatabaseDriverSQLite, DSN: dsn}
+	opts := ApplyOptions{
+		WorkDir:      workDir,
+		MigrationDir: migrationDir,
+		Database:     cfg,
+		Stdout:       io.Discard,
+		runner:       &applyFakeAtlas{t: t},
+	}
+	if err := Migrate(context.Background(), opts); err != nil {
+		t.Fatalf("Migrate() error = %v", err)
+	}
+
+	err := Rollback(context.Background(), opts)
+	if err == nil {
+		t.Fatal("Rollback() error = nil, want mid-batch failure")
+	}
+	if !strings.Contains(err.Error(), "framework_migrations unchanged") {
+		t.Fatalf("Rollback() error = %q, want unchanged revisions guidance", err)
+	}
+
+	db, err := database.Open(cfg)
+	if err != nil {
+		t.Fatalf("database.Open() error = %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	if !db.Migrator().HasTable("widgets") || !db.Migrator().HasTable("gadgets") {
+		t.Fatal("expected both tables to remain after aborted transactional rollback")
+	}
+	revisions, err := listRevisions(db.DB)
+	if err != nil {
+		t.Fatalf("listRevisions() error = %v", err)
+	}
+	if len(revisions) != 2 {
+		t.Fatalf("revisions len = %d, want 2 after aborted rollback", len(revisions))
+	}
+}
+
 type applyFakeAtlas struct {
-	t          *testing.T
-	applyCalls [][]string
+	t             *testing.T
+	applyCalls    [][]string
+	applyVersions map[string]bool
 }
 
 func (r *applyFakeAtlas) Run(ctx context.Context, dir string, name string, args []string, stdout io.Writer, stderr io.Writer) error {
@@ -272,6 +372,9 @@ CREATE TABLE IF NOT EXISTS %s (
 
 	for _, file := range files {
 		if _, ok := applied[file.Version]; ok {
+			continue
+		}
+		if r.applyVersions != nil && !r.applyVersions[file.Version] {
 			continue
 		}
 		sqlBytes, err := os.ReadFile(file.UpPath)

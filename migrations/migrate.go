@@ -75,6 +75,10 @@ func openConfiguredDB(opts ApplyOptions) (*database.DB, error) {
 }
 
 // Migrate applies pending Atlas migrations and mirrors them into framework_migrations.
+//
+// After atlas migrate apply succeeds, only pending versions that appear in
+// atlas_schema_revisions are recorded. This keeps Gombit's ledger aligned with
+// Atlas when the two previously diverged or when Atlas applies a subset.
 func Migrate(ctx context.Context, opts ApplyOptions) error {
 	if ctx == nil {
 		return errors.New("migrations: nil context")
@@ -103,10 +107,12 @@ func Migrate(ctx context.Context, opts ApplyOptions) error {
 		return err
 	}
 
-	files, err := ListMigrationFiles(migrationDir)
+	files, skipped, err := listMigrationFiles(migrationDir)
 	if err != nil {
 		return err
 	}
+	warnSkippedMigrationFiles(opts.Stderr, skipped)
+
 	revisions, err := listRevisions(db.DB)
 	if err != nil {
 		return err
@@ -133,13 +139,25 @@ func Migrate(ctx context.Context, opts ApplyOptions) error {
 		return fmt.Errorf("migrations: atlas migrate apply: %w", err)
 	}
 
+	atlasVersions, err := listAtlasVersions(db.DB)
+	if err != nil {
+		return err
+	}
+	applied := pendingPresentInAtlas(pending, atlasVersions)
+	if len(applied) == 0 {
+		return fmt.Errorf("migrations: atlas migrate apply succeeded but none of the %d pending version(s) appear in %s", len(pending), atlasRevisionsTable)
+	}
+	if len(applied) < len(pending) {
+		_, _ = fmt.Fprintf(opts.Stderr, "migrations: warning: recording %d of %d pending version(s) present in %s\n", len(applied), len(pending), atlasRevisionsTable)
+	}
+
 	batch, err := nextBatch(db.DB)
 	if err != nil {
 		return err
 	}
-	if err := insertBatch(db.DB, batch, pending, opts.now().UTC()); err != nil {
+	if err := insertBatch(db.DB, batch, applied, opts.now().UTC()); err != nil {
 		return err
 	}
-	_, _ = fmt.Fprintf(opts.Stdout, "Applied %d migration(s) in batch %d.\n", len(pending), batch)
+	_, _ = fmt.Fprintf(opts.Stdout, "Applied %d migration(s) in batch %d.\n", len(applied), batch)
 	return nil
 }

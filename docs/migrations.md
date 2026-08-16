@@ -72,11 +72,16 @@ gombit db rollback [--dir database/migrations]
 
 1. Ensures the Gombit revision table `framework_migrations` exists.
 2. Runs Atlas Community Edition `atlas migrate apply --url ... --dir file://...`.
-3. Mirrors newly applied versions into `framework_migrations` as one batch:
-   `version`, `name`, `batch`, `applied_at` (no checksum; D4).
+3. Records into `framework_migrations` only the pending versions that appear in
+   `atlas_schema_revisions` after apply (`version`, `name`, `batch`,
+   `applied_at`; no checksum; D4). This keeps the Gombit ledger aligned with
+   Atlas when the two previously diverged.
 
 If nothing is pending relative to `framework_migrations`, migrate prints
 `No pending migrations.` and does not invoke Atlas apply.
+
+Unrecognized `*.sql` filenames in the migration directory are skipped with a
+warning on stderr.
 
 ### Status
 
@@ -92,10 +97,17 @@ command is outside Atlas Community Edition).
 `gombit db rollback` rolls back the **latest batch** only:
 
 1. Loads the highest `batch` from `framework_migrations`.
-2. Requires a companion down file for every version in that batch.
+2. Requires a companion down file for every version in that batch (missing
+   downs fail before any SQL runs; migrate does not require downs).
 3. Executes those down files in reverse version order.
 4. Deletes matching rows from `framework_migrations` and
    `atlas_schema_revisions` so a later `gombit db migrate` can re-apply.
+
+On SQLite and PostgreSQL, downs and revision deletes run in one transaction:
+a mid-batch failure aborts the transaction and leaves revision rows unchanged.
+MySQL DDL often auto-commits, so a mid-batch failure can leave the schema
+partially rolled back while revision rows remain; the error lists completed
+downs and revision rows are only removed after every down succeeds.
 
 ### Down files
 
