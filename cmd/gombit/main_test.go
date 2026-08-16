@@ -119,6 +119,80 @@ func TestRunRejectsUnknownCommand(t *testing.T) {
 	}
 }
 
+func TestRunMigrateRollbackStatus(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake atlas shell script uses POSIX sh")
+	}
+
+	workDir := t.TempDir()
+	migrationDir := filepath.Join(workDir, "migrations")
+	if err := os.MkdirAll(migrationDir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	writeFile(t, filepath.Join(migrationDir, "20260101000000_create_widgets.sql"),
+		"CREATE TABLE widgets (id INTEGER PRIMARY KEY, name TEXT NOT NULL);")
+	writeFile(t, filepath.Join(migrationDir, "downs", "20260101000000_create_widgets.down.sql"),
+		"DROP TABLE IF EXISTS widgets;")
+
+	dbPath := filepath.Join(workDir, "app.db")
+	cfg := config.Default()
+	cfg.Database.Driver = config.DatabaseDriverSQLite
+	cfg.Database.DSN = "file:" + dbPath + "?cache=shared&_fk=1"
+	stubConfig(t, cfg)
+
+	atlas := fakeAtlasApplyStatus(t)
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+
+	err := run(context.Background(), []string{
+		"db", "status",
+		"--dir", migrationDir,
+		"--atlas-bin", atlas,
+	}, stdout, stderr)
+	if err != nil {
+		t.Fatalf("status before migrate error = %v; stderr=%q", err, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "pending") {
+		t.Fatalf("status stdout = %q, want pending", stdout.String())
+	}
+	stdout.Reset()
+
+	err = run(context.Background(), []string{
+		"db", "migrate",
+		"--dir", migrationDir,
+		"--atlas-bin", atlas,
+	}, stdout, stderr)
+	if err != nil {
+		t.Fatalf("migrate error = %v; stderr=%q", err, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Applied 1 migration(s) in batch 1") {
+		t.Fatalf("migrate stdout = %q", stdout.String())
+	}
+	stdout.Reset()
+
+	err = run(context.Background(), []string{
+		"db", "rollback",
+		"--dir", migrationDir,
+		"--atlas-bin", atlas,
+	}, stdout, stderr)
+	if err != nil {
+		t.Fatalf("rollback error = %v; stderr=%q", err, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Rolled back batch 1") {
+		t.Fatalf("rollback stdout = %q", stdout.String())
+	}
+}
+
+func TestRunRejectsUnknownDBSubcommand(t *testing.T) {
+	err := run(context.Background(), []string{"db", "seed"}, ioDiscard{}, ioDiscard{})
+	if err == nil {
+		t.Fatal("run() error = nil, want unknown subcommand error")
+	}
+	if !strings.Contains(err.Error(), "unknown subcommand") {
+		t.Fatalf("run() error = %q", err)
+	}
+}
+
 type ioDiscard struct{}
 
 func (ioDiscard) Write(p []byte) (int, error) {
@@ -135,6 +209,16 @@ func stubConfig(t *testing.T, cfg config.Config) {
 	t.Cleanup(func() {
 		loadConfig = previous
 	})
+}
+
+func writeFile(t *testing.T, path string, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
 }
 
 func fakeAtlas(t *testing.T) string {
@@ -164,6 +248,101 @@ mkdir -p "$dir"
   printf '%s\n' "-- dev ${dev}"
 } > "$dir/20260101000000_${name}.sql"
 printf '%s\n' 'created migration'
+`
+	if err := os.WriteFile(path, []byte(script), 0o600); err != nil {
+		t.Fatalf("write fake atlas: %v", err)
+	}
+	// #nosec G302 -- the fake Atlas script must be executable by this test process.
+	if err := os.Chmod(path, 0o700); err != nil {
+		t.Fatalf("chmod fake atlas: %v", err)
+	}
+	return path
+}
+
+func fakeAtlasApplyStatus(t *testing.T) string {
+	t.Helper()
+
+	path := filepath.Join(t.TempDir(), "atlas")
+	script := `#!/bin/sh
+set -eu
+cmd=""
+url=""
+dir=""
+prev=""
+for arg in "$@"; do
+  if [ "$prev" = "migrate" ]; then
+    cmd="$arg"
+  fi
+  if [ "$prev" = "--url" ]; then
+    url="$arg"
+  fi
+  if [ "$prev" = "--dir" ]; then
+    dir="$arg"
+  fi
+  prev="$arg"
+done
+case "$cmd" in
+  apply)
+    python3 - "$url" "$dir" <<'PY'
+import os
+import sqlite3
+import sys
+from datetime import datetime, timezone
+
+url, dir_url = sys.argv[1], sys.argv[2]
+if not url.startswith("sqlite://"):
+    raise SystemExit(f"unsupported url: {url}")
+rest = url[len("sqlite://"):]
+db_path = rest.split("?", 1)[0]
+mig_dir = dir_url.removeprefix("file://")
+
+conn = sqlite3.connect(db_path)
+try:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS atlas_schema_revisions (
+          version TEXT PRIMARY KEY,
+          description TEXT,
+          type TEXT,
+          applied_at TEXT
+        )
+        """
+    )
+    existing = {
+        row[0]
+        for row in conn.execute("SELECT version FROM atlas_schema_revisions")
+    }
+    for name in sorted(os.listdir(mig_dir)):
+        if (
+            not name.endswith(".sql")
+            or name.endswith(".down.sql")
+            or name == "atlas.sum"
+        ):
+            continue
+        version = name.split("_", 1)[0]
+        if version in existing:
+            continue
+        with open(os.path.join(mig_dir, name), encoding="utf-8") as f:
+            sql = f.read()
+        conn.executescript(sql)
+        conn.execute(
+            "INSERT INTO atlas_schema_revisions (version, description, type, applied_at) VALUES (?, ?, ?, ?)",
+            (version, name, "sql", datetime.now(timezone.utc).isoformat()),
+        )
+    conn.commit()
+finally:
+    conn.close()
+PY
+    printf '%s\n' 'fake atlas apply ok'
+    ;;
+  status)
+    printf '%s\n' 'fake atlas status'
+    ;;
+  *)
+    printf 'unexpected atlas command: %s\n' "$*" >&2
+    exit 1
+    ;;
+esac
 `
 	if err := os.WriteFile(path, []byte(script), 0o600); err != nil {
 		t.Fatalf("write fake atlas: %v", err)

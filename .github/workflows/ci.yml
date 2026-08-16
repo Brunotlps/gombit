@@ -9,16 +9,53 @@ on:
 permissions:
   contents: read
 
+# Pipeline: lint → build → test → (database ∥ migrations)
 jobs:
-  test:
-    name: Test
+  lint:
+    name: Lint
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12.2
+
+  build:
+    name: Build
+    needs: lint
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build packages
+        run: go build ./...
+
+  test:
+    name: Test
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -26,16 +63,27 @@ jobs:
       - name: Run tests
         run: go test ./...
 
-  database:
-    name: Database (${{ matrix.driver }})
+  database-sqlite:
+    name: Database (sqlite)
+    needs: test
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        driver:
-          - sqlite
-          - postgres
-          - mysql
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run SQLite database tests
+        run: go test ./database
+
+  database-postgres:
+    name: Database (postgres)
+    needs: test
+    runs-on: ubuntu-latest
     services:
       postgres:
         image: postgres:16-alpine
@@ -50,6 +98,27 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run Postgres database tests
+        run: >-
+          go test -tags integration ./database
+          -database.postgres-dsn
+          'postgres://gombit:gombit@127.0.0.1:5432/gombit?sslmode=disable'
+
+  database-mysql:
+    name: Database (mysql)
+    needs: test
+    runs-on: ubuntu-latest
+    services:
       mysql:
         image: mysql:8.4
         env:
@@ -66,41 +135,30 @@ jobs:
           --health-retries 12
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
 
-      - name: Run SQLite database tests
-        if: matrix.driver == 'sqlite'
-        run: go test ./database
-
-      - name: Run Postgres database tests
-        if: matrix.driver == 'postgres'
-        run: >-
-          go test -tags integration ./database
-          -database.postgres-dsn
-          'postgres://gombit:gombit@127.0.0.1:5432/gombit?sslmode=disable'
-
       - name: Run MySQL database tests
-        if: matrix.driver == 'mysql'
         run: >-
           go test -tags integration ./database
           -database.mysql-dsn
           'gombit:gombit@tcp(127.0.0.1:3306)/gombit?parseTime=true'
 
-  migrations:
-    name: Migrations
+  migrations-sqlite:
+    name: Migrations (sqlite)
+    needs: test
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
@@ -108,25 +166,76 @@ jobs:
       - name: Install Atlas Community Edition
         run: curl -sSf https://atlasgo.sh | sh -s -- --community
 
-      - name: Run migration tests
+      - name: Run migration unit and Atlas smoke tests
         env:
           ATLAS_BINARY: atlas
-        run: go test ./migrations
+        run: go test ./migrations ./cmd/gombit
 
-  lint:
-    name: Lint
+  migrations-postgres:
+    name: Migrations (postgres)
+    needs: test
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: gombit
+          POSTGRES_PASSWORD: gombit
+          POSTGRES_DB: gombit
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U gombit -d gombit"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version-file: go.mod
           cache: true
 
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v7
+      - name: Run Postgres migration integration tests
+        run: >-
+          go test -tags integration ./migrations
+          -migrations.postgres-dsn
+          'postgres://gombit:gombit@127.0.0.1:5432/gombit?sslmode=disable'
+
+  migrations-mysql:
+    name: Migrations (mysql)
+    needs: test
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8.4
+        env:
+          MYSQL_ROOT_PASSWORD: root
+          MYSQL_DATABASE: gombit
+          MYSQL_USER: gombit
+          MYSQL_PASSWORD: gombit
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd "mysqladmin ping -ugombit -pgombit"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
         with:
-          version: v2.12.2
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run MySQL migration integration tests
+        run: >-
+          go test -tags integration ./migrations
+          -migrations.mysql-dsn
+          'gombit:gombit@tcp(127.0.0.1:3306)/gombit?parseTime=true'

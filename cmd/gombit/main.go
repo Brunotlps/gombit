@@ -37,6 +37,12 @@ func run(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer)
 	switch args[1] {
 	case "makemigrations":
 		return runMakeMigrations(ctx, args[2:], stdout, stderr)
+	case "migrate":
+		return runMigrate(ctx, args[2:], stdout, stderr)
+	case "rollback":
+		return runRollback(ctx, args[2:], stdout, stderr)
+	case "status":
+		return runStatus(ctx, args[2:], stdout, stderr)
 	default:
 		dbUsage(stderr)
 		return fmt.Errorf("gombit db: unknown subcommand %q", args[1])
@@ -89,6 +95,66 @@ func runMakeMigrations(ctx context.Context, args []string, stdout io.Writer, std
 	})
 }
 
+func runMigrate(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) error {
+	opts, err := parseApplyFlags("gombit db migrate", args, stderr)
+	if err != nil {
+		return err
+	}
+	return migrations.Migrate(ctx, opts.withWriters(stdout, stderr))
+}
+
+func runRollback(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) error {
+	opts, err := parseApplyFlags("gombit db rollback", args, stderr)
+	if err != nil {
+		return err
+	}
+	return migrations.Rollback(ctx, opts.withWriters(stdout, stderr))
+}
+
+func runStatus(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) error {
+	opts, err := parseApplyFlags("gombit db status", args, stderr)
+	if err != nil {
+		return err
+	}
+	return migrations.Status(ctx, opts.withWriters(stdout, stderr))
+}
+
+type applyFlagValues struct {
+	opts migrations.ApplyOptions
+}
+
+func (v applyFlagValues) withWriters(stdout io.Writer, stderr io.Writer) migrations.ApplyOptions {
+	v.opts.Stdout = stdout
+	v.opts.Stderr = stderr
+	return v.opts
+}
+
+func parseApplyFlags(name string, args []string, stderr io.Writer) (applyFlagValues, error) {
+	cfg, err := loadConfig()
+	if err != nil {
+		return applyFlagValues{}, err
+	}
+
+	flags := flag.NewFlagSet(name, flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	migrationDir := flags.String("dir", "database/migrations", "migration directory")
+	atlasBin := flags.String("atlas-bin", "atlas", "Atlas CLI binary path")
+	if err := flags.Parse(args); err != nil {
+		return applyFlagValues{}, err
+	}
+	if flags.NArg() != 0 {
+		flags.Usage()
+		return applyFlagValues{}, fmt.Errorf("%s: unexpected argument %q", name, flags.Arg(0))
+	}
+
+	return applyFlagValues{opts: migrations.ApplyOptions{
+		WorkDir:      ".",
+		MigrationDir: *migrationDir,
+		AtlasBinary:  *atlasBin,
+		Database:     cfg.Database,
+	}}, nil
+}
+
 type modelFlags []string
 
 func (m *modelFlags) String() string {
@@ -108,4 +174,7 @@ func usage(w io.Writer) {
 func dbUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "available db subcommands:")
 	_, _ = fmt.Fprintln(w, "  makemigrations <name> --model <import.Type> [--driver sqlite|postgres|mysql]")
+	_, _ = fmt.Fprintln(w, "  migrate [--dir database/migrations] [--atlas-bin atlas]")
+	_, _ = fmt.Fprintln(w, "  rollback [--dir database/migrations]")
+	_, _ = fmt.Fprintln(w, "  status [--dir database/migrations] [--atlas-bin atlas]")
 }
