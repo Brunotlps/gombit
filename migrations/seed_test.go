@@ -36,6 +36,9 @@ func TestSeedAppliesOrderedSQLFiles(t *testing.T) {
 	writeFile(t, filepath.Join(seedDir, "02_second.sql"), `INSERT INTO widgets (id, name) VALUES (2, 'second');`)
 	writeFile(t, filepath.Join(seedDir, "01_first.sql"), `INSERT INTO widgets (id, name) VALUES (1, 'first');`)
 	writeFile(t, filepath.Join(seedDir, "notes.txt"), "not sql")
+	if err := os.MkdirAll(filepath.Join(seedDir, "nested"), 0o750); err != nil {
+		t.Fatalf("mkdir nested: %v", err)
+	}
 
 	stdout := new(bytes.Buffer)
 	stderr := new(bytes.Buffer)
@@ -54,6 +57,9 @@ func TestSeedAppliesOrderedSQLFiles(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "skipping non-SQL seed file notes.txt") {
 		t.Fatalf("stderr = %q, want skip warning", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "skipping nested seed directory nested") {
+		t.Fatalf("stderr = %q, want nested dir warning", stderr.String())
 	}
 
 	var names []string
@@ -80,6 +86,99 @@ func TestSeedMissingDirIsNoop(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "No seed files") {
 		t.Fatalf("stdout = %q", stdout.String())
+	}
+}
+
+func TestSeedAppliesMultiStatementFile(t *testing.T) {
+	workDir := t.TempDir()
+	seedDir := filepath.Join(workDir, "database", "seeds")
+	if err := os.MkdirAll(seedDir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	dsn := "file:" + filepath.Join(workDir, "app.db") + "?cache=shared&_fk=1"
+	cfg := config.DatabaseConfig{Driver: config.DatabaseDriverSQLite, DSN: dsn}
+	db, err := database.Open(cfg)
+	if err != nil {
+		t.Fatalf("database.Open() error = %v", err)
+	}
+	defer func() { _ = db.Close() }()
+	if err := db.Exec("CREATE TABLE widgets (id INTEGER PRIMARY KEY, name TEXT NOT NULL)").Error; err != nil {
+		t.Fatalf("create widgets: %v", err)
+	}
+
+	writeFile(t, filepath.Join(seedDir, "01_multi.sql"), `
+-- seed two rows in one file
+INSERT INTO widgets (id, name) VALUES (1, 'alpha');
+INSERT INTO widgets (id, name) VALUES (2, 'semi;colon');
+INSERT INTO widgets (id, name) VALUES (3, 'gamma');
+`)
+
+	if err := Seed(context.Background(), SeedOptions{
+		WorkDir:  workDir,
+		SeedDir:  "database/seeds",
+		Database: cfg,
+		Stdout:   io.Discard,
+		Stderr:   io.Discard,
+	}); err != nil {
+		t.Fatalf("Seed() error = %v", err)
+	}
+
+	var names []string
+	if err := db.Raw("SELECT name FROM widgets ORDER BY id").Scan(&names).Error; err != nil {
+		t.Fatalf("select widgets: %v", err)
+	}
+	if len(names) != 3 || names[0] != "alpha" || names[1] != "semi;colon" || names[2] != "gamma" {
+		t.Fatalf("names = %#v, want [alpha semi;colon gamma]", names)
+	}
+}
+
+func TestSplitSQLStatements(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		sql  string
+		want []string
+	}{
+		{
+			name: "two inserts",
+			sql:  "INSERT INTO t VALUES (1); INSERT INTO t VALUES (2);",
+			want: []string{"INSERT INTO t VALUES (1)", "INSERT INTO t VALUES (2)"},
+		},
+		{
+			name: "semicolon inside string",
+			sql:  "INSERT INTO t VALUES ('a;b'); INSERT INTO t VALUES (2)",
+			want: []string{"INSERT INTO t VALUES ('a;b')", "INSERT INTO t VALUES (2)"},
+		},
+		{
+			name: "escaped quote",
+			sql:  "INSERT INTO t VALUES ('it''s;ok');",
+			want: []string{"INSERT INTO t VALUES ('it''s;ok')"},
+		},
+		{
+			name: "line comment with semicolon",
+			sql:  "INSERT INTO t VALUES (1); -- skip; me\nINSERT INTO t VALUES (2);",
+			want: []string{"INSERT INTO t VALUES (1)", "-- skip; me\nINSERT INTO t VALUES (2)"},
+		},
+		{
+			name: "comment only",
+			sql:  "-- just a comment\n/* also comment */",
+			want: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := splitSQLStatements(tt.sql)
+			if len(got) != len(tt.want) {
+				t.Fatalf("len = %d (%#v), want %d (%#v)", len(got), got, len(tt.want), tt.want)
+			}
+			for i := range got {
+				if got[i] != tt.want[i] {
+					t.Fatalf("stmt[%d] = %q, want %q", i, got[i], tt.want[i])
+				}
+			}
+		})
 	}
 }
 

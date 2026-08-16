@@ -143,15 +143,19 @@ gombit db reset [--dir database/migrations] [--seeds database/seeds] [--atlas-bi
 
 ### Seed
 
-`gombit db seed` executes every `*.sql` file in the seed directory in lexical
-order. Non-`.sql` files are skipped with a warning on stderr. A missing or empty
-seed directory prints `No seed files.` and exits successfully.
+`gombit db seed` executes every top-level `*.sql` file in the seed directory in
+lexical order. Nested subdirectories and non-`.sql` files are skipped with a
+warning on stderr. A missing or empty seed directory prints `No seed files.` and
+exits successfully.
 
-Seed files are application-owned SQL. Keep them idempotent if you plan to run
-`seed` more than once against the same database; Gombit does not wrap seeds in
-a cross-driver transaction.
+Each seed file may contain multiple SQL statements separated by `;`. Gombit
+splits on semicolons outside quotes and comments, then executes statements in
+order (so multi-`INSERT` files work without relying on driver multi-statement
+support). Seed files are application-owned SQL. Keep them idempotent if you plan
+to run `seed` more than once against the same database; Gombit does not wrap
+seeds in a cross-driver transaction.
 
-Example layout:
+Example layout (flat directory only):
 
 ```text
 database/seeds/01_demo.sql
@@ -162,8 +166,8 @@ database/seeds/02_more_data.sql
 
 `gombit db reset` is drop + migrate + seed:
 
-1. Drops the configured database schema (all user tables/views, including
-   `framework_migrations` and `atlas_schema_revisions`).
+1. Wipes the configured database using the driver strategy below (including
+   Gombit/Atlas revision tables when they live in the wiped scope).
 2. Runs `gombit db migrate`.
 3. Runs `gombit db seed`.
 
@@ -172,7 +176,7 @@ Driver wipe strategy:
 | Driver | Wipe |
 | --- | --- |
 | SQLite | `DROP` every non-`sqlite_*` table/view from `sqlite_master` (file is not deleted) |
-| PostgreSQL | `DROP SCHEMA public CASCADE` then recreate `public` and restore grants |
+| PostgreSQL | Resets schema `public` only (`DROP SCHEMA public CASCADE` then recreate + grants). Non-`public` schemas are left untouched. |
 | MySQL | Disable FK checks, drop every base table/view in the current database, re-enable checks |
 
 Reset refuses to run when `GOMBIT_ENV=production` unless `--force` is set.

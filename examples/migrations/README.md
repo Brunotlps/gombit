@@ -48,7 +48,9 @@ Add SQL seed files under `database/seeds/` (lexical order). This example include
 [`database/seeds/01_demo.sql`](database/seeds/01_demo.sql):
 
 ```sh
-# from the repository root, after configuring GOMBIT_DATABASE_* as above
+# from the repository root, after configuring GOMBIT_DATABASE_* as above.
+# --dir points at the app migration directory (default/repo-root
+# database/migrations from makemigrations); --seeds can point at this example.
 gombit db seed --seeds examples/migrations/database/seeds
 gombit db reset --dir database/migrations --seeds examples/migrations/database/seeds
 ```
