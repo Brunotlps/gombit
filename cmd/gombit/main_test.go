@@ -184,11 +184,87 @@ func TestRunMigrateRollbackStatus(t *testing.T) {
 }
 
 func TestRunRejectsUnknownDBSubcommand(t *testing.T) {
-	err := run(context.Background(), []string{"db", "seed"}, ioDiscard{}, ioDiscard{})
+	err := run(context.Background(), []string{"db", "unknown"}, ioDiscard{}, ioDiscard{})
 	if err == nil {
 		t.Fatal("run() error = nil, want unknown subcommand error")
 	}
 	if !strings.Contains(err.Error(), "unknown subcommand") {
+		t.Fatalf("run() error = %q", err)
+	}
+}
+
+func TestRunSeedAndReset(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fake atlas shell script uses POSIX sh")
+	}
+
+	workDir := t.TempDir()
+	migrationDir := filepath.Join(workDir, "migrations")
+	seedDir := filepath.Join(workDir, "seeds")
+	if err := os.MkdirAll(migrationDir, 0o750); err != nil {
+		t.Fatalf("mkdir migrations: %v", err)
+	}
+	if err := os.MkdirAll(seedDir, 0o750); err != nil {
+		t.Fatalf("mkdir seeds: %v", err)
+	}
+	writeFile(t, filepath.Join(migrationDir, "20260101000000_create_widgets.sql"),
+		"CREATE TABLE widgets (id INTEGER PRIMARY KEY, name TEXT NOT NULL);")
+	writeFile(t, filepath.Join(seedDir, "01_widgets.sql"),
+		"INSERT INTO widgets (id, name) VALUES (1, 'from-seed');")
+
+	dbPath := filepath.Join(workDir, "app.db")
+	cfg := config.Default()
+	cfg.Database.Driver = config.DatabaseDriverSQLite
+	cfg.Database.DSN = "file:" + dbPath + "?cache=shared&_fk=1"
+	stubConfig(t, cfg)
+
+	atlas := fakeAtlasApplyStatus(t)
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+
+	err := run(context.Background(), []string{
+		"db", "reset",
+		"--dir", migrationDir,
+		"--seeds", seedDir,
+		"--atlas-bin", atlas,
+	}, stdout, stderr)
+	if err != nil {
+		t.Fatalf("reset error = %v; stderr=%q", err, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "Dropped database schema") {
+		t.Fatalf("reset stdout = %q, want drop message", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "Applied 1 seed file(s)") {
+		t.Fatalf("reset stdout = %q, want seed message", stdout.String())
+	}
+	stdout.Reset()
+
+	emptySeeds := filepath.Join(workDir, "empty-seeds")
+	if err := os.MkdirAll(emptySeeds, 0o750); err != nil {
+		t.Fatalf("mkdir empty seeds: %v", err)
+	}
+	err = run(context.Background(), []string{
+		"db", "seed",
+		"--seeds", emptySeeds,
+	}, stdout, stderr)
+	if err != nil {
+		t.Fatalf("seed empty dir error = %v; stderr=%q", err, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "No seed files") {
+		t.Fatalf("seed stdout = %q, want no seed files", stdout.String())
+	}
+}
+
+func TestRunResetRefusesProductionWithoutForce(t *testing.T) {
+	cfg := config.Default()
+	cfg.Environment = config.EnvironmentProduction
+	stubConfig(t, cfg)
+
+	err := run(context.Background(), []string{"db", "reset"}, ioDiscard{}, ioDiscard{})
+	if err == nil {
+		t.Fatal("run() error = nil, want production refusal")
+	}
+	if !strings.Contains(err.Error(), "refuse reset in production without --force") {
 		t.Fatalf("run() error = %q", err)
 	}
 }

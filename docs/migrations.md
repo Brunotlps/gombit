@@ -130,6 +130,54 @@ database/migrations/downs/20260101000000_create_products.down.sql
 If any down file in the latest batch is missing, rollback fails before
 executing any down SQL. Migrate does not require downs.
 
+## Seed / Reset
+
+M2-3 adds seeders and a destructive development reset. Both commands read the
+configured database from `config.Load()` (`GOMBIT_DATABASE_DRIVER` /
+`GOMBIT_DATABASE_DSN`).
+
+```sh
+gombit db seed  [--seeds database/seeds]
+gombit db reset [--dir database/migrations] [--seeds database/seeds] [--atlas-bin atlas] [--force]
+```
+
+### Seed
+
+`gombit db seed` executes every `*.sql` file in the seed directory in lexical
+order. Non-`.sql` files are skipped with a warning on stderr. A missing or empty
+seed directory prints `No seed files.` and exits successfully.
+
+Seed files are application-owned SQL. Keep them idempotent if you plan to run
+`seed` more than once against the same database; Gombit does not wrap seeds in
+a cross-driver transaction.
+
+Example layout:
+
+```text
+database/seeds/01_demo.sql
+database/seeds/02_more_data.sql
+```
+
+### Reset
+
+`gombit db reset` is drop + migrate + seed:
+
+1. Drops the configured database schema (all user tables/views, including
+   `framework_migrations` and `atlas_schema_revisions`).
+2. Runs `gombit db migrate`.
+3. Runs `gombit db seed`.
+
+Driver wipe strategy:
+
+| Driver | Wipe |
+| --- | --- |
+| SQLite | `DROP` every non-`sqlite_*` table/view from `sqlite_master` (file is not deleted) |
+| PostgreSQL | `DROP SCHEMA public CASCADE` then recreate `public` and restore grants |
+| MySQL | Disable FK checks, drop every base table/view in the current database, re-enable checks |
+
+Reset refuses to run when `GOMBIT_ENV=production` unless `--force` is set.
+Seed alone is allowed in production; apps own seed idempotency.
+
 ## Revision metadata
 
 | Column | Notes |
