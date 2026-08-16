@@ -130,3 +130,18 @@ func mysqlAtlasURL(dsn string) (string, error) {
 	}
 	return u.String(), nil
 }
+
+// withAtlasRevisionsSchema appends Atlas CLI flags so revision bookkeeping stays
+// in the public schema on PostgreSQL.
+//
+// Atlas Community Edition defaults PostgreSQL revisions to a dedicated schema
+// named atlas_schema_revisions (schema.table). Gombit's ledger sync and
+// rollback read/write the table atlas_schema_revisions via GORM's default
+// search_path (public). Pinning --revisions-schema public keeps all three
+// drivers on the same table name in the default schema.
+func withAtlasRevisionsSchema(driver config.DatabaseDriver, args []string) []string {
+	if driver != config.DatabaseDriverPostgres {
+		return args
+	}
+	return append(args, "--revisions-schema", "public")
+}

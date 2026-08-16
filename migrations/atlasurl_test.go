@@ -97,3 +97,25 @@ func TestAtlasURL(t *testing.T) {
 		})
 	}
 }
+
+func TestWithAtlasRevisionsSchema(t *testing.T) {
+	base := []string{"migrate", "apply", "--url", "postgres://localhost/db", "--dir", "file://migrations"}
+
+	gotPG := withAtlasRevisionsSchema(config.DatabaseDriverPostgres, append([]string{}, base...))
+	wantPG := append(append([]string{}, base...), "--revisions-schema", "public")
+	if len(gotPG) != len(wantPG) {
+		t.Fatalf("postgres args = %v, want %v", gotPG, wantPG)
+	}
+	for i := range wantPG {
+		if gotPG[i] != wantPG[i] {
+			t.Fatalf("postgres args[%d] = %q, want %q", i, gotPG[i], wantPG[i])
+		}
+	}
+
+	for _, driver := range []config.DatabaseDriver{config.DatabaseDriverSQLite, config.DatabaseDriverMySQL} {
+		got := withAtlasRevisionsSchema(driver, append([]string{}, base...))
+		if len(got) != len(base) {
+			t.Fatalf("%s args = %v, want unchanged %v", driver, got, base)
+		}
+	}
+}

@@ -22,7 +22,8 @@ type ResetOptions struct {
 //
 // Driver wipe strategy:
 //   - SQLite: DROP every non-sqlite_* table/view from sqlite_master
-//   - Postgres: DROP SCHEMA public CASCADE; CREATE SCHEMA public; restore grants
+//   - Postgres: DROP SCHEMA atlas_schema_revisions CASCADE (Atlas default);
+//     DROP SCHEMA public CASCADE; CREATE SCHEMA public; restore grants
 //   - MySQL: disable FK checks, DROP every base table and view, re-enable checks
 //
 // The SQLite database file is not deleted so in-memory and shared-cache DSNs work.
@@ -119,6 +120,8 @@ ORDER BY type DESC, name`).Scan(&objects).Error; err != nil {
 
 func dropPostgresSchema(db *database.DB) error {
 	stmts := []string{
+		// Atlas's historical default revisions schema (pre --revisions-schema public).
+		"DROP SCHEMA IF EXISTS atlas_schema_revisions CASCADE",
 		"DROP SCHEMA IF EXISTS public CASCADE",
 		"CREATE SCHEMA public",
 		"GRANT ALL ON SCHEMA public TO public",
