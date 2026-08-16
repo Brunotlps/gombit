@@ -2,10 +2,12 @@
 
 M1-3 de-domains the router introduced in M1-2: `framework.New` builds a
 `*gin.Engine` with zero knowledge of any application domain and mounts only
-its own endpoints. Today that means `/livez`, `/readyz`, and `/metrics`; the
-OpenAPI document joins later (M3).
+its own endpoints. Today that means `/livez`, `/readyz`, `/metrics`, and the
+Huma OpenAPI preview routes (`/openapi.json` and siblings). Public API handlers
+register on `app.API()` (see [`docs/contract.md`](contract.md)); raw Gin routes
+continue to use `app.Router()`.
 
-Applications register their own routes directly against the escape hatch:
+Applications register their own routes against the appropriate surface:
 
 ```go
 app, err := framework.New()
@@ -13,8 +15,8 @@ if err != nil {
     return err
 }
 
-registerProductRoutes(app.Router())
-registerAccountRoutes(app.Router())
+registerProductRoutes(app.API(), app.Config().API.Prefix) // contract / OpenAPI
+registerWebhookRoutes(app.Router())                         // escape hatch
 
 return framework.Run(app)
 ```
@@ -23,8 +25,8 @@ Each `registerXRoutes` function is the runtime equivalent of a feature
 package's `routes.go` (build plan §3.2 /
 `.cursor/skills/create-feature/references/layout.md`): registration is
 **explicit**, called from `main`, and never discovered through reflection
-(principle 6.2). `examples/router` demonstrates this with two independent
-toy route groups, `ping` and `echo`.
+(principle 6.2). `examples/router` demonstrates raw Gin groups; `examples/contract`
+demonstrates Huma-typed registration with D10 validation errors.
 
 ## No module/registry abstraction
 
@@ -91,14 +93,13 @@ Recovery still applying to an application-registered route.
 
 ## What is not here yet
 
-This surface does not include CORS, rate limiting, or authentication
-middleware. Those are extracted with their own runtime dependencies in later
-issues:
+Contract DTOs, validation → D10 field errors, and `app.API()` are documented in
+[`docs/contract.md`](contract.md). This router surface still does not include
+CORS, rate limiting, or authentication middleware:
 
-- rate limiting and the cache interface: M1-5
-- Mongo-backed access logging: M1-6
 - auth middleware: M5
+- `gombit openapi generate` CLI: M3-3
 
-Until then, an application that needs one of these can add it directly via
+Until then, an application that needs middleware can add it directly via
 `app.Router().Use(...)` or on its own route groups; the framework will not
 silently reorder or override it.

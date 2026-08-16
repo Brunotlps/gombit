@@ -14,8 +14,11 @@ import (
 
 	"github.com/LAA-Software-Engineering/gombit/cache"
 	"github.com/LAA-Software-Engineering/gombit/config"
+	"github.com/LAA-Software-Engineering/gombit/contract"
 	"github.com/LAA-Software-Engineering/gombit/database"
 	"github.com/LAA-Software-Engineering/gombit/logging"
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/adapters/humagin"
 	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
@@ -41,6 +44,7 @@ type App struct {
 	db              *database.DB
 	logger          *zap.Logger
 	router          *gin.Engine
+	api             huma.API
 	startHooks      []Hook
 	stopHooks       []Hook
 	shutdownTimeout time.Duration
@@ -104,6 +108,12 @@ func New(options ...Option) (*App, error) {
 		app.router = router
 	} else if err := configureTrustedProxies(app.router, app.cfg.HTTP.TrustedProxies); err != nil {
 		return nil, err
+	}
+	if app.api == nil {
+		contract.Install(contract.InstallOptions{
+			RequestID: GetRequestIDFromContext,
+		})
+		app.api = humagin.New(app.router, contract.HumaConfig(app.cfg.AppName, "0.0.0"))
 	}
 	if app.cache == nil {
 		store, err := cache.Open(app.cfg.Cache)
@@ -252,6 +262,13 @@ func (a *App) Router() *gin.Engine {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.router
+}
+
+// API returns the Huma API used for contract-typed route registration.
+func (a *App) API() huma.API {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.api
 }
 
 // Addr returns the bound HTTP address after the app has started.

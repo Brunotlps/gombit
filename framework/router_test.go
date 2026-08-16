@@ -22,7 +22,15 @@ func TestDefaultRouterMountsOnlyFrameworkEndpoints(t *testing.T) {
 	}
 	sort.Strings(got)
 
-	want := []string{"GET /livez", "GET /metrics", "GET /readyz"}
+	want := []string{
+		"GET /livez",
+		"GET /metrics",
+		"GET /openapi-3.0.json",
+		"GET /openapi-3.0.yaml",
+		"GET /openapi.json",
+		"GET /openapi.yaml",
+		"GET /readyz",
+	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("Router().Routes() = %v, want %v", got, want)
 	}
