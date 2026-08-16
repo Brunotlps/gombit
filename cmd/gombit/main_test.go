@@ -263,15 +263,73 @@ func fakeAtlasApplyStatus(t *testing.T) string {
 	script := `#!/bin/sh
 set -eu
 cmd=""
+url=""
+dir=""
 prev=""
 for arg in "$@"; do
   if [ "$prev" = "migrate" ]; then
     cmd="$arg"
   fi
+  if [ "$prev" = "--url" ]; then
+    url="$arg"
+  fi
+  if [ "$prev" = "--dir" ]; then
+    dir="$arg"
+  fi
   prev="$arg"
 done
 case "$cmd" in
   apply)
+    python3 - "$url" "$dir" <<'PY'
+import os
+import sqlite3
+import sys
+from datetime import datetime, timezone
+
+url, dir_url = sys.argv[1], sys.argv[2]
+if not url.startswith("sqlite://"):
+    raise SystemExit(f"unsupported url: {url}")
+rest = url[len("sqlite://"):]
+db_path = rest.split("?", 1)[0]
+mig_dir = dir_url.removeprefix("file://")
+
+conn = sqlite3.connect(db_path)
+try:
+    conn.execute(
+        """
+        CREATE TABLE IF NOT EXISTS atlas_schema_revisions (
+          version TEXT PRIMARY KEY,
+          description TEXT,
+          type TEXT,
+          applied_at TEXT
+        )
+        """
+    )
+    existing = {
+        row[0]
+        for row in conn.execute("SELECT version FROM atlas_schema_revisions")
+    }
+    for name in sorted(os.listdir(mig_dir)):
+        if (
+            not name.endswith(".sql")
+            or name.endswith(".down.sql")
+            or name == "atlas.sum"
+        ):
+            continue
+        version = name.split("_", 1)[0]
+        if version in existing:
+            continue
+        with open(os.path.join(mig_dir, name), encoding="utf-8") as f:
+            sql = f.read()
+        conn.executescript(sql)
+        conn.execute(
+            "INSERT INTO atlas_schema_revisions (version, description, type, applied_at) VALUES (?, ?, ?, ?)",
+            (version, name, "sql", datetime.now(timezone.utc).isoformat()),
+        )
+    conn.commit()
+finally:
+    conn.close()
+PY
     printf '%s\n' 'fake atlas apply ok'
     ;;
   status)
