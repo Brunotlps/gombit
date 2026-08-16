@@ -29,6 +29,7 @@ func TestDefaultRuntimeMiddlewareOrder(t *testing.T) {
 		"trace_context",
 		"metrics",
 		"security_headers",
+		"xss",
 		"request_timeout",
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -399,5 +400,79 @@ func TestRunContextServesMetricsWithRuntimeMiddleware(t *testing.T) {
 	}
 	if !strings.Contains(string(body), "gombit_http_requests_total") {
 		t.Fatalf("GET /metrics body = %q, want request metrics", string(body))
+	}
+}
+
+func TestDefaultRouterSanitizesXSSInJSONBody(t *testing.T) {
+	app := newTestApp(t)
+	app.Router().POST("/comment", func(c *gin.Context) {
+		var body struct {
+			Comment string `json:"comment"`
+		}
+		if err := c.ShouldBindJSON(&body); err != nil {
+			t.Fatalf("bind JSON: %v", err)
+		}
+		c.JSON(http.StatusOK, gin.H{"comment": body.Comment})
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/comment",
+		strings.NewReader(`{"comment":"<script>alert(1)</script>hi"}`),
+	)
+	req.Header.Set("Content-Type", "application/json; charset=utf-8")
+	app.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST /comment status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v; body: %s", err, rec.Body.String())
+	}
+	if body["comment"] != "hi" {
+		t.Fatalf("comment = %q, want %q", body["comment"], "hi")
+	}
+}
+
+func TestDefaultRouterLeavesPasswordFieldUnsanitized(t *testing.T) {
+	app := newTestApp(t)
+	app.Router().POST("/login", func(c *gin.Context) {
+		var body struct {
+			Password string `json:"password"`
+			Note     string `json:"note"`
+		}
+		if err := c.ShouldBindJSON(&body); err != nil {
+			t.Fatalf("bind JSON: %v", err)
+		}
+		c.JSON(http.StatusOK, gin.H{
+			"password": body.Password,
+			"note":     body.Note,
+		})
+	})
+
+	const password = `<b>secret</b>`
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(
+		http.MethodPost,
+		"/login",
+		strings.NewReader(`{"password":"`+password+`","note":"<i>hi</i>"}`),
+	)
+	req.Header.Set("Content-Type", "application/json")
+	app.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("POST /login status = %d, want %d; body: %s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var body map[string]string
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("unmarshal response: %v; body: %s", err, rec.Body.String())
+	}
+	if body["password"] != password {
+		t.Fatalf("password = %q, want unsanitized %q", body["password"], password)
+	}
+	if body["note"] != "hi" {
+		t.Fatalf("note = %q, want %q", body["note"], "hi")
 	}
 }
