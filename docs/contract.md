@@ -1,12 +1,11 @@
-# Contract (Huma DTOs + validation)
+# Contract (Huma DTOs + envelope)
 
-M3-1 introduces Gombit's public API contract conventions: Huma-typed handlers
-over Gin, validation tags on request structs, and the locked D10 error envelope
-with structured `fields`.
+Gombit's public API contract conventions: Huma-typed handlers over Gin, D10
+success/error envelopes, validation tags → structured `fields`, and draft §41
+application error categories mapped centrally to HTTP status codes.
 
-ADR-011 selected Huma as the contract layer. This document is the application-
-facing guide for DTO shape and validation errors. Application error categories
-and success `meta` belong to M3-2; OpenAPI CLI generation belongs to M3-3.
+ADR-011 selected Huma as the contract layer. OpenAPI CLI generation belongs to
+M3-3; the TypeScript client belongs to M3-4.
 
 ## Registering contract routes
 
@@ -32,9 +31,44 @@ return framework.Run(app)
 Use `app.Router()` only for routes that must stay outside the OpenAPI contract
 (webhooks, SSE, legacy). See [`docs/router.md`](router.md).
 
-`examples/contract` shows a minimal create endpoint.
+`examples/contract` shows create, list (with `meta`), get, and not-found.
 
-## Request / response DTOs
+## Success envelope
+
+```go
+type createWidgetOutput struct {
+    Body contract.Data[Widget] // {"data": {...}}
+}
+
+type listWidgetsOutput struct {
+    // Typed meta so OpenAPI emits PageMeta fields (not empty object).
+    Body contract.DataMeta[[]Widget, contract.PageMeta]
+}
+```
+
+`contract.PageMeta` is the v0.1 pagination meta for collection responses.
+Pass a non-nil pointer when meta should appear; a nil `Meta` is omitted.
+A non-nil zero `PageMeta` still serializes (JSON `omitempty` does not drop empty structs).
+
+```go
+Body: contract.DataMeta[[]Widget, contract.PageMeta]{
+    Data: items,
+    Meta: &contract.PageMeta{Page: 1, PerPage: 20, Total: 125},
+},
+```
+
+```json
+{
+  "data": [],
+  "meta": {
+    "page": 1,
+    "per_page": 20,
+    "total": 125
+  }
+}
+```
+
+## Request DTOs
 
 Go structs are the source of truth. Prefer Huma tags — not a separate
 `validate:"..."` layer and not hand-written OpenAPI files.
@@ -44,14 +78,6 @@ type CreateWidgetBody struct {
     Name  string `json:"name" minLength:"1" maxLength:"80" doc:"Human-readable name"`
     Color string `json:"color,omitempty" maxLength:"30"`
 }
-
-type createWidgetInput struct {
-    Body CreateWidgetBody
-}
-
-type createWidgetOutput struct {
-    Body contract.Data[Widget]
-}
 ```
 
 Conventions:
@@ -59,8 +85,6 @@ Conventions:
 - Nest the JSON body under an input field named `Body` (Huma binding).
 - Put validation metadata on body fields (`minLength`, `maxLength`, `format`,
   `enum`, `required`, and the other Huma tags).
-- Wrap success payloads in `contract.Data[T]` so responses are `{"data": ...}`.
-  Pagination `meta` arrives in M3-2.
 - Document fields with `doc` / `example` so they appear in OpenAPI.
 
 ## Validation → D10 `fields`
@@ -99,6 +123,39 @@ field name from messages like `expected required property name to be present`.
 
 Content-Type stays `application/json` (not `application/problem+json`).
 
+## Application errors (§41 categories)
+
+Services and handlers should return category errors, not ad-hoc status codes.
+Constructors build a D10 `ErrorEnvelope` (`huma.StatusError`). Wrap with
+`contract.WithContext` so `request_id` is filled:
+
+```go
+return nil, contract.WithContext(ctx, contract.NotFound("widget not found"))
+```
+
+| Category | D10 `error.code` | HTTP |
+| --- | --- | --- |
+| `validation` | `validation_error` | 422 |
+| `authentication` | `authentication` | 401 |
+| `authorization` | `authorization` | 403 |
+| `not_found` | `not_found` | 404 |
+| `conflict` | `conflict` | 409 |
+| `rate_limited` | `rate_limited` | 429 |
+| `dependency_unavailable` | `dependency_unavailable` | 503 |
+| `internal` | `internal` | 500 |
+
+Helpers: `Validation`, `Authentication`, `Authorization`, `NotFound`,
+`Conflict`, `RateLimited`, `DependencyUnavailable`, `Internal`, plus
+`New(category, message)`. Always wrap with `WithContext` in handlers so
+`request_id` is set — constructors alone leave it empty.
+
+`WithFields` attaches D10 `fields` without forcing the code to
+`validation_error` (for example a `conflict` with a field detail). Huma tag
+validation still uses the Install path and always yields `validation_error`.
+
+The `validation_error` code is preserved from M3-1 / D10 (not renamed to
+`validation`).
+
 ## OpenAPI preview
 
 With the default Huma config, `/openapi.json` is served for local inspection and
@@ -107,6 +164,7 @@ checks land in M3-3 / M3-5.
 
 ## What is not here yet
 
-- Central application error categories and HTTP status mapping (M3-2)
-- Success envelope `meta` helpers (M3-2)
-- `gombit openapi generate` / `gombit client generate` (M3-3 / M3-4)
+- `gombit openapi generate` / `/docs` UI (M3-3)
+- TypeScript client generation (M3-4)
+- Pagination query DSL / filter/sort helpers (design §42)
+- gRPC status mapping (post-v0.1)

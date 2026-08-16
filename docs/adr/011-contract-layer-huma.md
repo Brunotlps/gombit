@@ -70,8 +70,9 @@ OpenAPI 3.1 emission without a custom contract framework.
   Details error schema. That is not the Gombit public error contract. **M3-1
   replaces validation (and other Huma-generated) errors with the locked D10
   envelope** via `contract.Install` / `framework.App.API()` — see
-  [`docs/contract.md`](../contract.md). M3-2 still owns application error
-  categories and the category→status mapping table. The `fields` member is
+  [`docs/contract.md`](../contract.md). M3-2 owns application error categories
+  and the category→status mapping table (`contract.StatusFor` /
+  `contract.NotFound`, etc.). The `fields` member is
   optional and should appear only when field-level details exist:
 
 ```json

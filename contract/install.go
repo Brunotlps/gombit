@@ -16,16 +16,27 @@ type InstallOptions struct {
 	RequestID func(context.Context) string
 }
 
-var installOnce sync.Once
+var (
+	installOnce    sync.Once
+	requestIDFrom  func(context.Context) string
+	requestIDMu    sync.RWMutex
+)
 
 // Install replaces Huma's default RFC 9457 Problem Details errors with the D10
 // envelope. It is safe to call more than once; only the first call applies.
+//
+// Install only classifies errors built through Huma's NewError hooks (request
+// validation). Application errors from New / NotFound / etc. set status and
+// code via StatusFor / CodeFor and are not reclassified.
 func Install(opts InstallOptions) {
 	installOnce.Do(func() {
 		requestID := opts.RequestID
 		if requestID == nil {
 			requestID = func(context.Context) string { return "" }
 		}
+		requestIDMu.Lock()
+		requestIDFrom = requestID
+		requestIDMu.Unlock()
 
 		huma.NewError = func(status int, msg string, errs ...error) huma.StatusError {
 			return newEnvelope(status, msg, "", errs...)
@@ -38,6 +49,26 @@ func Install(opts InstallOptions) {
 			return newEnvelope(status, msg, id, errs...)
 		}
 	})
+}
+
+// WithContext returns err with request_id filled from Install's RequestID
+// reader when available. Application handlers should wrap category errors:
+//
+//	return nil, contract.WithContext(ctx, contract.NotFound("missing"))
+func WithContext(ctx context.Context, err *ErrorEnvelope) *ErrorEnvelope {
+	if err == nil {
+		return nil
+	}
+	requestIDMu.RLock()
+	fn := requestIDFrom
+	requestIDMu.RUnlock()
+	if fn == nil || ctx == nil {
+		return err
+	}
+	if id := fn(ctx); id != "" {
+		return err.WithRequestID(id)
+	}
+	return err
 }
 
 func newEnvelope(status int, msg, requestID string, errs ...error) *ErrorEnvelope {
@@ -73,9 +104,9 @@ func classifyError(status int, msg string, fields map[string][]string) (code, me
 }
 
 func isValidationFailure(status int, msg string, fields map[string][]string) bool {
-	// Any error carrying field details is treated as validation until M3-2 owns
-	// application error categories (field-bearing domain errors may then use a
-	// different code while keeping D10 fields).
+	// Huma Install path only: field details or 422/validation-failed indicate
+	// request validation. Application constructors (New/NotFound/...) bypass
+	// this function entirely.
 	if len(fields) > 0 {
 		return true
 	}

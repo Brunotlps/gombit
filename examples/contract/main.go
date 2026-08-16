@@ -31,7 +31,53 @@ type createWidgetOutput struct {
 	Body contract.Data[Widget]
 }
 
+type listWidgetsOutput struct {
+	Body contract.DataMeta[[]Widget, contract.PageMeta]
+}
+
+type getWidgetInput struct {
+	ID string `path:"id" doc:"Widget identifier"`
+}
+
+type getWidgetOutput struct {
+	Body contract.Data[Widget]
+}
+
 func registerWidgetRoutes(api huma.API, prefix string) {
+	huma.Register(api, huma.Operation{
+		OperationID: "list-widgets",
+		Method:      http.MethodGet,
+		Path:        prefix + "/widgets",
+		Summary:     "List widgets",
+		Tags:        []string{"Widgets"},
+	}, func(ctx context.Context, input *struct{}) (*listWidgetsOutput, error) {
+		return &listWidgetsOutput{
+			Body: contract.DataMeta[[]Widget, contract.PageMeta]{
+				Data: []Widget{
+					{ID: "widget-1", Name: "First widget", Color: "blue"},
+				},
+				Meta: &contract.PageMeta{Page: 1, PerPage: 20, Total: 1},
+			},
+		}, nil
+	})
+
+	huma.Register(api, huma.Operation{
+		OperationID: "get-widget",
+		Method:      http.MethodGet,
+		Path:        prefix + "/widgets/{id}",
+		Summary:     "Get a widget",
+		Tags:        []string{"Widgets"},
+	}, func(ctx context.Context, input *getWidgetInput) (*getWidgetOutput, error) {
+		if input.ID != "widget-1" {
+			return nil, contract.WithContext(ctx, contract.NotFound("widget not found"))
+		}
+		return &getWidgetOutput{
+			Body: contract.Data[Widget]{
+				Data: Widget{ID: "widget-1", Name: "First widget", Color: "blue"},
+			},
+		}, nil
+	})
+
 	huma.Register(api, huma.Operation{
 		OperationID: "create-widget",
 		Method:      http.MethodPost,
