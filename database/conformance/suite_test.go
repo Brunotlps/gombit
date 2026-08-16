@@ -67,16 +67,22 @@ func TestConformanceSuite(t *testing.T) {
 		}
 		createdAt := item.CreatedAt
 		updatedAt := item.UpdatedAt
-		time.Sleep(10 * time.Millisecond)
+		// MySQL DATETIME is second-precision by default; wait past one second so
+		// GORM's auto UpdatedAt is guaranteed to advance on every driver.
+		time.Sleep(1100 * time.Millisecond)
 		item.Name = "timestamps-updated"
 		if err := db.Save(&item).Error; err != nil {
 			t.Fatalf("Save: %v", err)
 		}
-		if !item.CreatedAt.Equal(createdAt) {
-			t.Fatalf("CreatedAt changed: got %v want %v", item.CreatedAt, createdAt)
+		var reloaded models.Item
+		if err := db.First(&reloaded, item.ID).Error; err != nil {
+			t.Fatalf("First after update: %v", err)
 		}
-		if !item.UpdatedAt.After(updatedAt) {
-			t.Fatalf("UpdatedAt not bumped: before=%v after=%v", updatedAt, item.UpdatedAt)
+		if !reloaded.CreatedAt.Equal(createdAt) {
+			t.Fatalf("CreatedAt changed: got %v want %v", reloaded.CreatedAt, createdAt)
+		}
+		if !reloaded.UpdatedAt.After(updatedAt) {
+			t.Fatalf("UpdatedAt not bumped: before=%v after=%v", updatedAt, reloaded.UpdatedAt)
 		}
 	})
 

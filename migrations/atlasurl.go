@@ -139,6 +139,11 @@ func mysqlAtlasURL(dsn string) (string, error) {
 // rollback read/write the table atlas_schema_revisions via GORM's default
 // search_path (public). Pinning --revisions-schema public keeps all three
 // drivers on the same table name in the default schema.
+//
+// Call sites that talk to an existing DB must use this helper:
+// Migrate (atlas migrate apply) and Status (atlas migrate status).
+// MakeMigrations (migrate diff) and migrate hash do not touch the app DB
+// revisions table and must not add this flag.
 func withAtlasRevisionsSchema(driver config.DatabaseDriver, args []string) []string {
 	if driver != config.DatabaseDriverPostgres {
 		return args

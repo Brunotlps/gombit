@@ -120,5 +120,6 @@ go test -tags conformance ./database/conformance \
   -count=1
 ```
 
-CI runs the same matrix in `.github/workflows/ci.yml` (`Conformance (sqlite|postgres|mysql)`).
+CI runs the same checks as three jobs in `.github/workflows/ci.yml`
+(`Conformance (sqlite|postgres|mysql)`), each with only the DB service it needs.
 See also [`docs/migrations.md`](migrations.md) for the Atlas migration workflow.
