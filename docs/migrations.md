@@ -117,17 +117,18 @@ downs and revision rows are only removed after every down succeeds.
 Atlas writes up migrations such as:
 
 ```text
-20260101000000_create_products.sql
+database/migrations/20260101000000_create_products.sql
 ```
 
-Gombit expects an application-owned companion for rollback:
+Gombit-owned down SQL lives in a subdirectory so Atlas never scans it (Atlas
+panics if `.down.sql` files sit beside versioned up migrations):
 
 ```text
-20260101000000_create_products.down.sql
+database/migrations/downs/20260101000000_create_products.down.sql
 ```
 
 If any down file in the latest batch is missing, rollback fails before
-executing any down SQL.
+executing any down SQL. Migrate does not require downs.
 
 ## Revision metadata
 

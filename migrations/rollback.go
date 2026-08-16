@@ -69,7 +69,7 @@ func Rollback(ctx context.Context, opts ApplyOptions) error {
 	for _, rev := range revisions {
 		file, ok := byVersion[rev.Version]
 		if !ok || file.DownPath == "" {
-			missing = append(missing, fmt.Sprintf("%s_%s.down.sql", rev.Version, rev.Name))
+			missing = append(missing, filepath.ToSlash(filepath.Join(downSubdir, fmt.Sprintf("%s_%s.down.sql", rev.Version, rev.Name))))
 			continue
 		}
 		downs = append(downs, file)

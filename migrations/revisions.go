@@ -16,6 +16,7 @@ import (
 
 const revisionsTable = "framework_migrations"
 const atlasRevisionsTable = "atlas_schema_revisions"
+const downSubdir = "downs"
 
 var migrationFilePattern = regexp.MustCompile(`^(\d+)_([A-Za-z0-9][A-Za-z0-9_-]*)\.sql$`)
 var migrationDownFilePattern = regexp.MustCompile(`^(\d+)_([A-Za-z0-9][A-Za-z0-9_-]*)\.down\.sql$`)
@@ -61,7 +62,7 @@ func ParseDownFilename(filename string) (version string, name string, err error)
 	return matches[1], matches[2], nil
 }
 
-// DownFilename returns the companion down filename for an up migration file.
+// DownFilename returns the companion down filename (basename) for an up migration file.
 func DownFilename(upFilename string) (string, error) {
 	version, name, err := ParseMigrationFilename(upFilename)
 	if err != nil {
@@ -70,10 +71,16 @@ func DownFilename(upFilename string) (string, error) {
 	return fmt.Sprintf("%s_%s.down.sql", version, name), nil
 }
 
+// DownPath returns the path to the Gombit-owned down SQL for an up migration.
+// Downs live under <migrationDir>/downs/ so Atlas never scans them (Atlas panics
+// on golang-migrate-style .down.sql files in the versioned migration directory).
+func DownPath(migrationDir string, version string, name string) string {
+	return filepath.Join(migrationDir, downSubdir, fmt.Sprintf("%s_%s.down.sql", version, name))
+}
+
 // ListMigrationFiles lists Atlas up migrations in dir, with optional down paths.
-// Non-matching *.sql filenames (other than atlas.sum / *.down.sql) are skipped
-// with a warning printed to stderr when provided via the optional writers in
-// Migrate/Status/Rollback; use ListMigrationFilesWithSkipped to inspect them.
+// Non-matching *.sql filenames (other than atlas.sum) are skipped with a
+// warning. Companion downs live under downs/ and are not listed as up files.
 func ListMigrationFiles(dir string) ([]MigrationFile, error) {
 	files, _, err := listMigrationFiles(dir)
 	return files, err
@@ -100,7 +107,12 @@ func listMigrationFiles(dir string) ([]MigrationFile, []string, error) {
 			continue
 		}
 		name := entry.Name()
-		if strings.HasSuffix(name, ".down.sql") || name == "atlas.sum" {
+		if name == "atlas.sum" {
+			continue
+		}
+		if strings.HasSuffix(name, ".down.sql") {
+			// Misplaced companion downs in the Atlas dir panic migrate apply; warn and skip.
+			skipped = append(skipped, name)
 			continue
 		}
 		version, migName, err := ParseMigrationFilename(name)
@@ -110,8 +122,7 @@ func listMigrationFiles(dir string) ([]MigrationFile, []string, error) {
 			}
 			continue
 		}
-		downName := fmt.Sprintf("%s_%s.down.sql", version, migName)
-		downPath := filepath.Join(dir, downName)
+		downPath := DownPath(dir, version, migName)
 		if _, statErr := os.Stat(downPath); errors.Is(statErr, os.ErrNotExist) {
 			downPath = ""
 		} else if statErr != nil {

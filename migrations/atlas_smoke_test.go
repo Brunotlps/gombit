@@ -31,7 +31,7 @@ func TestMigrateStatusRollbackAtlasCLISQLiteWhenAvailable(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(migrationDir, "20260101000000_create_widgets.sql"),
 		"-- Create \"widgets\" table\nCREATE TABLE `widgets` (`id` integer NULL PRIMARY KEY AUTOINCREMENT, `name` text NOT NULL);\n")
-	writeFile(t, filepath.Join(migrationDir, "20260101000000_create_widgets.down.sql"),
+	writeFile(t, filepath.Join(migrationDir, "downs", "20260101000000_create_widgets.down.sql"),
 		"DROP TABLE IF EXISTS `widgets`;\n")
 
 	hashArgs := []string{

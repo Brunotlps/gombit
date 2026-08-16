@@ -22,7 +22,7 @@ version/name prefix, for example:
 
 ```text
 database/migrations/20260101000000_create_products.sql
-database/migrations/20260101000000_create_products.down.sql
+database/migrations/downs/20260101000000_create_products.down.sql
 ```
 
 Configure the database (defaults are SQLite) and run:
@@ -39,5 +39,5 @@ gombit db rollback
 
 `migrate` wraps `atlas migrate apply` and records the applied versions in
 `framework_migrations` as one batch. `rollback` executes the latest batch's
-`.down.sql` files and clears both Gombit and Atlas revision rows for those
+`downs/*.down.sql` files and clears both Gombit and Atlas revision rows for those
 versions. Seed/reset commands are tracked separately in M2-3.

@@ -60,7 +60,7 @@ func runDriverRoundTrip(t *testing.T, cfg config.DatabaseConfig, upSQL string, d
 		t.Fatalf("mkdir: %v", err)
 	}
 	writeFile(t, filepath.Join(migrationDir, "20260101000000_create_widgets.sql"), upSQL)
-	writeFile(t, filepath.Join(migrationDir, "20260101000000_create_widgets.down.sql"), downSQL)
+	writeFile(t, filepath.Join(migrationDir, "downs", "20260101000000_create_widgets.down.sql"), downSQL)
 
 	cleanupDriverDB(t, cfg)
 	t.Cleanup(func() { cleanupDriverDB(t, cfg) })

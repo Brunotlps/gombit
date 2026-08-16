@@ -64,7 +64,7 @@ func TestListMigrationFiles(t *testing.T) {
 	dir := t.TempDir()
 	writeFile(t, filepath.Join(dir, "20260102000000_add_index.sql"), "CREATE INDEX;")
 	writeFile(t, filepath.Join(dir, "20260101000000_create_products.sql"), "CREATE TABLE products;")
-	writeFile(t, filepath.Join(dir, "20260101000000_create_products.down.sql"), "DROP TABLE products;")
+	writeFile(t, filepath.Join(dir, "downs", "20260101000000_create_products.down.sql"), "DROP TABLE products;")
 	writeFile(t, filepath.Join(dir, "atlas.sum"), "h1:fake")
 	writeFile(t, filepath.Join(dir, "readme.txt"), "ignore")
 	writeFile(t, filepath.Join(dir, "typo_migration.sql"), "CREATE TABLE broken;")

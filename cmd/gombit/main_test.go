@@ -131,7 +131,7 @@ func TestRunMigrateRollbackStatus(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(migrationDir, "20260101000000_create_widgets.sql"),
 		"CREATE TABLE widgets (id INTEGER PRIMARY KEY, name TEXT NOT NULL);")
-	writeFile(t, filepath.Join(migrationDir, "20260101000000_create_widgets.down.sql"),
+	writeFile(t, filepath.Join(migrationDir, "downs", "20260101000000_create_widgets.down.sql"),
 		"DROP TABLE IF EXISTS widgets;")
 
 	dbPath := filepath.Join(workDir, "app.db")
@@ -213,6 +213,9 @@ func stubConfig(t *testing.T, cfg config.Config) {
 
 func writeFile(t *testing.T, path string, content string) {
 	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+	}
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}

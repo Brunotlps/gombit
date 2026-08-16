@@ -24,11 +24,11 @@ func TestMigrateRollbackStatusSQLiteRoundTrip(t *testing.T) {
 
 	writeFile(t, filepath.Join(migrationDir, "20260101000000_create_widgets.sql"),
 		"CREATE TABLE widgets (id INTEGER PRIMARY KEY, name TEXT NOT NULL);")
-	writeFile(t, filepath.Join(migrationDir, "20260101000000_create_widgets.down.sql"),
+	writeFile(t, filepath.Join(migrationDir, "downs", "20260101000000_create_widgets.down.sql"),
 		"DROP TABLE widgets;")
 	writeFile(t, filepath.Join(migrationDir, "20260102000000_add_widget_note.sql"),
 		"ALTER TABLE widgets ADD COLUMN note TEXT;")
-	writeFile(t, filepath.Join(migrationDir, "20260102000000_add_widget_note.down.sql"),
+	writeFile(t, filepath.Join(migrationDir, "downs", "20260102000000_add_widget_note.down.sql"),
 		"ALTER TABLE widgets DROP COLUMN note;")
 
 	dsn := "file:" + filepath.Join(workDir, "app.db") + "?cache=shared&_fk=1"
@@ -258,11 +258,11 @@ func TestRollbackMidBatchFailureAbortsTransaction(t *testing.T) {
 	}
 	writeFile(t, filepath.Join(migrationDir, "20260101000000_create_widgets.sql"),
 		"CREATE TABLE widgets (id INTEGER PRIMARY KEY);")
-	writeFile(t, filepath.Join(migrationDir, "20260101000000_create_widgets.down.sql"),
+	writeFile(t, filepath.Join(migrationDir, "downs", "20260101000000_create_widgets.down.sql"),
 		"THIS IS NOT VALID SQL;")
 	writeFile(t, filepath.Join(migrationDir, "20260102000000_create_gadgets.sql"),
 		"CREATE TABLE gadgets (id INTEGER PRIMARY KEY);")
-	writeFile(t, filepath.Join(migrationDir, "20260102000000_create_gadgets.down.sql"),
+	writeFile(t, filepath.Join(migrationDir, "downs", "20260102000000_create_gadgets.down.sql"),
 		"DROP TABLE gadgets;")
 
 	dsn := "file:" + filepath.Join(workDir, "app.db") + "?cache=shared&_fk=1"
@@ -415,6 +415,9 @@ func parseAtlasURLAndDir(args []string) (atlasURL string, dirURL string, err err
 
 func writeFile(t *testing.T, path string, content string) {
 	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+	}
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}
