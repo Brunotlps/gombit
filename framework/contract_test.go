@@ -98,3 +98,44 @@ func TestAppExposesAPI(t *testing.T) {
 		t.Fatal("API() = nil, want huma.API")
 	}
 }
+
+func TestAPICategoryErrorReturnsD10Envelope(t *testing.T) {
+	app := newTestApp(t)
+
+	type getInput struct {
+		ID string `path:"id"`
+	}
+	type getOutput struct {
+		Body contract.Data[map[string]string]
+	}
+
+	prefix := app.Config().API.Prefix
+	huma.Register(app.API(), huma.Operation{
+		OperationID: "get-widget",
+		Method:      http.MethodGet,
+		Path:        prefix + "/widgets/{id}",
+		Summary:     "Get a widget",
+	}, func(ctx context.Context, input *getInput) (*getOutput, error) {
+		return nil, contract.WithContext(ctx, contract.NotFound("widget not found"))
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, prefix+"/widgets/missing", nil)
+	req.Header.Set(RequestIDHeader, "req-framework-2")
+	app.Router().ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want %d; body: %s", rec.Code, http.StatusNotFound, rec.Body.String())
+	}
+
+	var body contract.ErrorEnvelope
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode error envelope: %v; body: %s", err, rec.Body.String())
+	}
+	if body.Body.Code != "not_found" {
+		t.Fatalf("code = %q, want not_found", body.Body.Code)
+	}
+	if body.Body.RequestID != "req-framework-2" {
+		t.Fatalf("request_id = %q, want req-framework-2", body.Body.RequestID)
+	}
+}
