@@ -73,6 +73,9 @@ func classifyError(status int, msg string, fields map[string][]string) (code, me
 }
 
 func isValidationFailure(status int, msg string, fields map[string][]string) bool {
+	// Any error carrying field details is treated as validation until M3-2 owns
+	// application error categories (field-bearing domain errors may then use a
+	// different code while keeping D10 fields).
 	if len(fields) > 0 {
 		return true
 	}

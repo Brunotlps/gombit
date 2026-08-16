@@ -15,10 +15,6 @@ import (
 )
 
 func TestValidationReturnsD10FieldErrors(t *testing.T) {
-	contract.Install(contract.InstallOptions{
-		RequestID: func(context.Context) string { return "req-test-1" },
-	})
-
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	api := humagin.New(router, contract.HumaConfig("contract-test", "0.0.0"))
@@ -90,8 +86,6 @@ func TestHumaConfigDisablesDocsAndSchemas(t *testing.T) {
 }
 
 func TestOpenAPIUsesD10ErrorSchema(t *testing.T) {
-	contract.Install(contract.InstallOptions{})
-
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	api := humagin.New(router, contract.HumaConfig("contract-test", "0.0.0"))
