@@ -31,7 +31,7 @@ const schemaStub = `export type paths = {
         200: {
           headers: { [name: string]: unknown };
           content: {
-            "application/json": { data?: Array<{ id?: unknown } & Record<string, unknown>> | null };
+            "application/json": { data?: Array<{ id?: unknown; name?: unknown; price?: unknown } & Record<string, unknown>> | null };
           };
         };
       };

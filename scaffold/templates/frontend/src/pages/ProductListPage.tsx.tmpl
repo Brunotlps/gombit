@@ -53,10 +53,10 @@ export function ProductListPage() {
         </thead>
         <tbody>
           {rows.map((row) => (
-            <tr key={row.id}>
-              <td>{row.id}</td>
-              <td>{row.name}</td>
-              <td>{row.price}</td>
+            <tr key={String(row.id)}>
+              <td>{String(row.id)}</td>
+              <td>{String(row.name)}</td>
+              <td>{String(row.price)}</td>
             </tr>
           ))}
         </tbody>
