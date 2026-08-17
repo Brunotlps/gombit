@@ -135,15 +135,18 @@ func TestMakeCommandGolden(t *testing.T) {
 		t.Fatalf("CountRegisterCalls: %v", err)
 	}
 	if count != 1 {
-		t.Fatalf("commands.Register count = %d, want 1\n%s", count, mainSrc)
+		t.Fatalf("commands.RegisterCommands count = %d, want 1\n%s", count, mainSrc)
 	}
-	registerSrc := got["internal/commands/register.go"]
+	registerSrc := got["internal/commands/commands.go"]
 	ctor, err := commandgen.CountConstructorCalls(registerSrc, "NewGreetCommand")
 	if err != nil {
 		t.Fatalf("CountConstructorCalls: %v", err)
 	}
 	if ctor != 1 {
 		t.Fatalf("NewGreetCommand count = %d, want 1\n%s", ctor, registerSrc)
+	}
+	if !bytes.Contains(registerSrc, []byte("func RegisterCommands")) {
+		t.Fatal("internal/commands/commands.go missing RegisterCommands")
 	}
 
 	t.Run("compile", func(t *testing.T) {
@@ -166,7 +169,7 @@ func TestMakeCommandGolden(t *testing.T) {
 			t.Fatalf("CountRegisterCalls after re-run: %v", err)
 		}
 		if count != 1 {
-			t.Fatalf("re-run duplicated commands.Register: count = %d", count)
+			t.Fatalf("re-run duplicated commands.RegisterCommands: count = %d", count)
 		}
 	})
 }

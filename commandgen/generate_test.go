@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/LAA-Software-Engineering/gombit/resourcegen"
 	"github.com/LAA-Software-Engineering/gombit/scaffold"
 )
 
@@ -29,8 +30,8 @@ func TestGenerateGreetCommand(t *testing.T) {
 	if !strings.Contains(stdout.String(), "create internal/commands/greet.go") {
 		t.Fatalf("stdout = %q, want created greet.go", stdout.String())
 	}
-	if !strings.Contains(stdout.String(), "internal/commands/register.go") {
-		t.Fatalf("stdout = %q, want register.go", stdout.String())
+	if !strings.Contains(stdout.String(), "internal/commands/commands.go") {
+		t.Fatalf("stdout = %q, want commands.go", stdout.String())
 	}
 	if !strings.Contains(stdout.String(), "cmd/gombit/main.go") {
 		t.Fatalf("stdout = %q, want cmd/gombit/main.go", stdout.String())
@@ -52,16 +53,19 @@ func TestGenerateGreetCommand(t *testing.T) {
 		t.Fatalf("generated greet.go is not valid Go: %v", err)
 	}
 
-	registerSrc := readFile(t, filepath.Join(appDir, "internal", "commands", "register.go"))
-	count, err := CountConstructorCalls([]byte(registerSrc), "NewGreetCommand")
+	commandsSrc := readFile(t, filepath.Join(appDir, "internal", "commands", "commands.go"))
+	count, err := CountConstructorCalls([]byte(commandsSrc), "NewGreetCommand")
 	if err != nil {
 		t.Fatalf("CountConstructorCalls: %v", err)
 	}
 	if count != 1 {
-		t.Fatalf("NewGreetCommand count = %d, want 1\n%s", count, registerSrc)
+		t.Fatalf("NewGreetCommand count = %d, want 1\n%s", count, commandsSrc)
 	}
-	if !strings.Contains(registerSrc, "cli.AddCommand") {
-		t.Fatal("register.go does not use cli.AddCommand")
+	if !strings.Contains(commandsSrc, "func RegisterCommands") {
+		t.Fatal("commands.go missing RegisterCommands")
+	}
+	if !strings.Contains(commandsSrc, "cli.AddCommand") {
+		t.Fatal("commands.go does not use cli.AddCommand")
 	}
 
 	mainSrc := readFile(t, filepath.Join(appDir, "cmd", "gombit", "main.go"))
@@ -70,7 +74,7 @@ func TestGenerateGreetCommand(t *testing.T) {
 		t.Fatalf("CountRegisterCalls: %v", err)
 	}
 	if regCount != 1 {
-		t.Fatalf("commands.Register count = %d, want 1\n%s", regCount, mainSrc)
+		t.Fatalf("commands.RegisterCommands count = %d, want 1\n%s", regCount, mainSrc)
 	}
 	if !strings.Contains(mainSrc, "product.RegisterCommands") {
 		t.Fatal("cmd/gombit lost product.RegisterCommands")
@@ -88,8 +92,8 @@ func TestGenerateGreetCommand(t *testing.T) {
 	if stdout.Len() != 0 {
 		t.Fatalf("idempotent re-run stdout = %q, want empty", stdout.String())
 	}
-	registerSrc = readFile(t, filepath.Join(appDir, "internal", "commands", "register.go"))
-	count, err = CountConstructorCalls([]byte(registerSrc), "NewGreetCommand")
+	commandsSrc = readFile(t, filepath.Join(appDir, "internal", "commands", "commands.go"))
+	count, err = CountConstructorCalls([]byte(commandsSrc), "NewGreetCommand")
 	if err != nil {
 		t.Fatalf("CountConstructorCalls re-run: %v", err)
 	}
@@ -102,7 +106,7 @@ func TestGenerateGreetCommand(t *testing.T) {
 		t.Fatalf("CountRegisterCalls re-run: %v", err)
 	}
 	if regCount != 1 {
-		t.Fatalf("re-run duplicated commands.Register: %d", regCount)
+		t.Fatalf("re-run duplicated commands.RegisterCommands: %d", regCount)
 	}
 
 	if err := os.WriteFile(greetPath, []byte("package commands\n\n// edited by user\n"), 0o600); err != nil {
@@ -166,7 +170,119 @@ func TestGeneratePackageFlag(t *testing.T) {
 		t.Fatalf("CountRegisterCalls: %v", err)
 	}
 	if count != 1 {
-		t.Fatalf("hello.Register count = %d, want 1\n%s", count, mainSrc)
+		t.Fatalf("hello.RegisterCommands count = %d, want 1\n%s", count, mainSrc)
+	}
+	helloCommands := readFile(t, filepath.Join(appDir, "internal", "hello", "commands.go"))
+	if !strings.Contains(helloCommands, "func RegisterCommands") {
+		t.Fatal("internal/hello/commands.go missing RegisterCommands")
+	}
+}
+
+func TestGenerateCommandInExistingResourcePackage(t *testing.T) {
+	appDir := scaffoldApp(t)
+	err := resourcegen.Generate(context.Background(), resourcegen.Options{
+		WorkDir:  appDir,
+		Name:     "Book",
+		Fields:   []string{"title:string:required"},
+		Stdout:   ioDiscard{},
+		Stderr:   ioDiscard{},
+		AtlasBin: "gombit-atlas-not-installed",
+	})
+	if err != nil {
+		t.Fatalf("make resource Book: %v", err)
+	}
+	routesSrc := readFile(t, filepath.Join(appDir, "internal", "book", "routes.go"))
+	if !strings.Contains(routesSrc, "func Register(app *framework.App)") {
+		t.Fatal("book routes.go lost Register")
+	}
+
+	err = Generate(context.Background(), Options{
+		WorkDir: appDir,
+		Name:    "greet",
+		Package: "book",
+	})
+	if err != nil {
+		t.Fatalf("make command greet --package book: %v", err)
+	}
+
+	commandsSrc := readFile(t, filepath.Join(appDir, "internal", "book", "commands.go"))
+	if !strings.Contains(commandsSrc, "func RegisterCommands(root *cli.Command)") {
+		t.Fatalf("book commands.go missing RegisterCommands:\n%s", commandsSrc)
+	}
+	if strings.Contains(commandsSrc, "func Register(root") {
+		t.Fatal("book commands.go declared colliding Register")
+	}
+	ctor, err := CountConstructorCalls([]byte(commandsSrc), "NewGreetCommand")
+	if err != nil {
+		t.Fatalf("CountConstructorCalls: %v", err)
+	}
+	if ctor != 1 {
+		t.Fatalf("NewGreetCommand count = %d, want 1\n%s", ctor, commandsSrc)
+	}
+
+	routesSrc = readFile(t, filepath.Join(appDir, "internal", "book", "routes.go"))
+	if !strings.Contains(routesSrc, "func Register(app *framework.App)") {
+		t.Fatal("book routes.go Register was overwritten")
+	}
+
+	mainSrc := readFile(t, filepath.Join(appDir, "cmd", "gombit", "main.go"))
+	count, err := CountRegisterCalls([]byte(mainSrc), "book")
+	if err != nil {
+		t.Fatalf("CountRegisterCalls: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("book.RegisterCommands count = %d, want 1\n%s", count, mainSrc)
+	}
+	if strings.Contains(mainSrc, "book.Register(root)") {
+		t.Fatalf("cmd/gombit called colliding book.Register:\n%s", mainSrc)
+	}
+
+	bookDir := filepath.Join(appDir, "internal", "book")
+	entries, err := os.ReadDir(bookDir)
+	if err != nil {
+		t.Fatalf("readdir book: %v", err)
+	}
+	fset := token.NewFileSet()
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".go") {
+			continue
+		}
+		path := filepath.Join(bookDir, entry.Name())
+		if _, err := parser.ParseFile(fset, path, nil, 0); err != nil {
+			t.Fatalf("parse %s: %v", path, err)
+		}
+	}
+}
+
+func TestGenerateRefusesFrameworkLayout(t *testing.T) {
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	root := filepath.Clean(filepath.Join(filepath.Dir(file), ".."))
+	err := Generate(context.Background(), Options{
+		WorkDir: root,
+		Name:    "greet",
+		DryRun:  true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "not a gombit application") {
+		t.Fatalf("error = %v, want refused framework layout", err)
+	}
+}
+
+func TestGenerateRefusesExecuteOnlyGombitMain(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "go.mod"), "module github.com/example/demo\n\ngo 1.22\n")
+	writeFile(t, filepath.Join(dir, "gombit.yaml"), "name: demo\n")
+	writeFile(t, filepath.Join(dir, "cmd", "server", "main.go"), "package main\n\nfunc main() {}\n")
+	writeFile(t, filepath.Join(dir, "cmd", "gombit", "main.go"), fixtureFrameworkMain)
+	err := Generate(context.Background(), Options{
+		WorkDir: dir,
+		Name:    "greet",
+		DryRun:  true,
+	})
+	if err == nil || !strings.Contains(err.Error(), "registration point") {
+		t.Fatalf("error = %v, want registration point (cli.Execute is not an anchor)", err)
 	}
 }
 
@@ -180,6 +296,7 @@ func TestGenerateRejectsReservedNames(t *testing.T) {
 		{name: "make", want: "collides"},
 		{name: "platform", pkg: "platform", want: "reserved"},
 		{name: "greet", pkg: "product", want: "reserved"},
+		{name: "commands", want: "reserved file"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name+"/"+tt.pkg, func(t *testing.T) {
@@ -265,6 +382,16 @@ func readFile(t *testing.T, path string) string {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return string(data)
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
 }
 
 type ioDiscard struct{}

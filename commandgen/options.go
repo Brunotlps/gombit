@@ -15,7 +15,9 @@ const (
 
 	defaultPackage   = "commands"
 	gombitMainRel    = "cmd/gombit/main.go"
-	registerFileName = "register.go"
+	serverMainRel    = "cmd/server/main.go"
+	gombitYAMLRel    = "gombit.yaml"
+	commandsFileName = "commands.go"
 )
 
 // Options configures management-command generation inside an existing app.
@@ -52,19 +54,45 @@ func (opts *Options) normalize() error {
 
 func (opts Options) validateAppLayout() error {
 	for _, rel := range []string{"go.mod", gombitMainRel} {
-		path := filepath.Join(opts.WorkDir, filepath.FromSlash(rel))
-		if _, err := os.Stat(path); err != nil {
-			if errors.Is(err, os.ErrNotExist) {
-				return fmt.Errorf("commandgen: %s not found; run this command from a gombit new application directory", rel)
-			}
-			return fmt.Errorf("commandgen: stat %s: %w", rel, err)
+		if err := opts.requireFile(rel); err != nil {
+			return err
 		}
+	}
+	return opts.requireGeneratedApp()
+}
+
+func (opts Options) requireFile(rel string) error {
+	path := filepath.Join(opts.WorkDir, filepath.FromSlash(rel))
+	if _, err := os.Stat(path); err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("commandgen: %s not found; run this command from a gombit new application directory", rel)
+		}
+		return fmt.Errorf("commandgen: stat %s: %w", rel, err)
 	}
 	return nil
 }
 
-func (opts Options) registerRel(pkg string) string {
-	return filepath.ToSlash(filepath.Join("internal", pkg, registerFileName))
+func (opts Options) requireGeneratedApp() error {
+	serverPath := filepath.Join(opts.WorkDir, filepath.FromSlash(serverMainRel))
+	yamlPath := filepath.Join(opts.WorkDir, filepath.FromSlash(gombitYAMLRel))
+	_, serverErr := os.Stat(serverPath)
+	_, yamlErr := os.Stat(yamlPath)
+	serverMissing := errors.Is(serverErr, os.ErrNotExist)
+	yamlMissing := errors.Is(yamlErr, os.ErrNotExist)
+	if serverErr != nil && !serverMissing {
+		return fmt.Errorf("commandgen: stat %s: %w", serverMainRel, serverErr)
+	}
+	if yamlErr != nil && !yamlMissing {
+		return fmt.Errorf("commandgen: stat %s: %w", gombitYAMLRel, yamlErr)
+	}
+	if serverMissing && yamlMissing {
+		return fmt.Errorf("commandgen: not a gombit application directory (missing %s and %s); run this command from a gombit new application directory", serverMainRel, gombitYAMLRel)
+	}
+	return nil
+}
+
+func (opts Options) commandsRel(pkg string) string {
+	return filepath.ToSlash(filepath.Join("internal", pkg, commandsFileName))
 }
 
 func (opts Options) commandRel(pkg, fileBase string) string {

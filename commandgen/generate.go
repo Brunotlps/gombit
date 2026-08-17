@@ -36,18 +36,26 @@ func Generate(ctx context.Context, opts Options) error {
 	}
 
 	commandRel := opts.commandRel(name.Package, name.FileBase)
-	registerRel := opts.registerRel(name.Package)
+	commandsRel := opts.commandsRel(name.Package)
 	importPath := module + "/internal/" + name.Package
 
-	registerPath := filepath.Join(opts.WorkDir, filepath.FromSlash(registerRel))
-	registerSrc, err := os.ReadFile(registerPath) // #nosec G304 -- application file under the user work dir
+	commandSrc, err := renderCommandFile(name)
+	if err != nil {
+		return err
+	}
+
+	commandsPath := filepath.Join(opts.WorkDir, filepath.FromSlash(commandsRel))
+	commandsSrc, err := os.ReadFile(commandsPath) // #nosec G304 -- application file under the user work dir
 	if err != nil {
 		if !errors.Is(err, os.ErrNotExist) {
-			return fmt.Errorf("commandgen: read %s: %w", registerRel, err)
+			return fmt.Errorf("commandgen: read %s: %w", commandsRel, err)
 		}
-		registerSrc = renderRegisterFile(name.Package)
+		commandsSrc, err = renderCommandsFile(name.Package)
+		if err != nil {
+			return err
+		}
 	}
-	newRegister, err := AddCommandCall(registerSrc, name.Constructor)
+	newCommands, err := AddCommandCall(commandsSrc, name.Constructor)
 	if err != nil {
 		return err
 	}
@@ -63,8 +71,8 @@ func Generate(ctx context.Context, opts Options) error {
 	}
 
 	files := []fileSpec{
-		{relPath: commandRel, content: renderCommandFile(name)},
-		{relPath: registerRel, content: newRegister, owned: true},
+		{relPath: commandRel, content: commandSrc},
+		{relPath: commandsRel, content: newCommands, owned: true},
 		{relPath: gombitMainRel, content: newMain, owned: true},
 	}
 	sort.Slice(files, func(i, j int) bool {

@@ -11,9 +11,11 @@ import (
 	"strings"
 )
 
-// AddImportAndRegister adds importPath and `<pkg>.Register(root)` next to an
-// existing `*.RegisterCommands(root)` / `*.Register(root)` call, or immediately
-// before `cli.Execute` / `cli.ExecuteRoot`. Idempotent.
+const registerCommandsName = "RegisterCommands"
+
+// AddImportAndRegister adds importPath and `<pkg>.RegisterCommands(root)` next
+// to an existing `*.RegisterCommands(root)` call, or immediately after
+// `cli.NewRoot`. Idempotent. `cli.Execute` is not a registration point.
 func AddImportAndRegister(src []byte, importPath, pkgName string) ([]byte, error) {
 	if strings.TrimSpace(importPath) == "" || !isGoIdent(pkgName) {
 		return nil, fmt.Errorf("commandgen: invalid import %q package %q", importPath, pkgName)
@@ -31,15 +33,15 @@ func AddImportAndRegister(src []byte, importPath, pkgName string) ([]byte, error
 }
 
 // AddCommandCall appends `cli.AddCommand(root, <constructor>())` inside
-// `func Register` when it is not already present. Idempotent.
+// `func RegisterCommands` when it is not already present. Idempotent.
 func AddCommandCall(src []byte, constructor string) ([]byte, error) {
 	if !isExportedIdent(constructor) {
 		return nil, fmt.Errorf("commandgen: invalid constructor %q", constructor)
 	}
 	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, registerFileName, src, parser.ParseComments)
+	file, err := parser.ParseFile(fset, commandsFileName, src, parser.ParseComments)
 	if err != nil {
-		return nil, fmt.Errorf("commandgen: parse %s: %w", registerFileName, err)
+		return nil, fmt.Errorf("commandgen: parse %s: %w", commandsFileName, err)
 	}
 	addImport(file, "github.com/LAA-Software-Engineering/gombit/cli")
 	if err := insertAddCommandCall(file, constructor); err != nil {
@@ -93,7 +95,7 @@ func addImport(file *ast.File, importPath string) {
 }
 
 func insertRegisterCall(file *ast.File, pkgName string) error {
-	if countSelectorCalls(file, pkgName, "Register") > 0 {
+	if countSelectorCalls(file, pkgName, registerCommandsName) > 0 {
 		return nil
 	}
 
@@ -101,7 +103,7 @@ func insertRegisterCall(file *ast.File, pkgName string) error {
 		X: &ast.CallExpr{
 			Fun: &ast.SelectorExpr{
 				X:   ast.NewIdent(pkgName),
-				Sel: ast.NewIdent("Register"),
+				Sel: ast.NewIdent(registerCommandsName),
 			},
 			Args: []ast.Expr{ast.NewIdent("root")},
 		},
@@ -116,7 +118,7 @@ func insertRegisterCall(file *ast.File, pkgName string) error {
 			return nil
 		}
 	}
-	return fmt.Errorf("commandgen: no product.RegisterCommands(root) or cli.Execute registration point in %s", gombitMainRel)
+	return fmt.Errorf("commandgen: no product.RegisterCommands(root) or cli.NewRoot registration point in %s", gombitMainRel)
 }
 
 func insertIntoBlock(block *ast.BlockStmt, stmt ast.Stmt) bool {
@@ -124,14 +126,10 @@ func insertIntoBlock(block *ast.BlockStmt, stmt ast.Stmt) bool {
 		return false
 	}
 	afterRegister := -1
-	beforeExecute := -1
 	afterNewRoot := -1
 	for i, item := range block.List {
-		if stmtAnchorsSelectorCall(item, "", "RegisterCommands") || stmtAnchorsSelectorCall(item, "", "Register") {
+		if stmtAnchorsSelectorCall(item, "", registerCommandsName) {
 			afterRegister = i + 1
-		}
-		if stmtAnchorsSelectorCall(item, "cli", "Execute") || stmtAnchorsSelectorCall(item, "cli", "ExecuteRoot") {
-			beforeExecute = i
 		}
 		if stmtAnchorsSelectorCall(item, "cli", "NewRoot") {
 			afterNewRoot = i + 1
@@ -141,8 +139,6 @@ func insertIntoBlock(block *ast.BlockStmt, stmt ast.Stmt) bool {
 	switch {
 	case afterRegister >= 0:
 		insertAt = afterRegister
-	case beforeExecute >= 0:
-		insertAt = beforeExecute
 	case afterNewRoot >= 0:
 		insertAt = afterNewRoot
 	}
@@ -238,7 +234,7 @@ func exprContainsSelectorCall(expr ast.Expr, pkgName, selName string) bool {
 func insertAddCommandCall(file *ast.File, constructor string) error {
 	for _, decl := range file.Decls {
 		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Name == nil || fn.Name.Name != "Register" || fn.Body == nil {
+		if !ok || fn.Name == nil || fn.Name.Name != registerCommandsName || fn.Body == nil {
 			continue
 		}
 		if hasConstructorCall(fn.Body, constructor) {
@@ -247,7 +243,7 @@ func insertAddCommandCall(file *ast.File, constructor string) error {
 		fn.Body.List = append(fn.Body.List, addCommandStmt(constructor))
 		return nil
 	}
-	return fmt.Errorf("commandgen: no Register function in %s", registerFileName)
+	return fmt.Errorf("commandgen: no RegisterCommands function in %s", commandsFileName)
 }
 
 func addCommandStmt(constructor string) ast.Stmt {
@@ -315,20 +311,20 @@ func isSelectorCall(call *ast.CallExpr, pkgName, selName string) bool {
 	return ok && ident.Name == pkgName
 }
 
-// CountRegisterCalls reports how many `<pkg>.Register(...)` calls appear in src.
+// CountRegisterCalls reports how many `<pkg>.RegisterCommands(...)` calls appear in src.
 func CountRegisterCalls(src []byte, pkgName string) (int, error) {
 	fset := token.NewFileSet()
 	file, err := parser.ParseFile(fset, "main.go", src, 0)
 	if err != nil {
 		return 0, err
 	}
-	return countSelectorCalls(file, pkgName, "Register"), nil
+	return countSelectorCalls(file, pkgName, registerCommandsName), nil
 }
 
 // CountConstructorCalls reports how many `Constructor()` calls appear in src.
 func CountConstructorCalls(src []byte, constructor string) (int, error) {
 	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, registerFileName, src, 0)
+	file, err := parser.ParseFile(fset, commandsFileName, src, 0)
 	if err != nil {
 		return 0, err
 	}

@@ -23,14 +23,14 @@ var LoadConfig = config.Load
 // supported registration path for app-owned management commands.
 func AddCommand(root *Command, cmds ...*Command) {
 	if root == nil {
-		return
+		panic("cli: AddCommand requires a non-nil root")
 	}
 	root.AddCommand(cmds...)
 }
 
 // NewRoot returns the framework Cobra tree (new, dev, make, db, openapi,
 // client, routes, doctor, config). Generated apps call NewRoot, then
-// feature-package Register / RegisterCommands, then ExecuteRoot.
+// feature-package RegisterCommands, then ExecuteRoot.
 func NewRoot(stdout io.Writer, stderr io.Writer) *Command {
 	if stdout == nil {
 		stdout = io.Discard

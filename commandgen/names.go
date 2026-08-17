@@ -65,8 +65,8 @@ func parseCommandName(raw, pkg string) (CommandName, error) {
 	if _, reserved := reservedCommands[use]; reserved {
 		return CommandName{}, fmt.Errorf("commandgen: command name %q collides with a framework command", raw)
 	}
-	if fileBase == "register" {
-		return CommandName{}, fmt.Errorf("commandgen: command name %q maps to reserved file register.go", raw)
+	if fileBase == "register" || fileBase == "commands" {
+		return CommandName{}, fmt.Errorf("commandgen: command name %q maps to reserved file %s.go", raw, fileBase)
 	}
 
 	pkg = strings.TrimSpace(pkg)

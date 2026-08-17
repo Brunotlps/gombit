@@ -8,7 +8,7 @@ discovery of commands.
 
 The framework binary is `go run ./cmd/gombit` in this repository. Generated
 apps get their own `cmd/gombit` that reuses `cli.NewRoot` and then calls
-`product.RegisterCommands(root)` (and any `internal/commands.Register`).
+`product.RegisterCommands(root)` (and any `internal/commands.RegisterCommands`).
 App-owned commands are discoverable via `go run ./cmd/gombit` from the
 application module.
 
@@ -281,6 +281,9 @@ gombit make command greet --force
 feature-package management command and registers it on the **app-owned**
 `cmd/gombit` tree — not the framework binary
 (`go run github.com/LAA-Software-Engineering/gombit/cmd/gombit`).
+The generator requires a `gombit new` app (`cmd/server/main.go` and/or
+`gombit.yaml`) and refuses a framework-shaped tree so it cannot rewrite
+the framework `cmd/gombit/main.go`.
 
 Default package is `internal/commands`. `--package hello` writes
 `internal/hello/` instead. Files:
@@ -288,8 +291,8 @@ Default package is `internal/commands`. `--package hello` writes
 | File | Role |
 | --- | --- |
 | `internal/<pkg>/<name>.go` | `New<Name>Command() *cli.Command` |
-| `internal/<pkg>/register.go` | `Register(root *cli.Command)` calling `cli.AddCommand` |
-| `cmd/gombit/main.go` | AST-appends `<pkg>.Register(root)` next to `product.RegisterCommands(root)` |
+| `internal/<pkg>/commands.go` | `RegisterCommands(root *cli.Command)` calling `cli.AddCommand` |
+| `cmd/gombit/main.go` | AST-appends `<pkg>.RegisterCommands(root)` next to `product.RegisterCommands(root)` |
 
 `cli.AddCommand` is a thin wrapper around Cobra `AddCommand` (D13 /
 [ADR-014](adr/014-cli-cobra.md)). Generated apps do not invent a second
@@ -303,9 +306,9 @@ go run ./cmd/gombit --help
 ```
 
 Registration edits use `go/ast` + `go/parser` + `go/format` (never regex).
-`--dry-run` writes nothing. Re-running does not duplicate `Register` or
+`--dry-run` writes nothing. Re-running does not duplicate `RegisterCommands` or
 `AddCommand` calls. A generated command file that differs from this run
-(or a user-owned file) is refused unless `--force`. `register.go` and
+(or a user-owned file) is refused unless `--force`. `commands.go` and
 `cmd/gombit/main.go` are additive AST edits of known registration points.
 
 Command names that collide with framework families (`new`, `dev`, `make`,

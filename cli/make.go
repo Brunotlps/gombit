@@ -105,7 +105,7 @@ it on the app-owned cmd/gombit tree via go/ast (never regex).
 
 The default package is internal/commands. Override with --package to
 write internal/<package>/ instead. Registration is explicit:
-cmd/gombit calls product.RegisterCommands(root) and <package>.Register(root).
+cmd/gombit calls product.RegisterCommands(root) and <package>.RegisterCommands(root).
 There is no reflection discovery and no second command router (D13).
 
 Examples:
@@ -115,7 +115,7 @@ Examples:
   gombit make command greet --force
 
 --dry-run prints the file list without writing. Re-running is
-idempotent and will not duplicate Register / AddCommand calls.
+idempotent and will not duplicate RegisterCommands / AddCommand calls.
 User-owned command files are refused unless --force is set.
 
 Run the generated command from the application module:

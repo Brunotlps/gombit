@@ -38,6 +38,16 @@ func TestAddCommandAppearsInHelpAndRuns(t *testing.T) {
 	}
 }
 
-func TestAddCommandNilRootIsNoop(t *testing.T) {
+func TestAddCommandNilRootPanics(t *testing.T) {
+	defer func() {
+		got := recover()
+		if got == nil {
+			t.Fatal("expected panic")
+		}
+		msg, ok := got.(string)
+		if !ok || !strings.Contains(msg, "nil root") {
+			t.Fatalf("panic = %#v, want nil root", got)
+		}
+	}()
 	AddCommand(nil, &Command{Use: "x"})
 }

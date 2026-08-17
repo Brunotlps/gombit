@@ -25,11 +25,25 @@ func main() {
 }
 `
 
-const fixtureRegister = `package commands
+const fixtureCommands = `package commands
 
 import "github.com/LAA-Software-Engineering/gombit/cli"
 
-func Register(root *cli.Command) {
+func RegisterCommands(root *cli.Command) {
+}
+`
+
+const fixtureFrameworkMain = `package main
+
+import (
+	"context"
+	"io"
+
+	"github.com/LAA-Software-Engineering/gombit/cli"
+)
+
+func run(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) error {
+	return cli.Execute(ctx, args, stdout, stderr)
 }
 `
 
@@ -39,8 +53,8 @@ func TestAddImportAndRegisterIdempotent(t *testing.T) {
 		t.Fatalf("AddImportAndRegister: %v", err)
 	}
 	src := string(first)
-	if !strings.Contains(src, "commands.Register(root)") {
-		t.Fatalf("missing commands.Register:\n%s", src)
+	if !strings.Contains(src, "commands.RegisterCommands(root)") {
+		t.Fatalf("missing commands.RegisterCommands:\n%s", src)
 	}
 	if !strings.Contains(src, "product.RegisterCommands(root)") {
 		t.Fatalf("lost product.RegisterCommands:\n%s", src)
@@ -55,12 +69,12 @@ func TestAddImportAndRegisterIdempotent(t *testing.T) {
 		t.Fatalf("CountRegisterCalls: %v", err)
 	}
 	if count != 1 {
-		t.Fatalf("duplicated Register: %d\n%s", count, second)
+		t.Fatalf("duplicated RegisterCommands: %d\n%s", count, second)
 	}
 }
 
 func TestAddCommandCallIdempotent(t *testing.T) {
-	first, err := AddCommandCall([]byte(fixtureRegister), "NewGreetCommand")
+	first, err := AddCommandCall([]byte(fixtureCommands), "NewGreetCommand")
 	if err != nil {
 		t.Fatalf("AddCommandCall: %v", err)
 	}
@@ -102,5 +116,53 @@ func TestAddImportAndRegisterRequiresRegistrationPoint(t *testing.T) {
 	_, err := AddImportAndRegister(src, "github.com/example/demo/internal/commands", "commands")
 	if err == nil || !strings.Contains(err.Error(), "registration point") {
 		t.Fatalf("error = %v, want registration point", err)
+	}
+}
+
+func TestAddImportAndRegisterDoesNotUseExecute(t *testing.T) {
+	_, err := AddImportAndRegister([]byte(fixtureFrameworkMain), "github.com/example/demo/internal/commands", "commands")
+	if err == nil || !strings.Contains(err.Error(), "registration point") {
+		t.Fatalf("error = %v, want registration point (cli.Execute is not an anchor)", err)
+	}
+}
+
+func TestAddImportAndRegisterAfterNewRoot(t *testing.T) {
+	src := []byte(`package main
+
+import (
+	"os"
+
+	"github.com/LAA-Software-Engineering/gombit/cli"
+)
+
+func main() {
+	root := cli.NewRoot(os.Stdout, os.Stderr)
+	_ = root
+}
+`)
+	got, err := AddImportAndRegister(src, "github.com/example/demo/internal/book", "book")
+	if err != nil {
+		t.Fatalf("AddImportAndRegister: %v", err)
+	}
+	if !strings.Contains(string(got), "book.RegisterCommands(root)") {
+		t.Fatalf("missing book.RegisterCommands after NewRoot:\n%s", got)
+	}
+}
+
+func TestAddCommandCallRequiresRegisterCommands(t *testing.T) {
+	src := []byte("package book\n\nfunc Register(app int) {}\n")
+	_, err := AddCommandCall(src, "NewGreetCommand")
+	if err == nil || !strings.Contains(err.Error(), "RegisterCommands") {
+		t.Fatalf("error = %v, want RegisterCommands", err)
+	}
+}
+
+func TestFormatGoFailsOnInvalidSource(t *testing.T) {
+	_, err := formatGo("package commands\nfunc {")
+	if err == nil {
+		t.Fatal("expected format error")
+	}
+	if !strings.Contains(err.Error(), "format source") {
+		t.Fatalf("error = %v, want format source", err)
 	}
 }
