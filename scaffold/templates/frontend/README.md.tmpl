@@ -1,0 +1,14 @@
+# Frontend placeholder
+
+This directory is the split-deploy frontend root (build plan C5 / §3.2).
+`gombit new` does not scaffold a Vite React app; that is **M5-1**.
+
+Public API origin for a future client:
+
+```
+VITE_API_URL
+```
+
+`VITE_*` values are public. Do not put JWT secrets, database passwords, or
+other server credentials here. Access tokens stay in memory — never
+`localStorage` or `sessionStorage`.
