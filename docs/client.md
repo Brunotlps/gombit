@@ -73,7 +73,28 @@ if (isD10ErrorBody(body)) {
 `examples/client` ships a sample spec (the contract widget API) and the
 generated client. See that README to typecheck it.
 
+## Contract drift check
+
+`gombit client check` rebuilds the sample widget API with `client.SampleApp()`,
+writes the spec with `contract.WriteOpenAPI`, regenerates the TypeScript client
+with `client.Generate`, and fails if committed artifacts would change. It does
+not fetch a live `/openapi.json` URL.
+
+From the repository root:
+
+```sh
+go run ./cmd/gombit client check
+go run ./cmd/gombit client check --write
+```
+
+`--write` rewrites `examples/client/openapi.json` and
+`examples/client/frontend/src/api/generated`. CI runs `--write` and then
+`git diff --exit-code` on those paths, so a Huma handler change that is not
+regenerated fails the job. Spec comparison in `CheckDrift` is semantic
+(`encoding/json`); whitespace-only JSON is not drift.
+
+`go generate ./client` runs the same rewrite as `--write`.
+
 ## What is not here yet
 
-- CI drift check that fails when the spec or client is stale: M3-5
 - Vite React skeleton that wires this client into forms: M5-1

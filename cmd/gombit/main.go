@@ -247,6 +247,7 @@ func usage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  db <subcommand>   see gombit db")
 	_, _ = fmt.Fprintln(w, "  openapi generate [--out openapi.json] [--url http://127.0.0.1:8080/openapi.json]")
 	_, _ = fmt.Fprintln(w, "  client generate [--spec openapi.json] [--out frontend/src/api/generated] [--dry-run] [--force]")
+	_, _ = fmt.Fprintln(w, "  client check [--write] [--spec examples/client/openapi.json] [--out examples/client/frontend/src/api/generated]")
 }
 
 func dbUsage(w io.Writer) {

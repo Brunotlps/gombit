@@ -36,7 +36,8 @@ Application lifecycle is documented in [`docs/lifecycle.md`](docs/lifecycle.md).
 Application-owned route registration is documented in [`docs/router.md`](docs/router.md).
 Huma DTO and validation conventions are documented in [`docs/contract.md`](docs/contract.md).
 OpenAPI emission and `/docs` are documented in [`docs/openapi.md`](docs/openapi.md).
-TypeScript client generation is documented in [`docs/client.md`](docs/client.md).
+TypeScript client generation and the contract drift check are documented in
+[`docs/client.md`](docs/client.md).
 Database runtime support is documented in [`docs/database.md`](docs/database.md).
 Cache runtime support is documented in [`docs/cache.md`](docs/cache.md).
 Runtime logging is documented in [`docs/logging.md`](docs/logging.md).

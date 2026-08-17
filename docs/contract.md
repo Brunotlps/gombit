@@ -161,11 +161,12 @@ The `validation_error` code is preserved from M3-1 / D10 (not renamed to
 
 `/openapi.json` is served from the Huma API and reflects the D10
 `ErrorEnvelope` schema. `/docs` is the FastAPI-style Swagger UI (on by default
-in local/dev). `gombit openapi generate` writes the live spec to disk. See
-[`docs/openapi.md`](openapi.md).
+in local/dev). `gombit openapi generate` writes the live spec to disk. CI
+regenerates the sample spec and TypeScript client from `client.SampleApp()`
+and fails on drift — see [`docs/openapi.md`](openapi.md) and
+[`docs/client.md`](client.md).
 
 ## What is not here yet
 
-- CI contract drift check (M3-5)
 - Pagination query DSL / filter/sort helpers (design §42)
 - gRPC status mapping (post-v0.1)
