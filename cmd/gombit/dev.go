@@ -32,9 +32,9 @@ OpenAPI document changes, gombit regenerates frontend/src/api/generated
 
 A service table is printed at startup, including the API docs URL (/docs).
 
-SIGINT/SIGTERM stops the child processes. air/watchexec and Node.js are
-optional for reload/HMR; a missing frontend/package.json is an error
-(backend-only is not supported).
+SIGINT/SIGTERM stops the child processes. air and watchexec are optional
+(go run fallback). Node.js is required for Vite HMR; a missing
+frontend/package.json is an error (backend-only is not supported).
 
 The Vite stub from gombit new is enough to start HMR. The full React
 skeleton (router, React Hook Form, auth pages) is M5-1.`,
