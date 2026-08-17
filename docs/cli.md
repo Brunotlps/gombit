@@ -14,11 +14,12 @@ go run ./cmd/gombit --help
 | Family | Role | Milestone |
 | --- | --- | --- |
 | `gombit new` | Scaffold an application | M4-1 |
+| `gombit dev` | Run API + Vite with HMR and live client regen | M4-2 |
 | `gombit db …` | Atlas-backed migrations | M2, migrated onto Cobra in M4-1 |
 | `gombit openapi generate` | Write the live OpenAPI 3.1 document | M3-3 |
 | `gombit client generate` / `check` | TypeScript client + drift | M3-4, M3-5 |
 
-Not in this milestone: `gombit dev` (M4-2), `gombit make resource` (M4-3),
+Not in this milestone: `gombit make resource` (M4-3),
 `routes` / `doctor` / `config show` (M4-4), `createsuperuser` (M4-6),
 `make command` (M4-7).
 
@@ -62,7 +63,8 @@ replace github.com/LAA-Software-Engineering/gombit => /path/to/gombit
 
 `--auth cookie` and `--ui mui` are recorded in `gombit.yaml` only. Cookie/CSRF
 is M5-3; the MUI CRUD preset is M5-4. The generated `frontend/` directory is a
-split-deploy placeholder (M5-1 owns the Vite React skeleton).
+minimal Vite + TypeScript stub so `gombit dev` can start HMR; M5-1 owns the
+full React skeleton (router, React Hook Form, auth pages).
 
 If the project name is omitted and stdin is a TTY, `gombit new` prompts for
 name and the choices above. Tests and CI pass flags so the command never
@@ -85,8 +87,9 @@ demo/
 ├── database/migrations/
 ├── database/seeds/
 ├── config/
-├── frontend/
+├── frontend/             # Vite stub (package.json, vite.config.ts, src/main.ts)
 ├── gombit.yaml
+├── .air.toml
 ├── .env.example
 ├── go.mod
 └── README.md
@@ -101,6 +104,49 @@ Public product routes are Huma-typed under `/api/v1`. There is no generated
 and public `VITE_API_URL`. `VITE_*` is baked into the browser bundle — never
 put secrets there. Access tokens stay in memory; generated source does not
 use `localStorage`.
+
+## `gombit dev`
+
+From an application directory (the output of `gombit new`):
+
+```sh
+gombit dev
+```
+
+One command starts:
+
+1. The Go API with reload when `air` or `watchexec` is on `PATH`. If neither
+   is installed, Gombit runs `go run ./cmd/server` and prints a hint.
+2. The Vite frontend with HMR (`pnpm` when available, otherwise `npm`). Vite
+   proxies `/api`, `/openapi.json`, and `/docs` to the Go origin.
+3. An OpenAPI watcher that regenerates `frontend/src/api/generated` when the
+   live `/openapi.json` document changes (`gombit client generate`).
+
+A service table is printed at startup:
+
+```text
+Backend      http://127.0.0.1:8080
+Frontend     http://127.0.0.1:5173
+OpenAPI      http://127.0.0.1:8080/openapi.json
+API docs     http://127.0.0.1:8080/docs
+```
+
+### Flags
+
+| Flag | Default | Role |
+| --- | --- | --- |
+| `--http` | `GOMBIT_HTTP_ADDR` or `:8080` | Go API listen address |
+| `--frontend-host` | `127.0.0.1` | Vite bind host |
+| `--frontend-port` | `5173` | Vite port |
+| `--client-out` | `frontend/src/api/generated` | TypeScript client output |
+| `--poll` | `1s` | OpenAPI poll interval |
+
+`frontend/package.json` is required. A missing file is an error — backend-only
+mode is not supported. Node.js is required for Vite. SIGINT/SIGTERM stops the
+child processes.
+
+The scaffold's Vite stub is enough to start HMR. M5-1 replaces it with the
+React skeleton.
 
 ## `gombit db`
 

@@ -157,6 +157,8 @@ func rewriteTemplateName(rel string) string {
 		return ".env.example"
 	case "gitignore":
 		return ".gitignore"
+	case "air.toml":
+		return ".air.toml"
 	default:
 		return rel
 	}
