@@ -10,6 +10,7 @@ require (
 	github.com/pb33f/libopenapi-validator v0.14.0
 	github.com/redis/go-redis/v9 v9.22.0
 	github.com/shopspring/decimal v1.4.0
+	github.com/spf13/cobra v1.10.2
 	go.uber.org/zap v1.28.0
 	golang.org/x/net v0.57.0
 	gorm.io/driver/mysql v1.6.0
@@ -67,6 +68,7 @@ require (
 	github.com/googleapis/go-gorm-spanner v1.8.6 // indirect
 	github.com/googleapis/go-sql-spanner v1.17.0 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.7 // indirect
+	github.com/inconshreveable/mousetrap v1.1.0 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/pgx/v5 v5.10.0 // indirect
@@ -88,6 +90,7 @@ require (
 	github.com/quic-go/qpack v0.6.0 // indirect
 	github.com/quic-go/quic-go v0.60.0 // indirect
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.2 // indirect
+	github.com/spf13/pflag v1.0.10 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.5.0 // indirect
 	github.com/twitchyliquid64/golang-asm v0.15.1 // indirect
 	github.com/ugorji/go/codec v1.3.1 // indirect

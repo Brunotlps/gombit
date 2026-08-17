@@ -1,0 +1,58 @@
+# {{.Name}}
+
+Scaffolded by `gombit new`. Feature-package layout is build plan §3.2.
+
+## Run
+
+```sh
+cp .env.example .env
+go run ./cmd/server
+```
+
+The server listens on `GOMBIT_HTTP_ADDR` (default `:8080`). Public API
+routes are under `{{.APIPrefix}}`. Interactive docs are at `/docs` when
+`GOMBIT_DOCS_ENABLED` is on. The live OpenAPI 3.1 document is
+`/openapi.json`.
+
+This module requires [`github.com/LAA-Software-Engineering/gombit`](https://github.com/LAA-Software-Engineering/gombit).
+After scaffolding, pin a released version:
+
+```sh
+go get github.com/LAA-Software-Engineering/gombit@latest
+go mod tidy
+```
+
+The default module path is `github.com/example/{{.Name}}` (override with
+`--module`).
+
+## Recorded choices (`gombit.yaml`)
+
+| Key | Value | Notes |
+| --- | --- | --- |
+| database | `{{.Database}}` | sqlite, postgres, or mysql |
+| cache | `{{.Cache}}` | memory, redis, or noop |
+| auth | `{{.Auth}}` | Bearer JWT is the v0.1 default; cookie/CSRF is M5-3 |
+| ui | `{{.UI}}` | minimal/headless default; MUI CRUD preset is M5-4 |
+
+Runtime still reads `GOMBIT_*` environment variables, not `gombit.yaml`.
+
+## Layout
+
+- `cmd/server` — `config.Load`, `framework.New`, explicit `product.Register`
+- `internal/product` — model, Huma handlers, routes (no `service.go` / `repo.go`)
+- `internal/platform` — database open + AutoMigrate for the example product
+- `database/migrations`, `database/seeds` — Atlas SQL (see `gombit db`)
+- `frontend/` — split-deploy placeholder; the Vite React skeleton is M5-1
+
+## Migrations
+
+```sh
+gombit db makemigrations create_products \
+  --model {{.Module}}/internal/product.Product
+gombit db migrate
+gombit db status
+```
+
+Example product handlers use GORM AutoMigrate on startup so the list/create
+API works before the first Atlas migration exists. Prefer `gombit db` for
+schema you intend to keep.

@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"flag"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +14,7 @@ import (
 	"github.com/LAA-Software-Engineering/gombit/contract"
 	"github.com/pb33f/libopenapi"
 	openapivalidator "github.com/pb33f/libopenapi-validator"
+	"github.com/spf13/cobra"
 )
 
 const (
@@ -23,47 +23,61 @@ const (
 )
 
 var (
-	openAPIHTTPClient = &http.Client{Timeout: 30 * time.Second}
+	openAPIHTTPClient       = &http.Client{Timeout: 30 * time.Second}
 	maxOpenAPISize    int64 = defaultMaxOpenAPISize
 )
 
-func runOpenAPI(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) error {
-	if len(args) == 0 {
-		openapiUsage(stderr)
-		return errors.New("gombit openapi: subcommand is required")
-	}
-	if args[0] != "generate" {
-		openapiUsage(stderr)
-		return fmt.Errorf("gombit openapi: unknown subcommand %q", args[0])
-	}
-	return runOpenAPIGenerate(ctx, args[1:], stdout, stderr)
+func newOpenAPICommand(stdout io.Writer, stderr io.Writer) *cobra.Command {
+	cmd := silence(&cobra.Command{
+		Use:   "openapi",
+		Short: "OpenAPI document commands",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			openapiUsage(stderr)
+			if len(args) == 0 {
+				return errors.New("gombit openapi: subcommand is required")
+			}
+			return fmt.Errorf("gombit openapi: unknown subcommand %q", args[0])
+		},
+	})
+	cmd.AddCommand(newOpenAPIGenerateCommand(stdout, stderr))
+	return cmd
 }
 
-func runOpenAPIGenerate(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) error {
-	flags := flag.NewFlagSet("gombit openapi generate", flag.ContinueOnError)
-	flags.SetOutput(stderr)
-	out := flags.String("out", "openapi.json", "output path for the OpenAPI 3.1 document")
-	rawURL := flags.String("url", defaultOpenAPIURL, "URL of the live /openapi.json document")
-	if err := flags.Parse(args); err != nil {
-		return err
-	}
-	if flags.NArg() != 0 {
-		flags.Usage()
-		return fmt.Errorf("gombit openapi generate: unexpected argument %q", flags.Arg(0))
-	}
-
-	spec, err := fetchOpenAPI(ctx, *rawURL)
-	if err != nil {
-		return err
-	}
-	if err := validateOpenAPIDocument(spec); err != nil {
-		return fmt.Errorf("gombit openapi generate: %w", err)
-	}
-	if err := contract.WriteOpenAPIFile(*out, spec); err != nil {
-		return err
-	}
-	_, err = fmt.Fprintf(stdout, "wrote OpenAPI document to %s\n", *out)
-	return err
+func newOpenAPIGenerateCommand(stdout io.Writer, stderr io.Writer) *cobra.Command {
+	cmd := silence(&cobra.Command{
+		Use:   "generate",
+		Short: "Fetch and write the live OpenAPI 3.1 document",
+		Args:  cobra.ArbitraryArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) != 0 {
+				return fmt.Errorf("gombit openapi generate: unexpected argument %q", args[0])
+			}
+			out, err := cmd.Flags().GetString("out")
+			if err != nil {
+				return err
+			}
+			rawURL, err := cmd.Flags().GetString("url")
+			if err != nil {
+				return err
+			}
+			spec, err := fetchOpenAPI(cmd.Context(), rawURL)
+			if err != nil {
+				return err
+			}
+			if err := validateOpenAPIDocument(spec); err != nil {
+				return fmt.Errorf("gombit openapi generate: %w", err)
+			}
+			if err := contract.WriteOpenAPIFile(out, spec); err != nil {
+				return err
+			}
+			_, err = fmt.Fprintf(stdout, "wrote OpenAPI document to %s\n", out)
+			return err
+		},
+	})
+	cmd.Flags().String("out", "openapi.json", "output path for the OpenAPI 3.1 document")
+	cmd.Flags().String("url", defaultOpenAPIURL, "URL of the live /openapi.json document")
+	return cmd
 }
 
 func fetchOpenAPI(ctx context.Context, rawURL string) ([]byte, error) {
@@ -126,9 +140,4 @@ func validateOpenAPIDocument(data []byte) error {
 		return fmt.Errorf("invalid OpenAPI 3.1 document: %v", documentErrs)
 	}
 	return nil
-}
-
-func openapiUsage(w io.Writer) {
-	_, _ = fmt.Fprintln(w, "available openapi subcommands:")
-	_, _ = fmt.Fprintln(w, "  generate [--out openapi.json] [--url http://127.0.0.1:8080/openapi.json]")
 }

@@ -11,8 +11,12 @@ Run the same baseline checks as CI before opening a pull request:
 ```sh
 go test ./...
 golangci-lint run
+go run ./cmd/gombit --help
 go run ./cmd/gombit client check
 ```
+
+`gombit new demo --database sqlite` scaffolds a compiling app. See
+[`docs/cli.md`](docs/cli.md).
 
 `gombit client check --write` regenerates `examples/client/openapi.json` and
 the sample TypeScript client. CI fails if those files would change.

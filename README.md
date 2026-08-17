@@ -1,9 +1,9 @@
 # Gombit
 
 Gombit is a Django-for-Go full-stack framework. The current repository has
-completed the M0 spike and is beginning M1 runtime work with typed config,
-the `framework.App` lifecycle surface, and application-owned route
-registration.
+typed config, `framework.App` lifecycle, Huma contract/OpenAPI/client
+generation, Atlas-backed `gombit db` migrations, and a Cobra CLI that
+scaffolds apps with `gombit new`.
 
 ## Development
 
@@ -18,6 +18,12 @@ Emit the current spike OpenAPI document:
 go run ./cmd/contract-spike-openapi openapi.json
 ```
 
+Scaffold an application (Cobra CLI; default module `github.com/example/demo`):
+
+```sh
+go run ./cmd/gombit new demo --database sqlite
+```
+
 Write the live app spec (app must be serving `/openapi.json`):
 
 ```sh
@@ -30,6 +36,8 @@ default). See [`docs/openapi.md`](docs/openapi.md).
 The authoritative implementation backlog and architecture decisions live in
 [`docs/GOMBIT_BUILD_PLAN.md`](docs/GOMBIT_BUILD_PLAN.md).
 
+The Cobra command tree and `gombit new` are documented in
+[`docs/cli.md`](docs/cli.md).
 Accepted architecture decisions are recorded under [`docs/adr/`](docs/adr/).
 Runtime configuration is documented in [`docs/config.md`](docs/config.md).
 Application lifecycle is documented in [`docs/lifecycle.md`](docs/lifecycle.md).

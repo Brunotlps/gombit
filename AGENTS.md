@@ -6,17 +6,14 @@ a generated React+TypeScript frontend, Atlas-backed migrations. Module path
 
 ## Current state
 
-This repo has completed the **M0 spike** and is beginning **M1 runtime** work.
-It has a root `go.mod`, a minimal root Go package, CI/lint wiring, docs,
-ADR-011, the M0-2 Huma-over-Gin contract spike under `internal/contractspike`,
-the initial public `config.Config` boundary with `examples/config`, the
-initial `framework.App` lifecycle surface with `examples/lifecycle`, and the
-application-owned route registration surface (M1-3) with `examples/router`.
-It does not yet have stable runtime framework source beyond those M1
-surfaces, generated app templates, migrations, frontend source, or full
-example apps.
-Don't assume a runtime codebase layout exists; check `git log` / `ls` before
-describing "how the code works."
+This repo has completed M0–M3 and started **M4 CLI**. It has typed
+`config.Config`, `framework.App` lifecycle and routing, Huma contract/OpenAPI/
+TypeScript client generation, Atlas-backed migrations, and a Cobra `gombit`
+command tree (`new`, `db`, `openapi`, `client`) that scaffolds apps into a
+temp/user directory. It does not yet have `gombit dev`, `make resource`, a
+full Vite React skeleton (M5-1), or M6 batteries.
+Don't assume generated apps are committed in-tree; `gombit new` writes them
+on demand. Check `git log` / `ls` before describing "how the code works."
 
 ## Source of truth
 
