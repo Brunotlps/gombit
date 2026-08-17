@@ -108,6 +108,5 @@ gombit dev
 
 ## What is not here yet
 
-- Cookie/session + CSRF (`--auth cookie`): M5-3
 - MUI CRUD preset (`--ui mui`): M5-4
 - `go:embed` single-binary SPA: M5-5

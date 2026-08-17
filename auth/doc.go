@@ -6,5 +6,5 @@
 // Access tokens are short-lived JWTs. Refresh tokens are opaque, stored
 // hashed, and rotated on each successful refresh. The generated SPA keeps
 // both in memory — never localStorage or sessionStorage. Cookie/session
-// mode is M5-3.
+// + CSRF (--auth cookie) is a first-class alternative (M5-3).
 package auth

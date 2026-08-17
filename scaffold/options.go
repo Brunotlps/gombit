@@ -15,7 +15,7 @@ const (
 	DefaultDatabase = "sqlite"
 	// DefaultCache is the in-process memory cache default.
 	DefaultCache = "memory"
-	// DefaultAuth is Bearer JWT (C3). Cookie mode is recorded only until M5-3.
+	// DefaultAuth is Bearer JWT (C3). Cookie mode is first-class (M5-3).
 	DefaultAuth = "jwt"
 	// DefaultUI is minimal/headless (C4). MUI is recorded only until M5-4.
 	DefaultUI = "minimal"
