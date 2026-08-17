@@ -1,14 +1,17 @@
-# Frontend (minimal Vite stub)
+# Frontend (minimal React skeleton)
 
 This directory is the split-deploy frontend root (build plan C5 / §3.2).
-`gombit new` writes a **minimal Vite + TypeScript stub** so `gombit dev` can
-start Vite HMR and proxy `/api`, `/openapi.json`, and `/docs` to the Go
-server. The full React skeleton (router, React Hook Form, auth pages, MUI)
-is **M5-1**.
+`gombit new` writes a **Vite + React + TypeScript** minimal/headless
+skeleton: React Router, an API-client provider, and React Hook Form with
+D10 `error.fields` mapping. `--ui mui` is recorded in `gombit.yaml` only
+(M5-4). Bearer login/refresh is M5-2.
 
 ```sh
 gombit dev
 ```
+
+That starts the Go API, Vite HMR, and live `gombit client generate` into
+`src/api/generated`. Vite proxies `/api`, `/openapi.json`, and `/docs`.
 
 Public API origin:
 
@@ -16,11 +19,22 @@ Public API origin:
 VITE_API_URL
 ```
 
-`VITE_*` values are public. Do not put JWT secrets, database passwords, or
-other server credentials here. Access tokens stay in memory — never
-`localStorage` or `sessionStorage`.
+Empty (the `gombit new` / `gombit dev` default) means same-origin so the
+Vite `/api` proxy works. For a split deploy, set the API **origin only**
+(for example `http://127.0.0.1:8080`) — OpenAPI paths already include
+`/api/v1`. `VITE_*` values are public. Do not put JWT secrets, database
+passwords, or other server credentials here. Access tokens stay in memory
+— never `localStorage` or `sessionStorage`.
 
-`gombit make resource` writes vanilla list/table and create form pages under
-`src/<feature>/` and refreshes `src/resources.ts`. Those pages import types
-from `src/api/generated` (no hand-written API DTOs). Run
-`gombit client generate` or `gombit dev` so that client exists.
+The home page lists products via `unwrap(client.GET("/api/v1/products"))`.
+`/products/new` is a React Hook Form create page; D10 field errors call
+`setError` through `src/api/formErrors.ts`.
+
+`src/api/generated` ships a placeholder product contract so `npm run
+typecheck` / `npm run build` succeed immediately. `gombit client generate`
+and `gombit dev` overwrite those files (they carry the generated banner).
+
+`gombit make resource` writes React list/form pages under `src/<feature>/`
+and refreshes `src/resources.tsx`. Those pages import types from
+`src/api/generated` (no hand-written API DTOs). Re-run client generate
+after adding routes.
