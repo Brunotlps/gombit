@@ -55,6 +55,7 @@ func newRootCommand(stdout io.Writer, stderr io.Writer) *cobra.Command {
 	root.CompletionOptions.DisableDefaultCmd = true
 	root.AddCommand(newNewCommand(stdout, stderr))
 	root.AddCommand(newDevCommand(stdout, stderr))
+	root.AddCommand(newMakeCommand(stdout, stderr))
 	root.AddCommand(newDBCommand(stdout, stderr))
 	root.AddCommand(newOpenAPICommand(stdout, stderr))
 	root.AddCommand(newClientCommand(stdout, stderr))
@@ -68,6 +69,7 @@ func rootLongHelp() string {
 		"Command families:",
 		"  new       Scaffold a new application",
 		"  dev       Run the API and Vite frontend together",
+		"  make      Generate application code (resource)",
 		"  db        Database migrations (makemigrations, migrate, rollback, status, seed, reset)",
 		"  openapi   Write the live OpenAPI 3.1 document",
 		"  client    Generate and check the TypeScript client",
@@ -79,6 +81,7 @@ func usage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "available commands:")
 	_, _ = fmt.Fprintln(w, "  new [name]        scaffold a new Gombit application")
 	_, _ = fmt.Fprintln(w, "  dev               run the API and Vite frontend together")
+	_, _ = fmt.Fprintln(w, "  make resource     generate a feature-package resource")
 	_, _ = fmt.Fprintln(w, "  db <subcommand>   see gombit db")
 	_, _ = fmt.Fprintln(w, "  openapi generate [--out openapi.json] [--url http://127.0.0.1:8080/openapi.json]")
 	_, _ = fmt.Fprintln(w, "  client generate [--spec openapi.json] [--out frontend/src/api/generated] [--dry-run] [--force]")

@@ -19,3 +19,8 @@ VITE_API_URL
 `VITE_*` values are public. Do not put JWT secrets, database passwords, or
 other server credentials here. Access tokens stay in memory — never
 `localStorage` or `sessionStorage`.
+
+`gombit make resource` writes vanilla list/table and create form pages under
+`src/<feature>/` and refreshes `src/resources.ts`. Those pages import types
+from `src/api/generated` (no hand-written API DTOs). Run
+`gombit client generate` or `gombit dev` so that client exists.

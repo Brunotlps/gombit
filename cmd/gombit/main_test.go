@@ -290,6 +290,9 @@ func TestRunRejectsUnknownCommandUsageListsFamilies(t *testing.T) {
 	if !strings.Contains(got, "client check") {
 		t.Fatalf("usage = %q, want client check", got)
 	}
+	if !strings.Contains(got, "make resource") {
+		t.Fatalf("usage = %q, want make resource", got)
+	}
 	if !strings.Contains(got, "see gombit db") {
 		t.Fatalf("usage = %q, want pointer to gombit db", got)
 	}
