@@ -138,7 +138,7 @@ func childEnv(parent []string, opts Options, backendOrigin string) []string {
 		"GOMBIT_DEV_BACKEND="+backendOrigin,
 		"GOMBIT_DEV_FRONTEND_HOST="+opts.FrontendHost,
 		"GOMBIT_DEV_FRONTEND_PORT="+strconv.Itoa(opts.FrontendPort),
-		"VITE_API_URL=/api/v1",
+		"VITE_API_URL=",
 	)
 }
 

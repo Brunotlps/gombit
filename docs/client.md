@@ -47,7 +47,7 @@ import {
 } from "./api/generated/client";
 
 const client = createGombitClient({
-  baseUrl: import.meta.env.VITE_API_URL ?? "http://127.0.0.1:8080",
+  baseUrl: import.meta.env.VITE_API_URL ?? "",
   getAccessToken: () => accessToken,
 });
 
@@ -95,6 +95,7 @@ regenerated fails the job. Spec comparison in `CheckDrift` is semantic
 
 `go generate ./client` runs the same rewrite as `--write`.
 
-## What is not here yet
+## React skeleton
 
-- Vite React skeleton that wires this client into forms: M5-1
+`gombit new` wires this client into a Vite + React app (router, providers,
+React Hook Form). See [frontend.md](frontend.md). Bearer login is M5-2.

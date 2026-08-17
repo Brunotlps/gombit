@@ -193,16 +193,3 @@ func (f Field) humaTags() string {
 func (f Field) jsonTag() string {
 	return fmt.Sprintf(`json:"%s"`, f.JSONName)
 }
-
-func (f Field) inputKind() string {
-	switch f.Type {
-	case FieldText:
-		return "textarea"
-	case FieldBool:
-		return "checkbox"
-	case FieldInt, FieldInt64, FieldUint:
-		return "number"
-	default:
-		return "text"
-	}
-}

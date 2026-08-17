@@ -408,12 +408,12 @@ func TestOverlayEnvReplacesParentKeys(t *testing.T) {
 		"GOMBIT_HTTP_ADDR=:8080",
 		"HOME=/tmp",
 	}
-	got := overlayEnv(parent, "GOMBIT_HTTP_ADDR=:9090", "VITE_API_URL=/api/v1")
+	got := overlayEnv(parent, "GOMBIT_HTTP_ADDR=:9090", "VITE_API_URL=")
 	if values := envKeyValues(got, "GOMBIT_HTTP_ADDR"); len(values) != 1 || values[0] != ":9090" {
 		t.Fatalf("GOMBIT_HTTP_ADDR = %v, want single :9090", values)
 	}
-	if values := envKeyValues(got, "VITE_API_URL"); len(values) != 1 || values[0] != "/api/v1" {
-		t.Fatalf("VITE_API_URL = %v, want single /api/v1", values)
+	if values := envKeyValues(got, "VITE_API_URL"); len(values) != 1 || values[0] != "" {
+		t.Fatalf("VITE_API_URL = %v, want single empty same-origin value", values)
 	}
 	if values := envKeyValues(got, "PATH"); len(values) != 1 || values[0] != "/usr/bin" {
 		t.Fatalf("PATH = %v, want preserved /usr/bin", values)
@@ -436,8 +436,8 @@ func TestChildEnvReplacesParentKeysOnProcSpec(t *testing.T) {
 	if values := envKeyValues(spec.Env, "GOMBIT_HTTP_ADDR"); len(values) != 1 || values[0] != opts.HTTPAddr {
 		t.Fatalf("ProcSpec.Env GOMBIT_HTTP_ADDR = %v, want single %s", values, opts.HTTPAddr)
 	}
-	if values := envKeyValues(spec.Env, "VITE_API_URL"); len(values) != 1 || values[0] != "/api/v1" {
-		t.Fatalf("ProcSpec.Env VITE_API_URL = %v, want single /api/v1", values)
+	if values := envKeyValues(spec.Env, "VITE_API_URL"); len(values) != 1 || values[0] != "" {
+		t.Fatalf("ProcSpec.Env VITE_API_URL = %v, want single empty same-origin value", values)
 	}
 	if values := envKeyValues(spec.Env, "GOMBIT_DEV_FRONTEND_HOST"); len(values) != 1 || values[0] != "127.0.0.1" {
 		t.Fatalf("ProcSpec.Env GOMBIT_DEV_FRONTEND_HOST = %v, want 127.0.0.1", values)
@@ -505,8 +505,8 @@ func TestRunChildEnvReplacesParentHTTPAddr(t *testing.T) {
 		if values := envKeyValues(cmd.Env, "GOMBIT_HTTP_ADDR"); len(values) != 1 || values[0] != ":9090" {
 			t.Fatalf("child Env GOMBIT_HTTP_ADDR = %v, want single :9090", values)
 		}
-		if values := envKeyValues(cmd.Env, "VITE_API_URL"); len(values) != 1 || values[0] != "/api/v1" {
-			t.Fatalf("child Env VITE_API_URL = %v, want single /api/v1", values)
+		if values := envKeyValues(cmd.Env, "VITE_API_URL"); len(values) != 1 || values[0] != "" {
+			t.Fatalf("child Env VITE_API_URL = %v, want single empty same-origin value", values)
 		}
 	}
 

@@ -49,4 +49,5 @@ const client = createGombitClient({
 const widgets = await unwrap(await client.GET("/api/v1/widgets"));
 ```
 
-See [`docs/client.md`](../../docs/client.md).
+The Vite + React skeleton that wires this client into forms is documented
+in [`docs/frontend.md`](../../docs/frontend.md).

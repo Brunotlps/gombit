@@ -29,7 +29,8 @@ Non-interactive example:
 
 Defaults: --database sqlite, --cache memory, --auth jwt, --ui minimal.
 The Go module path defaults to github.com/example/<name> (--module).
---auth cookie and --ui mui are recorded in gombit.yaml only (M5 implements them).
+--auth cookie and --ui mui are recorded in gombit.yaml only (cookie/CSRF is M5-3;
+the MUI preset is M5-4). The generated frontend is a Vite + React skeleton.
 --dry-run prints the file list without writing. A non-empty destination
 requires --force.`,
 		Args: cobra.MaximumNArgs(1),

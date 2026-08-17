@@ -36,8 +36,9 @@ SIGINT/SIGTERM stops the child processes. air and watchexec are optional
 (go run fallback). Node.js is required for Vite HMR; a missing
 frontend/package.json is an error (backend-only is not supported).
 
-The Vite stub from gombit new is enough to start HMR. The full React
-skeleton (router, React Hook Form, auth pages) is M5-1.`,
+The generated frontend is a Vite + React + TypeScript skeleton
+(router, generated client, React Hook Form). Bearer login is M5-2;
+the MUI CRUD preset is M5-4.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !cmd.Flags().Changed("http") {

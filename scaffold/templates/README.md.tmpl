@@ -33,8 +33,9 @@ gombit dev
 `gombit dev` prints a service table (Backend, Frontend, OpenAPI, API docs).
 Backend reload uses `air` or `watchexec` when installed; otherwise it falls
 back to `go run ./cmd/server`. The frontend uses `pnpm` when available,
-otherwise `npm`. Node.js is required for Vite HMR. The Vite stub here is
-enough to start HMR; the full React skeleton is M5-1.
+otherwise `npm`. Node.js is required for Vite HMR. The frontend is a Vite +
+React + TypeScript skeleton (router, generated client, React Hook Form).
+Bearer login is M5-2; the MUI preset is M5-4.
 
 This module requires [`github.com/LAA-Software-Engineering/gombit`](https://github.com/LAA-Software-Engineering/gombit).
 After scaffolding, pin a released version:
@@ -65,7 +66,7 @@ Runtime still reads `GOMBIT_*` environment variables, not `gombit.yaml`.
 - `internal/product` — model, Huma handlers, routes (no `service.go` / `repo.go`); `RegisterCommands` for CLI hooks
 - `internal/platform` — database open + AutoMigrate for the example product
 - `database/migrations`, `database/seeds` — Atlas SQL (see `gombit db`)
-- `frontend/` — minimal Vite + TypeScript stub for `gombit dev` (M5-1 owns the React skeleton)
+- `frontend/` — Vite + React + TypeScript minimal skeleton (`gombit dev`)
 
 ## Migrations
 
@@ -86,13 +87,14 @@ schema you intend to keep.
 gombit make resource Book title:string:required
 ```
 
-That writes `internal/book/` (model, thin Huma handler, routes), vanilla
-TypeScript list/form pages, and registers `book.Register(app)` in
+That writes `internal/book/` (model, thin Huma handler, routes), React
+list/form pages, and registers `book.Register(app)` in
 `cmd/server/main.go` via `go/ast`. Re-running is idempotent and will not
 clobber edits unless you pass `--force`. `--service` / `--repo` are opt-in.
 
-Frontend pages import types from `frontend/src/api/generated`. Run
-`gombit client generate` or `gombit dev` after the API is up.
+Frontend pages import types from `frontend/src/api/generated` and map D10
+`error.fields` into React Hook Form. Run `gombit client generate` or
+`gombit dev` after the API is up.
 
 If Atlas is not installed, the GORM model is still ready for:
 

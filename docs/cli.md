@@ -92,8 +92,8 @@ replace github.com/LAA-Software-Engineering/gombit => /path/to/gombit
 
 `--auth cookie` and `--ui mui` are recorded in `gombit.yaml` only. Cookie/CSRF
 is M5-3; the MUI CRUD preset is M5-4. The generated `frontend/` directory is a
-minimal Vite + TypeScript stub so `gombit dev` can start HMR; M5-1 owns the
-full React skeleton (router, React Hook Form, auth pages).
+Vite + React + TypeScript skeleton (router, generated client, React Hook
+Form). Bearer login is M5-2. See [frontend.md](frontend.md).
 
 If the project name is omitted and stdin is a TTY, `gombit new` prompts for
 name and the choices above. Tests and CI pass flags so the command never
@@ -117,7 +117,7 @@ demo/
 ├── database/migrations/
 ├── database/seeds/
 ├── config/
-├── frontend/             # Vite stub (package.json, vite.config.ts, src/main.ts, src/resources.ts)
+├── frontend/             # Vite + React skeleton (main.tsx, router, generated client)
 ├── gombit.yaml
 ├── .air.toml
 ├── .env.example
@@ -133,9 +133,9 @@ There is no generated `service.go` or `repo.go` until
 `gombit make resource --service` / `--repo`.
 
 `.env.example` lists `GOMBIT_*` server variables from the `config` package
-and public `VITE_API_URL`. `VITE_*` is baked into the browser bundle — never
-put secrets there. Access tokens stay in memory; generated source does not
-use `localStorage`.
+and public `VITE_API_URL` (empty means same-origin for the Vite `/api`
+proxy). `VITE_*` is baked into the browser bundle — never put secrets there.
+Access tokens stay in memory; generated source does not use `localStorage`.
 
 ## `gombit dev`
 
@@ -177,16 +177,18 @@ API docs     http://127.0.0.1:8080/docs
 mode is not supported. Node.js is required for Vite.
 
 `--http` and the Vite proxy origin are written into the child environment
-(`GOMBIT_HTTP_ADDR`, `GOMBIT_DEV_BACKEND`, `VITE_API_URL=/api/v1`), replacing
+(`GOMBIT_HTTP_ADDR`, `GOMBIT_DEV_BACKEND`, `VITE_API_URL=`), replacing
 any parent values so a shell-exported `.env.example` cannot keep the API on
-`:8080` while the service table prints `--http :9090`.
+`:8080` while the service table prints `--http :9090`. Empty `VITE_API_URL`
+is same-origin so OpenAPI paths such as `/api/v1/products` hit the Vite
+proxy.
 
 SIGINT/SIGTERM stops the child processes. On Unix, Gombit signals the process
 group so air/npm grandchildren exit. On Windows, teardown uses
 `taskkill /T /F /PID` for the same process tree.
 
-The scaffold's Vite stub is enough to start HMR. M5-1 replaces it with the
-React skeleton.
+The scaffold is a Vite + React + TypeScript skeleton. See
+[frontend.md](frontend.md). Bearer login is M5-2.
 
 ## `gombit make resource`
 
@@ -219,14 +221,15 @@ Route registration is appended in `cmd/server/main.go` via `go/ast` +
 `internal/platform` AutoMigrate is updated the same way. Re-running does not
 duplicate the `Register` call.
 
-Frontend pages are vanilla TypeScript (list/table + create form) under
-`frontend/src/<feature>/`. They import types from
-`frontend/src/api/generated` — no hand-written API DTOs. A generated
-`frontend/src/resources.ts` registry is the TypeScript registration point
-(not regex-patched `main.ts`). Full React Router + React Hook Form is M5-1.
+Frontend pages are React + TypeScript (list/table + React Hook Form create)
+under `frontend/src/<feature>/`. They import types from
+`frontend/src/api/generated` — no hand-written API DTOs — and map D10
+`error.fields` through `frontend/src/api/formErrors.ts`. A generated
+`frontend/src/resources.tsx` registry is the React Router registration
+point (not regex-patched `main.tsx`).
 
 After generating routes, run `gombit client generate` or `gombit dev` so
-`frontend/src/api/generated` exists.
+`frontend/src/api/generated` includes the new paths.
 
 ### Field grammar
 
@@ -245,7 +248,7 @@ of `required`.
 Generators print created/modified files. `--dry-run` writes nothing.
 Identical re-runs are no-ops. A user-owned file (no generated banner) or a
 generated file that differs from this run is refused unless `--force`.
-`frontend/src/resources.ts` is the exception: it is always rewritten as a
+`frontend/src/resources.tsx` is the exception: it is always rewritten as a
 scanned registry of generated feature pages (banner present), so edits to
 that file are not preserved.
 

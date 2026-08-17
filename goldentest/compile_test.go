@@ -9,16 +9,29 @@ import (
 )
 
 // schemaStub is written only into a temp copy so `tsc --noEmit` can check
-// make-resource list/form pages. Those files import ../api/generated/schema,
-// which exists after `gombit client generate` / `gombit dev`, not in the
+// make-resource list/form pages. Those files import ../api/generated/schema
+// paths that exist after `gombit client generate` / `gombit dev`, not in the
 // resource generator output. It is never committed in testdata/golden.
 const schemaStub = `export type paths = {
   [path: string]: {
+    parameters?: {
+      query?: never;
+      header?: never;
+      path?: { id?: string };
+      cookie?: never;
+    };
     get: {
+      parameters?: {
+        query?: never;
+        header?: never;
+        path?: { id?: string };
+        cookie?: never;
+      };
       responses: {
         200: {
+          headers: { [name: string]: unknown };
           content: {
-            "application/json": { data?: unknown[] };
+            "application/json": { data?: Array<{ id?: unknown; name?: unknown; price?: unknown } & Record<string, unknown>> | null };
           };
         };
       };
@@ -27,6 +40,14 @@ const schemaStub = `export type paths = {
       requestBody: {
         content: {
           "application/json": { [key: string]: unknown };
+        };
+      };
+      responses: {
+        200: {
+          headers: { [name: string]: unknown };
+          content: {
+            "application/json": { data?: Record<string, unknown> };
+          };
         };
       };
     };
@@ -103,6 +124,14 @@ func typecheckFrontend(t *testing.T, appDir string, stubGeneratedSchema bool) {
 	tsc.Dir = frontend
 	if out, err := tsc.CombinedOutput(); err != nil {
 		t.Fatalf("npx tsc --noEmit: %v\n%s", err, out)
+	}
+	if !stubGeneratedSchema {
+		//nolint:gosec // frontend is a generated tree; vite args are fixed
+		build := exec.Command("npx", "--no-install", "vite", "build")
+		build.Dir = frontend
+		if out, err := build.CombinedOutput(); err != nil {
+			t.Fatalf("npx vite build: %v\n%s", err, out)
+		}
 	}
 }
 
