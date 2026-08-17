@@ -89,10 +89,13 @@ replace github.com/LAA-Software-Engineering/gombit => /path/to/gombit
 | `--dry-run` | | print the file list without writing |
 | `--force` | | required to write into a non-empty destination |
 
-`--auth cookie` and `--ui mui` are recorded in `gombit.yaml` only. Cookie/CSRF
-is M5-3; the MUI CRUD preset is M5-4. The generated `frontend/` directory is a
-Vite + React + TypeScript skeleton (router, generated client, React Hook
-Form). Bearer login is documented in [auth.md](auth.md). See [frontend.md](frontend.md).
+`--auth cookie` wires HttpOnly session cookies + CSRF end to end (backend
+routes, middleware, and the generated frontend); see
+[auth-cookie.md](auth-cookie.md) for the threat model. `--ui mui` is
+recorded in `gombit.yaml` only; the MUI CRUD preset is M5-4. The generated
+`frontend/` directory is a Vite + React + TypeScript skeleton (router,
+generated client, React Hook Form). Bearer login is documented in
+[auth.md](auth.md). See [frontend.md](frontend.md).
 
 If the project name is omitted and stdin is a TTY, `gombit new` prompts for
 name and the choices above. Tests and CI pass flags so the command never

@@ -60,6 +60,9 @@ configuration. The M1-1 boundary recognizes:
 | `GOMBIT_JWT_SECRET` | `Config.Auth.JWTSecret` | empty (auth unmounted) |
 | `GOMBIT_JWT_ACCESS_TTL` | `Config.Auth.AccessTokenTTL` | `15m` |
 | `GOMBIT_JWT_REFRESH_TTL` | `Config.Auth.RefreshTokenTTL` | `168h` |
+| `GOMBIT_AUTH_MODE` | `Config.Auth.Mode` | `jwt` |
+| `GOMBIT_COOKIE_SECURE` | `Config.Auth.CookieSecure` | `true` |
+| `GOMBIT_COOKIE_SAMESITE` | `Config.Auth.CookieSameSite` | `lax` |
 
 `GOMBIT_ENV` accepts the exact lowercase values `development`, `test`, and
 `production`.
@@ -93,12 +96,15 @@ DSN userinfo/passwords, the Redis password, and the JWT secret are redacted
 DSNs or JWT secrets.
 
 Appendix C production checks fail loudly for a **non-empty** JWT secret
-shorter than 32 characters, and for the generated-app development
-placeholder (`config.Load` / `Validate` and `gombit doctor`).
-The secret is never copied into `FieldError.Value` and is redacted by
-`Config.Redacted()`. Cookie, CORS, and remaining Appendix C cases land with
-the features that introduce those fields. Do not put JWT material in `VITE_*`.
-See [auth.md](auth.md).
+shorter than 32 characters, for the generated-app development placeholder,
+and for cookie-mode auth (`GOMBIT_AUTH_MODE=cookie`) without
+`GOMBIT_COOKIE_SECURE=true` (`config.Load` / `Validate` and `gombit
+doctor`). The secret is never copied into `FieldError.Value` and is
+redacted by `Config.Redacted()`. Remaining Appendix C cases (CORS) land
+with the features that introduce those fields. Do not put JWT material in
+`VITE_*`.
+See [auth.md](auth.md) (Bearer default) and
+[auth-cookie.md](auth-cookie.md) (`--auth cookie`, threat model).
 
 Runtime extraction work should accept `config.Config` values instead of calling
 `os.Getenv` or `os.LookupEnv` directly. The CLI (`gombit doctor`,

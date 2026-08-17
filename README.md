@@ -53,7 +53,9 @@ OpenAPI emission and `/docs` are documented in [`docs/openapi.md`](docs/openapi.
 TypeScript client generation and the contract drift check are documented in
 [`docs/client.md`](docs/client.md).
 The Vite + React skeleton is documented in [`docs/frontend.md`](docs/frontend.md).
-Bearer JWT login is documented in [`docs/auth.md`](docs/auth.md).
+Bearer JWT login is documented in [`docs/auth.md`](docs/auth.md); cookie/session
+auth (`--auth cookie`) and its CSRF threat model are documented in
+[`docs/auth-cookie.md`](docs/auth-cookie.md).
 Database runtime support is documented in [`docs/database.md`](docs/database.md).
 Cache runtime support is documented in [`docs/cache.md`](docs/cache.md).
 Runtime logging is documented in [`docs/logging.md`](docs/logging.md).
