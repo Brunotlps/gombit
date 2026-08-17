@@ -62,7 +62,7 @@ func TestGenerateWritesCompilingClient(t *testing.T) {
 		}
 	}
 	clientSrc := readFile(t, filepath.Join(outDir, "client.ts"))
-	if strings.Contains(clientSrc, "localStorage.getItem") || strings.Contains(clientSrc, "sessionStorage.getItem") {
+	if strings.Contains(clientSrc, "localStorage") || strings.Contains(clientSrc, "sessionStorage") {
 		t.Fatal("generated client must not use web storage for tokens")
 	}
 	if !strings.Contains(clientSrc, "getAccessToken") {
@@ -96,6 +96,59 @@ func TestGenerateDryRunDoesNotWrite(t *testing.T) {
 	}
 }
 
+func TestGenerateDryRunRefusesUserOwnedFile(t *testing.T) {
+	workDir := t.TempDir()
+	specPath := writeSampleSpec(t, workDir)
+	outDir := filepath.Join(workDir, "out")
+	if err := os.MkdirAll(outDir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	owned := filepath.Join(outDir, "client.ts")
+	if err := os.WriteFile(owned, []byte("export const mine = true;\n"), 0o600); err != nil {
+		t.Fatalf("write user file: %v", err)
+	}
+
+	stdout := new(bytes.Buffer)
+	err := Generate(context.Background(), Options{
+		WorkDir:  workDir,
+		SpecPath: specPath,
+		OutDir:   outDir,
+		DryRun:   true,
+		Stdout:   stdout,
+	})
+	if err == nil {
+		t.Fatal("Generate(dry-run) error = nil, want refuse overwrite")
+	}
+	if !strings.Contains(err.Error(), "--force") {
+		t.Fatalf("Generate(dry-run) error = %q, want --force", err)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("dry-run stdout = %q, want empty after refuse", stdout.String())
+	}
+	if got := readFile(t, owned); got != "export const mine = true;\n" {
+		t.Fatal("dry-run changed user-owned client.ts")
+	}
+
+	stdout.Reset()
+	err = Generate(context.Background(), Options{
+		WorkDir:  workDir,
+		SpecPath: specPath,
+		OutDir:   outDir,
+		DryRun:   true,
+		Force:    true,
+		Stdout:   stdout,
+	})
+	if err != nil {
+		t.Fatalf("Generate(dry-run, force) error = %v", err)
+	}
+	if !strings.Contains(stdout.String(), "modify") {
+		t.Fatalf("dry-run force stdout = %q, want modify", stdout.String())
+	}
+	if got := readFile(t, owned); got != "export const mine = true;\n" {
+		t.Fatal("dry-run force wrote client.ts")
+	}
+}
+
 func TestGenerateRefusesUserOwnedFile(t *testing.T) {
 	requireNode(t)
 
@@ -120,6 +173,27 @@ func TestGenerateRefusesUserOwnedFile(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "--force") {
 		t.Fatalf("Generate() error = %q, want --force", err)
+	}
+
+	stdout := new(bytes.Buffer)
+	err = Generate(context.Background(), Options{
+		WorkDir:  workDir,
+		SpecPath: specPath,
+		OutDir:   outDir,
+		DryRun:   true,
+		Stdout:   stdout,
+	})
+	if err == nil {
+		t.Fatal("Generate(dry-run) error = nil, want refuse overwrite")
+	}
+	if !strings.Contains(err.Error(), "--force") {
+		t.Fatalf("Generate(dry-run) error = %q, want --force", err)
+	}
+	if stdout.Len() != 0 {
+		t.Fatalf("dry-run stdout = %q, want empty after refuse", stdout.String())
+	}
+	if got := readFile(t, owned); got != "export const mine = true;\n" {
+		t.Fatal("dry-run changed user-owned client.ts")
 	}
 
 	err = Generate(context.Background(), Options{
@@ -155,13 +229,19 @@ func TestGenerateIsIdempotent(t *testing.T) {
 	if err := Generate(context.Background(), opts); err != nil {
 		t.Fatalf("first Generate() error = %v", err)
 	}
-	first := readFile(t, filepath.Join(outDir, "error.ts"))
+	first := map[string]string{
+		"schema.ts": readFile(t, filepath.Join(outDir, "schema.ts")),
+		"client.ts": readFile(t, filepath.Join(outDir, "client.ts")),
+		"error.ts":  readFile(t, filepath.Join(outDir, "error.ts")),
+	}
 	if err := Generate(context.Background(), opts); err != nil {
 		t.Fatalf("second Generate() error = %v", err)
 	}
-	second := readFile(t, filepath.Join(outDir, "error.ts"))
-	if first != second {
-		t.Fatal("re-generate changed error.ts")
+	for _, name := range []string{"schema.ts", "client.ts", "error.ts"} {
+		second := readFile(t, filepath.Join(outDir, name))
+		if first[name] != second {
+			t.Fatalf("re-generate changed %s", name)
+		}
 	}
 }
 
@@ -285,13 +365,9 @@ export async function listWidgets() {
 }
 
 export async function createWidget() {
-  const result = await client.POST("/api/v1/widgets", {
+  return unwrap(await client.POST("/api/v1/widgets", {
     body: { name: "Second widget", color: "green" },
-  });
-  if (result.error && isD10ErrorBody(result.error)) {
-    throw ContractError.fromResponse(result.response, result.error);
-  }
-  return result.data;
+  }));
 }
 `)
 

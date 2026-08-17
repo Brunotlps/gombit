@@ -25,11 +25,9 @@ export async function listWidgets() {
 }
 
 export async function createWidget() {
-  const result = await client.POST("/api/v1/widgets", {
-    body: { name: "Second widget", color: "green" },
-  });
-  if (result.error && isD10ErrorBody(result.error)) {
-    throw ContractError.fromResponse(result.response, result.error);
-  }
-  return result.data;
+  return unwrap(
+    await client.POST("/api/v1/widgets", {
+      body: { name: "Second widget", color: "green" },
+    }),
+  );
 }

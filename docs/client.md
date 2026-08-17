@@ -17,9 +17,11 @@ go run ./cmd/gombit client generate \
 modified files and reminds you to add `openapi-fetch@0.17.0`. Schema types
 come from `openapi-typescript@7.13.0`.
 
-`--dry-run` prints the file list without writing. `--force` overwrites a file
-that was not produced by Gombit. Re-running replaces only files that carry
-the generated banner.
+`--dry-run` prints the file list without writing and applies the same
+overwrite rule as a real run: a user-owned file (no generated banner) is
+refused unless `--force` is also set. `--force` overwrites a file that was
+not produced by Gombit. Re-running replaces only files that carry the
+generated banner.
 
 Write the spec first with [`gombit openapi generate`](openapi.md) (or copy
 `examples/client/openapi.json`).

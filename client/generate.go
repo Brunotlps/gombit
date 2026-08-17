@@ -91,6 +91,13 @@ func Generate(ctx context.Context, opts Options) error {
 		{name: "client.ts", content: []byte(clientTS)},
 	}
 
+	for _, file := range files {
+		path := filepath.Join(outDir, file.name)
+		if err := checkOverwrite(path, opts.Force); err != nil {
+			return err
+		}
+	}
+
 	if opts.DryRun {
 		for _, file := range files {
 			path := filepath.Join(outDir, file.name)
@@ -107,13 +114,6 @@ func Generate(ctx context.Context, opts Options) error {
 
 	if err := os.MkdirAll(outDir, 0o750); err != nil {
 		return fmt.Errorf("client: create output directory: %w", err)
-	}
-
-	for _, file := range files {
-		path := filepath.Join(outDir, file.name)
-		if err := checkOverwrite(path, opts.Force); err != nil {
-			return err
-		}
 	}
 
 	schema, err := runOpenAPITypescript(ctx, opts, specPath, outDir)

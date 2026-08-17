@@ -52,5 +52,5 @@ func runClientGenerate(ctx context.Context, args []string, stdout io.Writer, std
 
 func clientUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "available client subcommands:")
-	_, _ = fmt.Fprintln(w, "  generate [--spec openapi.json] [--out frontend/src/api/generated] [--dry-run] [--force]")
+	_, _ = fmt.Fprintln(w, "  generate [--spec openapi.json] [--out frontend/src/api/generated] [--dry-run] [--force] [--npx npx]")
 }

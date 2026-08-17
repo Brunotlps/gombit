@@ -346,12 +346,16 @@ func TestRunClientGenerateDryRun(t *testing.T) {
 }
 
 func TestRunRejectsUnknownClientSubcommand(t *testing.T) {
-	err := run(context.Background(), []string{"client", "unknown"}, ioDiscard{}, ioDiscard{})
+	stderr := new(bytes.Buffer)
+	err := run(context.Background(), []string{"client", "unknown"}, ioDiscard{}, stderr)
 	if err == nil {
 		t.Fatal("run() error = nil, want unknown subcommand error")
 	}
 	if !strings.Contains(err.Error(), "unknown subcommand") {
 		t.Fatalf("run() error = %q, want unknown subcommand message", err)
+	}
+	if !strings.Contains(stderr.String(), "--npx") {
+		t.Fatalf("client usage = %q, want --npx", stderr.String())
 	}
 }
 
