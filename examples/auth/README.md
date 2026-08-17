@@ -32,11 +32,14 @@ REFRESH=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["refre
 curl -sS http://127.0.0.1:8080/api/v1/me -H "Authorization: Bearer $ACCESS"
 
 # rotate refresh (old refresh is then invalid)
-curl -sS -X POST http://127.0.0.1:8080/api/v1/auth/refresh \
+ROTATED=$(curl -sS -X POST http://127.0.0.1:8080/api/v1/auth/refresh \
   -H 'Content-Type: application/json' \
-  -d "{\"refresh_token\":\"$REFRESH\"}"
+  -d "{\"refresh_token\":\"$REFRESH\"}")
+echo "$ROTATED"
+ACCESS=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["access_token"])' <<<"$ROTATED")
+REFRESH=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["refresh_token"])' <<<"$ROTATED")
 
-# logout
+# logout (revokes the current refresh token and bound access JWT)
 curl -sS -X POST http://127.0.0.1:8080/api/v1/auth/logout \
   -H 'Content-Type: application/json' \
   -d "{\"refresh_token\":\"$REFRESH\"}"

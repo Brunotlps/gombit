@@ -328,14 +328,20 @@ func TestGeneratePassesAllAutoMigrateModels(t *testing.T) {
 		t.Fatalf("Generate() error = %v", err)
 	}
 	mod := readModulePathMust(t, filepath.Join(workDir, "demo"))
+	if !hasCollectedModel(got, "github.com/LAA-Software-Engineering/gombit/auth", "User") {
+		t.Fatalf("MakeMigrations models = %#v, want runtime auth.User", got)
+	}
+	if !hasCollectedModel(got, "github.com/LAA-Software-Engineering/gombit/auth", "RefreshToken") {
+		t.Fatalf("MakeMigrations models = %#v, want runtime auth.RefreshToken", got)
+	}
 	if !hasCollectedModel(got, mod+"/internal/product", "Product") {
 		t.Fatalf("MakeMigrations models = %#v, want scaffold product", got)
 	}
 	if !hasCollectedModel(got, mod+"/internal/book", "Book") {
 		t.Fatalf("MakeMigrations models = %#v, want generated book", got)
 	}
-	if len(got) != 2 {
-		t.Fatalf("MakeMigrations models = %#v, want exactly product + book", got)
+	if len(got) != 4 {
+		t.Fatalf("MakeMigrations models = %#v, want auth user+refresh plus product + book", got)
 	}
 }
 

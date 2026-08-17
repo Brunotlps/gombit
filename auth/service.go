@@ -86,7 +86,10 @@ func (s *Service) Authenticate(ctx context.Context, email, password string) (Use
 
 // IssueTokens returns a new access JWT and a rotating refresh token.
 func (s *Service) IssueTokens(ctx context.Context, user User) (TokenPair, error) {
-	now := s.now()
+	return s.issueTokens(s.db.WithContext(ctx), user, s.now())
+}
+
+func (s *Service) issueTokens(tx *gorm.DB, user User, now time.Time) (TokenPair, error) {
 	raw, err := newRefreshToken()
 	if err != nil {
 		return TokenPair{}, err
@@ -96,7 +99,7 @@ func (s *Service) IssueTokens(ctx context.Context, user User) (TokenPair, error)
 		TokenHash: hashRefreshToken(raw),
 		ExpiresAt: now.Add(s.cfg.RefreshTokenTTL),
 	}
-	if err := s.db.WithContext(ctx).Create(&row).Error; err != nil {
+	if err := tx.Create(&row).Error; err != nil {
 		return TokenPair{}, err
 	}
 	access, err := signAccessToken(s.secret, user, row.ID, s.cfg.AccessTokenTTL, now)
@@ -113,44 +116,74 @@ func (s *Service) IssueTokens(ctx context.Context, user User) (TokenPair, error)
 
 // RotateRefresh validates the current refresh token, revokes it, and issues a
 // new pair. Reuse of a revoked token revokes the user's remaining tokens.
+// The lookup, revoke, and replacement happen in one transaction so concurrent
+// refresh of the same token cannot mint two valid pairs.
 func (s *Service) RotateRefresh(ctx context.Context, raw string) (TokenPair, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return TokenPair{}, errInvalidRefreshToken
 	}
 	now := s.now()
-	var row RefreshToken
-	err := s.db.WithContext(ctx).Where("token_hash = ?", hashRefreshToken(raw)).First(&row).Error
+	hash := hashRefreshToken(raw)
+
+	var pair TokenPair
+	var reuse bool
+	err := s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var row RefreshToken
+		if err := tx.Where("token_hash = ?", hash).First(&row).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return errInvalidRefreshToken
+			}
+			return err
+		}
+		if row.RevokedAt != nil {
+			if err := revokeAllTx(tx, row.UserID, now); err != nil {
+				return err
+			}
+			reuse = true
+			return nil
+		}
+		if !row.ExpiresAt.After(now) {
+			return errInvalidRefreshToken
+		}
+
+		result := tx.Model(&RefreshToken{}).
+			Where("id = ? AND revoked_at IS NULL", row.ID).
+			Updates(map[string]any{"revoked_at": now})
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected != 1 {
+			if err := revokeAllTx(tx, row.UserID, now); err != nil {
+				return err
+			}
+			reuse = true
+			return nil
+		}
+
+		var user User
+		if err := tx.First(&user, row.UserID).Error; err != nil {
+			return errUserNotFound
+		}
+		issued, err := s.issueTokens(tx, user, now)
+		if err != nil {
+			return err
+		}
+		var replacement RefreshToken
+		if err := tx.Where("token_hash = ?", hashRefreshToken(issued.RefreshToken)).First(&replacement).Error; err != nil {
+			return err
+		}
+		if err := tx.Model(&RefreshToken{}).Where("id = ?", row.ID).Update("replaced_by", replacement.ID).Error; err != nil {
+			return err
+		}
+		pair = issued
+		return nil
+	})
 	if err != nil {
-		return TokenPair{}, errInvalidRefreshToken
+		return TokenPair{}, err
 	}
-	if row.RevokedAt != nil {
-		_ = s.revokeAll(ctx, row.UserID, now)
+	if reuse {
 		return TokenPair{}, errRefreshReuse
-	}
-	if !row.ExpiresAt.After(now) {
-		return TokenPair{}, errInvalidRefreshToken
-	}
-
-	var user User
-	if err := s.db.WithContext(ctx).First(&user, row.UserID).Error; err != nil {
-		return TokenPair{}, errUserNotFound
-	}
-
-	pair, err := s.IssueTokens(ctx, user)
-	if err != nil {
-		return TokenPair{}, err
-	}
-
-	var replacement RefreshToken
-	if err := s.db.WithContext(ctx).Where("token_hash = ?", hashRefreshToken(pair.RefreshToken)).First(&replacement).Error; err != nil {
-		return TokenPair{}, err
-	}
-	revoked := now
-	row.RevokedAt = &revoked
-	row.ReplacedBy = &replacement.ID
-	if err := s.db.WithContext(ctx).Save(&row).Error; err != nil {
-		return TokenPair{}, err
 	}
 	return pair, nil
 }
@@ -193,7 +226,11 @@ func (s *Service) ParseAccess(ctx context.Context, token string) (User, error) {
 }
 
 func (s *Service) revokeAll(ctx context.Context, userID uint, now time.Time) error {
-	return s.db.WithContext(ctx).Model(&RefreshToken{}).
+	return revokeAllTx(s.db.WithContext(ctx), userID, now)
+}
+
+func revokeAllTx(tx *gorm.DB, userID uint, now time.Time) error {
+	return tx.Model(&RefreshToken{}).
 		Where("user_id = ? AND revoked_at IS NULL", userID).
 		Update("revoked_at", now).Error
 }

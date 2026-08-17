@@ -167,6 +167,14 @@ func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
 		t.Fatal("auth/session.ts uses web storage")
 	}
 	loginPage := readFile(t, filepath.Join(dest, "frontend", "src", "pages", "LoginPage.tsx"))
+	platformDB := readFile(t, filepath.Join(dest, "internal", "platform", "database.go"))
+	if !strings.Contains(platformDB, "&auth.User{}") || !strings.Contains(platformDB, "&auth.RefreshToken{}") {
+		t.Fatal("internal/platform/database.go AutoMigrate must include auth models for Atlas")
+	}
+	if strings.Contains(platformDB, "auth.Migrate(") {
+		t.Fatal("internal/platform/database.go should AutoMigrate auth models directly so CollectAutoMigrateModels sees them")
+	}
+
 	if !strings.Contains(loginPage, "/api/v1/auth/login") {
 		t.Fatal("LoginPage.tsx missing login path")
 	}
