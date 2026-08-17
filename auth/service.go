@@ -242,6 +242,10 @@ func (s *Service) compareDummy(password string) {
 	_ = s.hasher.Compare(s.dummyHash, password)
 }
 
+// isUniqueViolation reports duplicate-key errors. database.Open does not
+// set gorm.Config.TranslateError, so ErrDuplicatedKey is usually unset
+// and the driver error string is the portable signal across SQLite,
+// Postgres, and MySQL.
 func isUniqueViolation(err error) bool {
 	if err == nil {
 		return false

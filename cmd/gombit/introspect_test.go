@@ -186,6 +186,27 @@ func TestRunDoctorFlagsUnwritableSQLitePath(t *testing.T) {
 	}
 }
 
+func TestRunDoctorFlagsPlaceholderJWTSecretInProduction(t *testing.T) {
+	cfg := config.DefaultFor(config.EnvironmentProduction)
+	cfg.HTTP.Addr = "127.0.0.1:0"
+	cfg.Auth.JWTSecret = "change-me-in-development-use-a-long-random-value"
+	cfg.Database.DSN = "file::memory:?cache=shared&_fk=1"
+	stubConfig(t, cfg)
+
+	stdout := new(bytes.Buffer)
+	err := run(context.Background(), []string{"doctor"}, stdout, ioDiscard{})
+	if err == nil {
+		t.Fatal("run(doctor) error = nil, want failure for placeholder production JWT secret")
+	}
+	got := stdout.String()
+	if !strings.Contains(got, "FAIL") {
+		t.Fatalf("doctor output = %q, want FAIL", got)
+	}
+	if !strings.Contains(got, "insecure") || !strings.Contains(strings.ToLower(got), "placeholder") {
+		t.Fatalf("doctor output = %q, want insecure JWT placeholder check", got)
+	}
+}
+
 func TestRunDoctorFlagsShortJWTSecretInProduction(t *testing.T) {
 	cfg := config.DefaultFor(config.EnvironmentProduction)
 	cfg.HTTP.Addr = "127.0.0.1:0"

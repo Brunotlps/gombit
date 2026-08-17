@@ -53,8 +53,9 @@ Checks:
   insecure     existing production/docs and unwritable SQLite path issues
 
 Network checks use a short timeout so CI cannot hang. Appendix C flags a
-production JWT secret shorter than 32 characters (config.Load also
-rejects it). Cookie and CORS production checks land with M5-3.`,
+production JWT secret shorter than 32 characters or equal to the
+generated-app development placeholder (config.Load also rejects it).
+Cookie and CORS production checks land with M5-3.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			migrationDir, err := cmd.Flags().GetString("dir")
@@ -331,8 +332,13 @@ func checkInsecure(cfg config.Config) doctorCheck {
 	if cfg.Environment == config.EnvironmentProduction && cfg.API.DocsEnabled {
 		issues = append(issues, "production has API docs enabled (/docs)")
 	}
-	if cfg.Environment == config.EnvironmentProduction && cfg.Auth.JWTSecret != "" && len(cfg.Auth.JWTSecret) < config.MinProductionJWTSecretLength {
-		issues = append(issues, fmt.Sprintf("production JWT secret is shorter than %d characters", config.MinProductionJWTSecretLength))
+	if cfg.Environment == config.EnvironmentProduction && cfg.Auth.JWTSecret != "" {
+		switch {
+		case config.IsInsecureJWTSecret(cfg.Auth.JWTSecret):
+			issues = append(issues, "production JWT secret is the generated-app development placeholder")
+		case len(cfg.Auth.JWTSecret) < config.MinProductionJWTSecretLength:
+			issues = append(issues, fmt.Sprintf("production JWT secret is shorter than %d characters", config.MinProductionJWTSecretLength))
+		}
 	}
 	if cfg.Database.Driver == config.DatabaseDriverSQLite {
 		if err := sqliteDSNWritable(cfg.Database.DSN); err != nil {

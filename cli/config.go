@@ -37,8 +37,9 @@ func newConfigShowCommand(stdout io.Writer) *cobra.Command {
 key=value lines. Database DSN userinfo/passwords, the Redis password, and
 the JWT secret are replaced with ***** and never printed.
 
-Appendix C rejects a production JWT secret shorter than 32 characters at
-config.Load / gombit doctor. Cookie and CORS fields land with M5-3.`,
+Appendix C rejects a production JWT secret shorter than 32 characters,
+and the generated-app development placeholder, at config.Load / gombit
+doctor. Cookie and CORS fields land with M5-3.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := LoadConfig()

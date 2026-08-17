@@ -93,7 +93,8 @@ DSN userinfo/passwords, the Redis password, and the JWT secret are redacted
 DSNs or JWT secrets.
 
 Appendix C production checks fail loudly for a **non-empty** JWT secret
-shorter than 32 characters (`config.Load` / `Validate` and `gombit doctor`).
+shorter than 32 characters, and for the generated-app development
+placeholder (`config.Load` / `Validate` and `gombit doctor`).
 The secret is never copied into `FieldError.Value` and is redacted by
 `Config.Redacted()`. Cookie, CORS, and remaining Appendix C cases land with
 the features that introduce those fields. Do not put JWT material in `VITE_*`.

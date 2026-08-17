@@ -44,20 +44,23 @@ revoked refresh token revokes that user's remaining refresh tokens.
 | `GOMBIT_JWT_ACCESS_TTL` | `Config.Auth.AccessTokenTTL` | `15m` |
 | `GOMBIT_JWT_REFRESH_TTL` | `Config.Auth.RefreshTokenTTL` | `168h` (7 days) |
 
-Production rejects a **non-empty** JWT secret shorter than 32 characters at
-`config.Load` / `Validate` and `gombit doctor` (Appendix C). The secret is
-redacted by `Config.Redacted()` and `gombit config show`. Empty in production
-leaves Bearer auth off; set a long secret to enable it.
+Production rejects a **non-empty** JWT secret shorter than 32 characters, and
+the generated-app development placeholder, at `config.Load` / `Validate` and
+`gombit doctor` (Appendix C). The secret is redacted by `Config.Redacted()`
+and `gombit config show`. Empty in production leaves Bearer auth off; set a
+long random secret to enable it.
 
-Generated `.env.example` has a development placeholder. It is not a real
-secret. Copy to `.env` and replace it before production.
+`gombit new` writes a gitignored `.env` with a per-project random HMAC secret.
+Generated `.env.example` keeps a short development placeholder so
+`cp .env.example .env` still works locally; production rejects that value.
 
 ## Generated frontend
 
 `frontend/src/auth/session.ts` holds both tokens in module variables.
-`createAppClient` sends the access token and, on 401, calls `/auth/refresh`
-once. `RequireAuth` sends anonymous users to `/login`. Logout clears memory
-and revokes the refresh token.
+`createAppClient` sends the access token and, on 401, rotates `/auth/refresh`
+once. Concurrent 401s wait on that same refresh and retry instead of failing
+with the stale response. `RequireAuth` sends anonymous users to `/login`.
+Logout clears memory and revokes the refresh token.
 
 Product pages sit behind `RequireAuth`. Register from the login page is a
 demo/bootstrap path, not a full identity product.

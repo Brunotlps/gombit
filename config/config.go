@@ -46,6 +46,14 @@ const (
 	// (empty disables Bearer auth).
 	MinProductionJWTSecretLength = 32
 
+	// DevelopmentJWTPlaceholder is the short value written to generated
+	// .env.example files. It enables local Bearer auth but is rejected in
+	// production by length and by name. gombit new also writes a gitignored
+	// .env with a per-project random secret.
+	DevelopmentJWTPlaceholder = "dev-only-not-for-production"
+
+	historicalDevelopmentJWTPlaceholder = "change-me-in-development-use-a-long-random-value"
+
 	// DefaultAccessTokenTTL is the signed access-token lifetime.
 	DefaultAccessTokenTTL = 15 * time.Minute
 
@@ -198,6 +206,17 @@ type AuthConfig struct {
 // Enabled reports whether Bearer auth should be mounted (JWT secret is set).
 func (c AuthConfig) Enabled() bool {
 	return strings.TrimSpace(c.JWTSecret) != ""
+}
+
+// IsInsecureJWTSecret reports whether secret is a well-known scaffold
+// placeholder that must never be used in production.
+func IsInsecureJWTSecret(secret string) bool {
+	switch strings.TrimSpace(secret) {
+	case DevelopmentJWTPlaceholder, historicalDevelopmentJWTPlaceholder:
+		return true
+	default:
+		return false
+	}
 }
 
 // EnvLookup reads an environment variable by name.
@@ -510,15 +529,24 @@ func validateAuthConfig(errs *FieldErrors, env Environment, cfg AuthConfig) {
 			Message: "must be greater than or equal to zero",
 		})
 	}
-	if env == EnvironmentProduction && cfg.JWTSecret != "" && len(cfg.JWTSecret) < MinProductionJWTSecretLength {
-		*errs = append(*errs, FieldError{
-			Field: "Auth.JWTSecret",
-			Env:   envJWTSecret,
-			Message: fmt.Sprintf(
-				"must be at least %d characters in production",
-				MinProductionJWTSecretLength,
-			),
-		})
+	if env == EnvironmentProduction && cfg.JWTSecret != "" {
+		switch {
+		case IsInsecureJWTSecret(cfg.JWTSecret):
+			*errs = append(*errs, FieldError{
+				Field:   "Auth.JWTSecret",
+				Env:     envJWTSecret,
+				Message: "must not use the generated-app development placeholder in production",
+			})
+		case len(cfg.JWTSecret) < MinProductionJWTSecretLength:
+			*errs = append(*errs, FieldError{
+				Field: "Auth.JWTSecret",
+				Env:   envJWTSecret,
+				Message: fmt.Sprintf(
+					"must be at least %d characters in production",
+					MinProductionJWTSecretLength,
+				),
+			})
+		}
 	}
 	if cfg.Enabled() {
 		if cfg.AccessTokenTTL <= 0 {

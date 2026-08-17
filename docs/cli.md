@@ -367,15 +367,15 @@ Prints a status table. A `FAIL` row exits non-zero.
 | `redis` | ping when `GOMBIT_CACHE_DRIVER=redis` (timeout-bounded) |
 | `migrations` | pending Atlas SQL in `--dir` (**warn**); skip if the directory is absent |
 | `http` | `GOMBIT_HTTP_ADDR` parses; **warn** if the port is in use |
-| `insecure` | production `/docs`, unwritable SQLite path, production JWT secret shorter than 32 characters |
+| `insecure` | production `/docs`, unwritable SQLite path, production JWT secret shorter than 32 characters or equal to the generated-app development placeholder |
 
 Network checks use a short timeout so CI cannot hang. Doctor does not start
 Postgres/Redis containers; an invalid driver, broken `config.Load()`, or an
 unwritable SQLite path is enough to flag a deliberately-broken config.
 
-Appendix C rejects a production JWT secret shorter than 32 characters on
-the `config` row (`config.Load`) and the `insecure` row when config is
-stubbed past Load. Cookie `Secure` and CORS+credentials checks wait for
+Appendix C rejects a production JWT secret shorter than 32 characters, and
+the generated-app development placeholder, on the `config` row
+(`config.Load`) and the `insecure` row when config is stubbed past Load. Cookie `Secure` and CORS+credentials checks wait for
 M5-3. Production trusted-proxy and Redis `TLSInsecure` rejections already
 live in `config.Validate()` and show up on the `config` row.
 

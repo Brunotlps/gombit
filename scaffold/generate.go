@@ -3,6 +3,8 @@ package scaffold
 import (
 	"bytes"
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"go/format"
@@ -52,6 +54,14 @@ func Generate(ctx context.Context, opts Options) error {
 	}
 
 	files, err := renderFiles(vars)
+	if err != nil {
+		return err
+	}
+	secret, err := newJWTSecret()
+	if err != nil {
+		return err
+	}
+	files, err = withGeneratedDotEnv(files, secret)
 	if err != nil {
 		return err
 	}
@@ -174,6 +184,37 @@ func executeTemplate(name, src string, vars templateVars) ([]byte, error) {
 		return nil, fmt.Errorf("scaffold: execute template %s: %w", name, err)
 	}
 	return buf.Bytes(), nil
+}
+
+func newJWTSecret() (string, error) {
+	buf := make([]byte, 32)
+	if _, err := rand.Read(buf); err != nil {
+		return "", fmt.Errorf("scaffold: generate JWT secret: %w", err)
+	}
+	return hex.EncodeToString(buf), nil
+}
+
+func withGeneratedDotEnv(files []renderedFile, secret string) ([]renderedFile, error) {
+	var example []byte
+	for _, file := range files {
+		if file.relPath == ".env.example" {
+			example = file.content
+			break
+		}
+	}
+	if example == nil {
+		return nil, errors.New("scaffold: missing .env.example")
+	}
+	placeholder := "GOMBIT_JWT_SECRET=" + config.DevelopmentJWTPlaceholder
+	replaced := bytes.Replace(example, []byte(placeholder), []byte("GOMBIT_JWT_SECRET="+secret), 1)
+	if bytes.Equal(replaced, example) {
+		return nil, errors.New("scaffold: JWT placeholder missing from .env.example")
+	}
+	files = append(files, renderedFile{relPath: ".env", content: replaced})
+	sort.Slice(files, func(i, j int) bool {
+		return files[i].relPath < files[j].relPath
+	})
+	return files, nil
 }
 
 func checkDestination(opts Options) error {

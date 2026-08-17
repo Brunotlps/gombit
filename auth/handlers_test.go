@@ -141,6 +141,8 @@ func TestOpenAPIIncludesAuthRoutes(t *testing.T) {
 func runBearerE2E(t *testing.T, app *framework.App) {
 	t.Helper()
 	registerUser(t, app, "e2e@example.com", testPassword)
+	dup := postJSON(t, app, "/api/v1/auth/register", `{"email":"e2e@example.com","password":"correct-horse"}`)
+	assertError(t, dup, http.StatusConflict, "conflict")
 	pair := loginUser(t, app, "e2e@example.com", testPassword)
 	if pair.AccessToken == "" || pair.RefreshToken == "" || pair.TokenType != "Bearer" {
 		t.Fatalf("login pair = %+v", pair)

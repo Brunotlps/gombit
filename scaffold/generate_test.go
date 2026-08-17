@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/LAA-Software-Engineering/gombit/config"
 )
 
 func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
@@ -58,6 +60,7 @@ func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
 		".air.toml",
 		"gombit.yaml",
 		".env.example",
+		".env",
 		"go.mod",
 		"README.md",
 		".gitignore",
@@ -106,11 +109,31 @@ func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
 	if !strings.Contains(envExample, "GOMBIT_JWT_SECRET=") {
 		t.Fatal(".env.example missing GOMBIT_JWT_SECRET placeholder")
 	}
+	if !strings.Contains(envExample, "GOMBIT_JWT_SECRET="+config.DevelopmentJWTPlaceholder) {
+		t.Fatalf(".env.example JWT placeholder = %q, want %s", envExample, config.DevelopmentJWTPlaceholder)
+	}
+	if strings.Contains(envExample, "change-me-in-development-use-a-long-random-value") {
+		t.Fatal(".env.example still has the historical long JWT placeholder")
+	}
 	if strings.Contains(envExample, "VITE_JWT") {
 		t.Fatal(".env.example must not put JWT material in VITE_*")
 	}
+	dotenv := readFile(t, filepath.Join(dest, ".env"))
+	if strings.Contains(dotenv, "GOMBIT_JWT_SECRET="+config.DevelopmentJWTPlaceholder) {
+		t.Fatal(".env must not reuse the .env.example JWT placeholder")
+	}
+	secret := jwtSecretFromDotEnv(t, dotenv)
+	if len(secret) < config.MinProductionJWTSecretLength {
+		t.Fatalf(".env JWT secret length = %d, want >= %d", len(secret), config.MinProductionJWTSecretLength)
+	}
+	if config.IsInsecureJWTSecret(secret) {
+		t.Fatal(".env JWT secret is a known insecure placeholder")
+	}
 	if !strings.Contains(stdout.String(), "create demo/go.mod") {
 		t.Fatalf("stdout = %q, want created file list", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "create demo/.env") {
+		t.Fatalf("stdout = %q, want generated .env", stdout.String())
 	}
 
 	cliMain := readFile(t, filepath.Join(dest, "cmd", "gombit", "main.go"))
@@ -180,6 +203,10 @@ func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
 	}
 	if strings.Contains(strings.ToLower(loginPage), "localstorage") {
 		t.Fatal("LoginPage.tsx uses localStorage")
+	}
+	appClient := readFile(t, filepath.Join(dest, "frontend", "src", "api", "client.ts"))
+	if !strings.Contains(appClient, "refreshInFlight") {
+		t.Fatal("api/client.ts missing shared refresh promise")
 	}
 	router := readFile(t, filepath.Join(dest, "frontend", "src", "app", "router.tsx"))
 	if !strings.Contains(router, "RequireAuth") || !strings.Contains(router, "LoginPage") {
@@ -422,6 +449,17 @@ func isGeneratedSource(path string) bool {
 		return true
 	}
 	return base == ".env.example" || base == "gombit.yaml"
+}
+
+func jwtSecretFromDotEnv(t *testing.T, dotenv string) string {
+	t.Helper()
+	for _, line := range strings.Split(dotenv, "\n") {
+		if strings.HasPrefix(line, "GOMBIT_JWT_SECRET=") {
+			return strings.TrimPrefix(line, "GOMBIT_JWT_SECRET=")
+		}
+	}
+	t.Fatal(".env missing GOMBIT_JWT_SECRET")
+	return ""
 }
 
 func readFile(t *testing.T, path string) string {

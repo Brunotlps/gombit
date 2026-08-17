@@ -148,7 +148,7 @@ func mapServiceError(ctx context.Context, err error) error {
 		return contract.WithContext(ctx, contract.Authentication("invalid email or password"))
 	case errors.Is(err, errInvalidRefreshToken), errors.Is(err, errRefreshReuse):
 		return contract.WithContext(ctx, contract.Authentication("invalid refresh token"))
-	case errors.Is(err, errInvalidAccessToken), errors.Is(err, errMissingBearer):
+	case errors.Is(err, errInvalidAccessToken):
 		return contract.WithContext(ctx, contract.Authentication("invalid access token"))
 	case errors.Is(err, errEmailTaken):
 		return contract.WithContext(ctx, contract.Conflict("email already registered"))
