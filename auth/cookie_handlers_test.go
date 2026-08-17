@@ -36,7 +36,7 @@ func (j *cookieJar) update(rec *httptest.ResponseRecorder) {
 
 func (j *cookieJar) attach(req *http.Request) {
 	for _, c := range j.cookies {
-		req.AddCookie(&http.Cookie{Name: c.Name, Value: c.Value})
+		req.AddCookie(&http.Cookie{Name: c.Name, Value: c.Value}) //nolint:gosec // G124: request Cookie header only carries name/value.
 	}
 }
 
@@ -306,7 +306,7 @@ func TestCSRFRejectsStateChangingRequests(t *testing.T) {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodPost, "/api/v1/auth/register", strings.NewReader(`{"email":"d@example.com","password":"correct-horse"}`))
 		req.Header.Set("Content-Type", "application/json")
-		req.AddCookie(&http.Cookie{Name: auth.CSRFCookieName, Value: "forged-token-not-signed"})
+		req.AddCookie(&http.Cookie{Name: auth.CSRFCookieName, Value: "forged-token-not-signed"}) //nolint:gosec // G124: forged CSRF cookie for negative test.
 		req.Header.Set(auth.CSRFHeaderName, "forged-token-not-signed")
 		app.Router().ServeHTTP(rec, req)
 		assertCSRFRejected(t, rec)

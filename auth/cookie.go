@@ -36,6 +36,7 @@ func cookieSameSite(mode config.CookieSameSite) http.SameSite {
 // Secure and SameSite attributes come from cfg (Appendix C: production must
 // set CookieSecure; config.Validate enforces this).
 func newSessionCookie(name, value string, ttl time.Duration, cfg config.AuthConfig) http.Cookie {
+	//nolint:gosec // G124: Secure is cfg.CookieSecure (production Validate requires true); HttpOnly and SameSite are set.
 	return http.Cookie{
 		Name:     name,
 		Value:    value,
@@ -49,6 +50,7 @@ func newSessionCookie(name, value string, ttl time.Duration, cfg config.AuthConf
 
 // expiredSessionCookie clears a previously set session cookie (logout).
 func expiredSessionCookie(name string, cfg config.AuthConfig) http.Cookie {
+	//nolint:gosec // G124: Secure is cfg.CookieSecure (production Validate requires true); HttpOnly and SameSite are set.
 	return http.Cookie{
 		Name:     name,
 		Value:    "",
@@ -64,6 +66,7 @@ func expiredSessionCookie(name string, cfg config.AuthConfig) http.Cookie {
 // cookies it is not HttpOnly: the SPA reads it (or the mirrored
 // csrf_token response body) and echoes it back as CSRFHeaderName.
 func csrfCookie(value string, cfg config.AuthConfig) http.Cookie {
+	//nolint:gosec // G124: double-submit CSRF cookie must be JS-readable; Secure follows CookieSecure; SameSite is set.
 	return http.Cookie{
 		Name:     CSRFCookieName,
 		Value:    value,
