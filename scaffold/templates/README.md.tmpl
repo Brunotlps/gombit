@@ -120,3 +120,15 @@ Re-running is idempotent. Then:
 go run ./cmd/gombit greet
 ```
 
+## Create an admin account
+
+```sh
+gombit createsuperuser --email admin@example.com --password correct-horse-battery-staple
+```
+
+Requires `GOMBIT_JWT_SECRET` to be set (Bearer auth on; `.env` already has
+one). Prompts interactively when `--email` / `--password` are omitted and
+stdin is a TTY. Refuses duplicate emails and hashes the password with the
+same bcrypt hasher as `/auth/register`. See
+[`docs/cli.md`](https://github.com/LAA-Software-Engineering/gombit/blob/main/docs/cli.md#gombit-createsuperuser).
+

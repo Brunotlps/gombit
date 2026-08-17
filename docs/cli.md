@@ -30,8 +30,7 @@ go run ./cmd/gombit --help
 | `gombit routes` | Print HTTP routes | M4-4 |
 | `gombit doctor` | Environment and config checks | M4-4 |
 | `gombit config show` | Print typed config with secrets redacted | M4-4 |
-
-Not in this milestone: `createsuperuser` (M4-6; depends on Bearer auth).
+| `gombit createsuperuser` | Create a superuser (admin) account | M4-6 |
 
 ## Generator golden tests
 
@@ -391,6 +390,44 @@ Database DSN userinfo/passwords, `Cache.Redis.Password`, and
 output.
 
 See [config.md](config.md).
+
+## `gombit createsuperuser`
+
+```sh
+gombit createsuperuser --email admin@example.com --password correct-horse-battery-staple
+gombit createsuperuser --no-input --email admin@example.com --password correct-horse-battery-staple
+gombit createsuperuser
+```
+
+Django `createsuperuser` → `gombit createsuperuser` (M4-6). It seeds an
+admin account against the same `auth` users table as `POST /auth/register`,
+using the same `auth.Service` bcrypt hasher — there is no second hash path.
+
+Requires `GOMBIT_JWT_SECRET` to be set (`cfg.Auth.Enabled()`): without it
+Bearer auth is unmounted by `framework.New`, so a superuser could never log
+in. It loads config with `config.Load`, opens the database with
+`database.Open`, runs `auth.Migrate` so the command also works against a
+fresh database with no prior migrations, then calls
+`auth.Service.CreateSuperuser`, which sets `User.IsSuperuser` and shares
+`Register`'s unique-email path — duplicate emails are refused with the same
+error as `/auth/register`.
+
+### Flags
+
+| Flag | Role |
+| --- | --- |
+| `--email` | Superuser account email |
+| `--password` | Superuser account password (prefer the interactive prompt; visible in shell history and process listings when passed as a flag) |
+| `--no-input` | Never prompt; require both `--email` and `--password` (use in scripts and tests) |
+
+If `--email` or `--password` is omitted and stdin is a TTY, the command
+prompts interactively (password entry is hidden). If stdin is not a TTY (CI,
+tests, pipes), the missing flags are a hard error instead of a hang.
+`--no-input` skips TTY detection entirely.
+
+`IsSuperuser` is the only identity flag `auth.User` gains for this issue.
+Groups/permissions are a product surface for the post-v0.1 admin milestone
+(ADMIN-3), not part of M4-6.
 
 ## `gombit openapi` and `gombit client`
 
