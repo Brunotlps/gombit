@@ -225,10 +225,6 @@ func (s *Service) ParseAccess(ctx context.Context, token string) (User, error) {
 	return user, nil
 }
 
-func (s *Service) revokeAll(ctx context.Context, userID uint, now time.Time) error {
-	return revokeAllTx(s.db.WithContext(ctx), userID, now)
-}
-
 func revokeAllTx(tx *gorm.DB, userID uint, now time.Time) error {
 	return tx.Model(&RefreshToken{}).
 		Where("user_id = ? AND revoked_at IS NULL", userID).
