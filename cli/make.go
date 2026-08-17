@@ -1,9 +1,10 @@
-package main
+package cli
 
 import (
 	"fmt"
 	"io"
 
+	"github.com/LAA-Software-Engineering/gombit/commandgen"
 	"github.com/LAA-Software-Engineering/gombit/resourcegen"
 	"github.com/spf13/cobra"
 )
@@ -22,6 +23,7 @@ func newMakeCommand(stdout io.Writer, stderr io.Writer) *cobra.Command {
 		},
 	})
 	cmd.AddCommand(newMakeResourceCommand(stdout, stderr))
+	cmd.AddCommand(newMakeCommandCommand(stdout, stderr))
 	return cmd
 }
 
@@ -89,7 +91,62 @@ Otherwise the GORM model is still loader-ready for gombit db makemigrations.`,
 	return cmd
 }
 
+func newMakeCommandCommand(stdout io.Writer, stderr io.Writer) *cobra.Command {
+	var (
+		pkg    string
+		dryRun bool
+		force  bool
+	)
+	cmd := silence(&cobra.Command{
+		Use:   "command <name>",
+		Short: "Generate a management command (AST-safe)",
+		Long: `Generate a Cobra management command in a feature-package and register
+it on the app-owned cmd/gombit tree via go/ast (never regex).
+
+The default package is internal/commands. Override with --package to
+write internal/<package>/ instead. Registration is explicit:
+cmd/gombit calls product.RegisterCommands(root) and <package>.RegisterCommands(root).
+There is no reflection discovery and no second command router (D13).
+
+Examples:
+
+  gombit make command greet
+  gombit make command hello --package hello --dry-run
+  gombit make command greet --force
+
+--dry-run prints the file list without writing. Re-running is
+idempotent and will not duplicate RegisterCommands / AddCommand calls.
+User-owned command files are refused unless --force is set.
+
+Run the generated command from the application module:
+
+  go run ./cmd/gombit greet
+  go run ./cmd/gombit --help`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			err := commandgen.Generate(cmd.Context(), commandgen.Options{
+				WorkDir: ".",
+				Name:    args[0],
+				Package: pkg,
+				DryRun:  dryRun,
+				Force:   force,
+				Stdout:  stdout,
+				Stderr:  stderr,
+			})
+			if err != nil {
+				return fmt.Errorf("gombit make command: %w", err)
+			}
+			return nil
+		},
+	})
+	cmd.Flags().StringVar(&pkg, "package", "commands", "feature-package under internal/ (default commands)")
+	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print files that would be written without writing")
+	cmd.Flags().BoolVar(&force, "force", false, "overwrite files that differ from this run")
+	return cmd
+}
+
 func makeUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "available make subcommands:")
 	_, _ = fmt.Fprintln(w, "  resource <Name> [field:type[:modifiers]...] [--service] [--repo] [--dry-run] [--force]")
+	_, _ = fmt.Fprintln(w, "  command <name> [--package commands] [--dry-run] [--force]")
 }

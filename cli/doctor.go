@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"context"
@@ -85,7 +85,7 @@ func runDoctorChecks(ctx context.Context, opts doctorOptions) []doctorCheck {
 		checkNode(ctx),
 	}
 
-	cfg, err := loadConfig()
+	cfg, err := LoadConfig()
 	if err != nil {
 		checks = append(checks, doctorCheck{
 			Name:    "config",

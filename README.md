@@ -41,9 +41,9 @@ default). See [`docs/openapi.md`](docs/openapi.md).
 The authoritative implementation backlog and architecture decisions live in
 [`docs/GOMBIT_BUILD_PLAN.md`](docs/GOMBIT_BUILD_PLAN.md).
 
-The Cobra command tree, `gombit new`, `gombit dev`, `gombit routes`,
-`gombit doctor`, and `gombit config show` are documented in
-[`docs/cli.md`](docs/cli.md).
+The Cobra command tree, `gombit new`, `gombit dev`, `gombit make resource`,
+`gombit make command`, `gombit routes`, `gombit doctor`, and
+`gombit config show` are documented in [`docs/cli.md`](docs/cli.md).
 Accepted architecture decisions are recorded under [`docs/adr/`](docs/adr/).
 Runtime configuration is documented in [`docs/config.md`](docs/config.md).
 Application lifecycle is documented in [`docs/lifecycle.md`](docs/lifecycle.md).

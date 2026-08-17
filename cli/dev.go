@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"fmt"
@@ -41,7 +41,7 @@ skeleton (router, React Hook Form, auth pages) is M5-1.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !cmd.Flags().Changed("http") {
-				cfg, err := loadConfig()
+				cfg, err := LoadConfig()
 				if err != nil {
 					return fmt.Errorf("gombit dev: %w", err)
 				}
@@ -50,7 +50,7 @@ skeleton (router, React Hook Form, auth pages) is M5-1.`,
 			if err := dev.ValidateFlags(httpAddr, frontendHost, frontendPort, poll, clientOut); err != nil {
 				return fmt.Errorf("gombit %w", err)
 			}
-			err := runDev(cmd.Context(), dev.Options{
+			err := RunDev(cmd.Context(), dev.Options{
 				WorkDir:      ".",
 				HTTPAddr:     httpAddr,
 				FrontendHost: frontendHost,
@@ -74,4 +74,5 @@ skeleton (router, React Hook Form, auth pages) is M5-1.`,
 	return cmd
 }
 
-var runDev = dev.Run
+// RunDev starts the API and Vite frontend. Tests may replace it.
+var RunDev = dev.Run

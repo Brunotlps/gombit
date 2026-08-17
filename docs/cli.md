@@ -1,9 +1,16 @@
 # Gombit CLI
 
 `gombit` is a Cobra command tree (D13 / [ADR-014](adr/014-cli-cobra.md)).
-Root help lists the command families. Nested families attach with
-`AddCommand`; later app-registered management commands (M4-7) will use the
-same mechanism.
+Root help lists the command families. Nested families and app-registered
+management commands attach with Cobra `AddCommand` (or `cli.AddCommand`,
+a thin wrapper). There is no second command router and no reflection
+discovery of commands.
+
+The framework binary is `go run ./cmd/gombit` in this repository. Generated
+apps get their own `cmd/gombit` that reuses `cli.NewRoot` and then calls
+`product.RegisterCommands(root)` (and any `internal/commands.RegisterCommands`).
+App-owned commands are discoverable via `go run ./cmd/gombit` from the
+application module.
 
 ```sh
 go run ./cmd/gombit --help
@@ -16,6 +23,7 @@ go run ./cmd/gombit --help
 | `gombit new` | Scaffold an application | M4-1 |
 | `gombit dev` | Run API + Vite with HMR and live client regen | M4-2 |
 | `gombit make resource` | Generate a feature-package resource (AST-safe) | M4-3 |
+| `gombit make command` | Scaffold a Cobra management command (AST-safe) | M4-7 |
 | `gombit db …` | Atlas-backed migrations | M2, migrated onto Cobra in M4-1 |
 | `gombit openapi generate` | Write the live OpenAPI 3.1 document | M3-3 |
 | `gombit client generate` / `check` | TypeScript client + drift | M3-4, M3-5 |
@@ -23,7 +31,7 @@ go run ./cmd/gombit --help
 | `gombit doctor` | Environment and config checks | M4-4 |
 | `gombit config show` | Print typed config with secrets redacted | M4-4 |
 
-Not in this milestone: `createsuperuser` (M4-6), `make command` (M4-7).
+Not in this milestone: `createsuperuser` (M4-6; depends on Bearer auth).
 
 ## Generator golden tests
 
@@ -32,9 +40,9 @@ diffs the output tree against `goldentest/testdata/golden`, compiles the
 generated backend (`go build` with a local `replace` in a temp copy — never
 committed), typechecks the frontend with `npx tsc --noEmit` when Node is
 on `PATH` (`t.Skip` otherwise), and checks that a second run is idempotent
-(`gombit new --force`, `make resource` without `--force`, `client generate`
-without `--force`). Atlas is not invoked, so migration filenames stay out
-of the trees.
+(`gombit new --force`, `make resource` without `--force`, `make command`
+without `--force`, `client generate` without `--force`). Atlas is not
+invoked, so migration filenames stay out of the trees.
 
 ```sh
 go test ./goldentest
@@ -102,9 +110,10 @@ The scaffold matches build plan §3.2:
 ```
 demo/
 ├── cmd/server/main.go
+├── cmd/gombit/main.go    # framework tree + product.RegisterCommands
 ├── internal/
 │   ├── platform/
-│   └── product/          # model, handler.go, routes.go
+│   └── product/          # model, handler.go, routes.go, commands.go
 ├── database/migrations/
 ├── database/seeds/
 ├── config/
@@ -118,8 +127,10 @@ demo/
 
 `cmd/server/main.go` calls `config.Load()`, `framework.New`, registers
 `internal/product` routes explicitly (no reflection), and `framework.Run`.
-Public product routes are Huma-typed under `/api/v1`. There is no generated
-`service.go` or `repo.go` until `gombit make resource --service` / `--repo`.
+`cmd/gombit/main.go` calls `cli.NewRoot`, `product.RegisterCommands(root)`,
+and `cli.ExecuteRoot`. Public product routes are Huma-typed under `/api/v1`.
+There is no generated `service.go` or `repo.go` until
+`gombit make resource --service` / `--repo`.
 
 `.env.example` lists `GOMBIT_*` server variables from the `config` package
 and public `VITE_API_URL`. `VITE_*` is baked into the browser bundle — never
@@ -255,6 +266,54 @@ gombit db makemigrations create_books \
 ```
 
 See [migrations.md](migrations.md).
+
+## `gombit make command`
+
+From an application directory (the output of `gombit new`):
+
+```sh
+gombit make command greet
+gombit make command hello --package hello --dry-run
+gombit make command greet --force
+```
+
+`make` is a Cobra parent; `command` is the subcommand. This writes a
+feature-package management command and registers it on the **app-owned**
+`cmd/gombit` tree — not the framework binary
+(`go run github.com/LAA-Software-Engineering/gombit/cmd/gombit`).
+The generator requires a `gombit new` app (`cmd/server/main.go` and/or
+`gombit.yaml`) and refuses a framework-shaped tree so it cannot rewrite
+the framework `cmd/gombit/main.go`.
+
+Default package is `internal/commands`. `--package hello` writes
+`internal/hello/` instead. Files:
+
+| File | Role |
+| --- | --- |
+| `internal/<pkg>/<name>.go` | `New<Name>Command() *cli.Command` |
+| `internal/<pkg>/commands.go` | `RegisterCommands(root *cli.Command)` calling `cli.AddCommand` |
+| `cmd/gombit/main.go` | AST-appends `<pkg>.RegisterCommands(root)` next to `product.RegisterCommands(root)` |
+
+`cli.AddCommand` is a thin wrapper around Cobra `AddCommand` (D13 /
+[ADR-014](adr/014-cli-cobra.md)). Generated apps do not invent a second
+router and do not discover commands by reflection.
+
+After generating:
+
+```sh
+go run ./cmd/gombit greet
+go run ./cmd/gombit --help
+```
+
+Registration edits use `go/ast` + `go/parser` + `go/format` (never regex).
+`--dry-run` writes nothing. Re-running does not duplicate `RegisterCommands` or
+`AddCommand` calls. A generated command file that differs from this run
+(or a user-owned file) is refused unless `--force`. `commands.go` and
+`cmd/gombit/main.go` are additive AST edits of known registration points.
+
+Command names that collide with framework families (`new`, `dev`, `make`,
+`db`, `openapi`, `client`, `routes`, `doctor`, `config`, `help`,
+`completion`) are rejected.
 
 ## `gombit db`
 

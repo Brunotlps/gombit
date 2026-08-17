@@ -9,6 +9,15 @@ cp .env.example .env
 go run ./cmd/server
 ```
 
+The app-owned CLI embeds the framework Cobra tree and registers feature
+commands explicitly (no reflection):
+
+```sh
+go run ./cmd/gombit --help
+go run ./cmd/gombit make command greet
+go run ./cmd/gombit greet
+```
+
 The server listens on `GOMBIT_HTTP_ADDR` (default `:8080`). Public API
 routes are under `/api/v1`. Interactive docs are at `/docs` when
 `GOMBIT_DOCS_ENABLED` is on. The live OpenAPI 3.1 document is
@@ -52,7 +61,8 @@ Runtime still reads `GOMBIT_*` environment variables, not `gombit.yaml`.
 ## Layout
 
 - `cmd/server` — `config.Load`, `framework.New`, explicit `product.Register`
-- `internal/product` — model, Huma handlers, routes (no `service.go` / `repo.go`)
+- `cmd/gombit` — framework Cobra tree plus `product.RegisterCommands(root)`
+- `internal/product` — model, Huma handlers, routes (no `service.go` / `repo.go`); `RegisterCommands` for CLI hooks
 - `internal/platform` — database open + AutoMigrate for the example product
 - `database/migrations`, `database/seeds` — Atlas SQL (see `gombit db`)
 - `frontend/` — minimal Vite + TypeScript stub for `gombit dev` (M5-1 owns the React skeleton)
@@ -88,5 +98,20 @@ If Atlas is not installed, the GORM model is still ready for:
 
 ```sh
 gombit db makemigrations create_books --model github.com/example/demo/internal/book.Book
+```
+
+## Add a management command
+
+```sh
+gombit make command greet
+```
+
+That writes `internal/commands/greet.go`, appends
+`cli.AddCommand(root, NewGreetCommand())` in `internal/commands/commands.go`,
+and registers `commands.RegisterCommands(root)` in `cmd/gombit/main.go` via `go/ast`.
+Re-running is idempotent. Then:
+
+```sh
+go run ./cmd/gombit greet
 ```
 

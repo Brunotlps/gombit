@@ -48,8 +48,10 @@ hand-rolled router as the long-term CLI architecture.
 - M4-1 adopted Cobra: root `gombit` help lists `new`, `db`, `openapi`, and
   `client`; `gombit db …` keeps the same subcommands and flags; `gombit new`
   scaffolds a feature-package app. Later commands attach with `AddCommand`.
-- M4-7 scaffolds and docs must show Cobra-based registration, not a custom
-  dispatcher.
+- M4-7: generated apps own `cmd/gombit`, reuse `cli.NewRoot`, and register
+  feature-package commands with `cli.AddCommand` (Cobra `AddCommand`).
+  `gombit make command` scaffolds one via `go/ast`. There is no second
+  command router and no reflection discovery.
 - Shell completions and consistent `--help` come from Cobra; user-facing
   command names stayed stable when moving off stdlib `flag`.
 - Agents must not re-litigate Cobra vs Kong; D13 is locked.

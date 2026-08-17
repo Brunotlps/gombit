@@ -155,6 +155,22 @@ func TestRunNewDemoCompiles(t *testing.T) {
 	if !strings.Contains(mainSrc, "framework.New") {
 		t.Fatal("cmd/server/main.go does not use framework.New")
 	}
+	cliSrc := readFileString(t, filepath.Join(dest, "cmd", "gombit", "main.go"))
+	if !strings.Contains(cliSrc, "product.RegisterCommands") {
+		t.Fatal("cmd/gombit/main.go does not call product.RegisterCommands")
+	}
+	if !strings.Contains(cliSrc, "cli.NewRoot") {
+		t.Fatal("cmd/gombit/main.go does not use cli.NewRoot")
+	}
+	help := exec.Command("go", "run", "./cmd/gombit", "--help")
+	help.Dir = dest
+	out, err := help.CombinedOutput()
+	if err != nil {
+		t.Fatalf("go run ./cmd/gombit --help: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "make") {
+		t.Fatalf("app gombit --help missing make:\n%s", out)
+	}
 }
 
 func chdir(t *testing.T, dir string) {
