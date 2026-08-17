@@ -1,9 +1,16 @@
-# Frontend placeholder
+# Frontend (minimal Vite stub)
 
 This directory is the split-deploy frontend root (build plan C5 / §3.2).
-`gombit new` does not scaffold a Vite React app; that is **M5-1**.
+`gombit new` writes a **minimal Vite + TypeScript stub** so `gombit dev` can
+start Vite HMR and proxy `/api`, `/openapi.json`, and `/docs` to the Go
+server. The full React skeleton (router, React Hook Form, auth pages, MUI)
+is **M5-1**.
 
-Public API origin for a future client:
+```sh
+gombit dev
+```
+
+Public API origin:
 
 ```
 VITE_API_URL

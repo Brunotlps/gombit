@@ -17,7 +17,7 @@ func TestRunHelpListsCommandFamilies(t *testing.T) {
 		t.Fatalf("run(--help) error = %v", err)
 	}
 	got := stdout.String()
-	for _, family := range []string{"new", "db", "openapi", "client"} {
+	for _, family := range []string{"new", "dev", "db", "openapi", "client"} {
 		if !strings.Contains(got, family) {
 			t.Fatalf("root help missing %q:\n%s", family, got)
 		}

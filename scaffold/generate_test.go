@@ -32,7 +32,14 @@ func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
 		"database/migrations/.gitkeep",
 		"database/seeds/.gitkeep",
 		"config/README.md",
+		"frontend/package.json",
+		"frontend/vite.config.ts",
+		"frontend/index.html",
+		"frontend/src/main.ts",
+		"frontend/src/vite-env.d.ts",
+		"frontend/tsconfig.json",
 		"frontend/README.md",
+		".air.toml",
 		"gombit.yaml",
 		".env.example",
 		"go.mod",
@@ -79,6 +86,24 @@ func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "create demo/go.mod") {
 		t.Fatalf("stdout = %q, want created file list", stdout.String())
+	}
+
+	viteConfig := readFile(t, filepath.Join(dest, "frontend", "vite.config.ts"))
+	for _, want := range []string{"/api", "/openapi.json", "/docs", "GOMBIT_DEV_FRONTEND_HOST"} {
+		if !strings.Contains(viteConfig, want) {
+			t.Fatalf("vite.config.ts missing %q:\n%s", want, viteConfig)
+		}
+	}
+	pkg := readFile(t, filepath.Join(dest, "frontend", "package.json"))
+	if !strings.Contains(pkg, "vite") {
+		t.Fatalf("frontend/package.json missing vite:\n%s", pkg)
+	}
+	if strings.Contains(pkg, "react-router") || strings.Contains(pkg, "react-hook-form") {
+		t.Fatal("frontend stub must not include React Router or React Hook Form (M5-1)")
+	}
+	mainTS := readFile(t, filepath.Join(dest, "frontend", "src", "main.ts"))
+	if strings.Contains(strings.ToLower(mainTS), "localstorage") {
+		t.Fatal("frontend/src/main.ts uses localStorage")
 	}
 }
 
@@ -303,7 +328,7 @@ func TestGenerateInteractivePromptsOnTTY(t *testing.T) {
 func isGeneratedSource(path string) bool {
 	base := filepath.Base(path)
 	switch strings.ToLower(filepath.Ext(path)) {
-	case ".go", ".ts", ".tsx", ".js", ".jsx":
+	case ".go", ".ts", ".tsx", ".js", ".jsx", ".json", ".html", ".mjs":
 		return true
 	}
 	return base == ".env.example" || base == "gombit.yaml"

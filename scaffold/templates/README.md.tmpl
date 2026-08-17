@@ -14,6 +14,19 @@ routes are under `{{.APIPrefix}}`. Interactive docs are at `/docs` when
 `GOMBIT_DOCS_ENABLED` is on. The live OpenAPI 3.1 document is
 `/openapi.json`.
 
+For local development, one command runs the API, Vite HMR, and live
+TypeScript client regeneration:
+
+```sh
+gombit dev
+```
+
+`gombit dev` prints a service table (Backend, Frontend, OpenAPI, API docs).
+Backend reload uses `air` or `watchexec` when installed; otherwise it falls
+back to `go run ./cmd/server`. The frontend uses `pnpm` when available,
+otherwise `npm`. Node.js is required for Vite HMR. The Vite stub here is
+enough to start HMR; the full React skeleton is M5-1.
+
 This module requires [`github.com/LAA-Software-Engineering/gombit`](https://github.com/LAA-Software-Engineering/gombit).
 After scaffolding, pin a released version:
 
@@ -42,7 +55,7 @@ Runtime still reads `GOMBIT_*` environment variables, not `gombit.yaml`.
 - `internal/product` — model, Huma handlers, routes (no `service.go` / `repo.go`)
 - `internal/platform` — database open + AutoMigrate for the example product
 - `database/migrations`, `database/seeds` — Atlas SQL (see `gombit db`)
-- `frontend/` — split-deploy placeholder; the Vite React skeleton is M5-1
+- `frontend/` — minimal Vite + TypeScript stub for `gombit dev` (M5-1 owns the React skeleton)
 
 ## Migrations
 

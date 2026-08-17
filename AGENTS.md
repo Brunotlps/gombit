@@ -9,9 +9,10 @@ a generated React+TypeScript frontend, Atlas-backed migrations. Module path
 This repo has completed M0–M3 and started **M4 CLI**. It has typed
 `config.Config`, `framework.App` lifecycle and routing, Huma contract/OpenAPI/
 TypeScript client generation, Atlas-backed migrations, and a Cobra `gombit`
-command tree (`new`, `db`, `openapi`, `client`) that scaffolds apps into a
-temp/user directory. It does not yet have `gombit dev`, `make resource`, a
-full Vite React skeleton (M5-1), or M6 batteries.
+command tree (`new`, `dev`, `db`, `openapi`, `client`) that scaffolds apps
+into a temp/user directory and runs the API + Vite frontend together.
+It does not yet have `make resource`, a full Vite React skeleton (M5-1), or
+M6 batteries.
 Don't assume generated apps are committed in-tree; `gombit new` writes them
 on demand. Check `git log` / `ls` before describing "how the code works."
 
