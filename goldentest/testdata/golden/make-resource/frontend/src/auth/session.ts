@@ -1,7 +1,7 @@
 /**
  * In-memory access and refresh tokens. Never persist them in web storage.
  * Refresh tokens are returned once in the login/refresh JSON body and held
- * here until logout or rotation. Cookie/session mode is M5-3.
+ * here until logout or rotation. Cookie/session mode is `--auth cookie`.
  */
 let accessToken: string | undefined;
 let refreshToken: string | undefined;

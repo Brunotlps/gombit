@@ -9,12 +9,12 @@ export function AppLayout() {
   const navigate = useNavigate();
 
   async function onLogout() {
-    const refreshToken = getRefreshToken();
     try {
+      const refreshToken = getRefreshToken();
       if (refreshToken) {
         await client.POST("/api/v1/auth/logout", { body: { refresh_token: refreshToken } });
       }
-    } finally {
+      } finally {
       clearSession();
       navigate("/login", { replace: true });
     }

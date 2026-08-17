@@ -54,8 +54,9 @@ Checks:
 
 Network checks use a short timeout so CI cannot hang. Appendix C flags a
 production JWT secret shorter than 32 characters or equal to the
-generated-app development placeholder (config.Load also rejects it).
-Cookie and CORS production checks land with M5-3.`,
+generated-app development placeholder, and a cookie-mode auth without
+CookieSecure=true (config.Load rejects both; the "config" check below
+fails loud when either is set).`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			migrationDir, err := cmd.Flags().GetString("dir")

@@ -55,6 +55,42 @@ func TestNewGolden(t *testing.T) {
 	})
 }
 
+func TestNewGoldenCookieAuth(t *testing.T) {
+	appDir := scaffoldCookieDemo(t)
+	got := snapshotTree(t, appDir)
+	assertNoReplace(t, got)
+	assertGoFormatted(t, got)
+	assertCookieFrontendInvariants(t, got)
+	checkOrUpdateGolden(t, "new-cookie", got)
+
+	t.Run("compile", func(t *testing.T) {
+		compileBackend(t, appDir)
+	})
+	t.Run("typecheck", func(t *testing.T) {
+		typecheckFrontend(t, appDir, false)
+	})
+	t.Run("idempotent", func(t *testing.T) {
+		if err := scaffold.Generate(context.Background(), scaffold.Options{
+			Name:     fixtureName,
+			Module:   fixtureModule,
+			Database: "sqlite",
+			Cache:    "memory",
+			Auth:     "cookie",
+			UI:       "minimal",
+			WorkDir:  filepath.Dir(appDir),
+			Force:    true,
+			Stdout:   io.Discard,
+			IsTTY:    func() bool { return false },
+		}); err != nil {
+			t.Fatalf("idempotent gombit new --auth cookie --force: %v", err)
+		}
+		second := snapshotTree(t, appDir)
+		if !treesEqual(got, second) {
+			t.Fatalf("gombit new --auth cookie --force changed files:\n%s", treeDiffSummary(second, got))
+		}
+	})
+}
+
 func TestMakeResourceGolden(t *testing.T) {
 	appDir := scaffoldDemo(t)
 	stdout := new(bytes.Buffer)
@@ -243,6 +279,27 @@ func scaffoldDemo(t *testing.T) string {
 	})
 	if err != nil {
 		t.Fatalf("gombit new: %v", err)
+	}
+	return filepath.Join(workDir, fixtureName)
+}
+
+func scaffoldCookieDemo(t *testing.T) string {
+	t.Helper()
+	workDir := t.TempDir()
+	err := scaffold.Generate(context.Background(), scaffold.Options{
+		Name:     fixtureName,
+		Module:   fixtureModule,
+		Database: "sqlite",
+		Cache:    "memory",
+		Auth:     "cookie",
+		UI:       "minimal",
+		WorkDir:  workDir,
+		Stdout:   io.Discard,
+		Stderr:   io.Discard,
+		IsTTY:    func() bool { return false },
+	})
+	if err != nil {
+		t.Fatalf("gombit new --auth cookie: %v", err)
 	}
 	return filepath.Join(workDir, fixtureName)
 }

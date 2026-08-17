@@ -507,7 +507,7 @@ func configureTrustedProxies(engine *gin.Engine, proxies []string) error {
 }
 
 func runtimeMiddlewareStack(cfg config.Config, metrics *httpMetrics) []namedMiddleware {
-	return []namedMiddleware{
+	stack := []namedMiddleware{
 		{name: "recovery", handler: gin.Recovery()},
 		{name: "request_id", handler: requestIDMiddleware()},
 		{name: "trace_context", handler: traceContextMiddleware()},
@@ -517,8 +517,16 @@ func runtimeMiddlewareStack(cfg config.Config, metrics *httpMetrics) []namedMidd
 			handler: securityHeadersMiddleware(cfg.Environment == config.EnvironmentProduction),
 		},
 		{name: "xss", handler: xssMiddleware()},
-		{name: "request_timeout", handler: requestTimeoutMiddleware(cfg.HTTP.RequestTimeout)},
 	}
+	// CSRF must run as global Gin middleware, not just on the auth Huma
+	// routes: it covers every state-changing request (M5-3), including
+	// application feature routes registered later via app.Router(). See
+	// docs/auth-cookie.md.
+	if cfg.Auth.Enabled() && cfg.Auth.EffectiveMode() == config.AuthModeCookie {
+		stack = append(stack, namedMiddleware{name: "csrf", handler: auth.CSRFMiddleware(cfg)})
+	}
+	stack = append(stack, namedMiddleware{name: "request_timeout", handler: requestTimeoutMiddleware(cfg.HTTP.RequestTimeout)})
+	return stack
 }
 
 func middlewareHandlers(stack []namedMiddleware) []gin.HandlerFunc {

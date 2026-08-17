@@ -1,0 +1,14 @@
+# Project choices recorded by `gombit new`. Runtime configuration is read
+# from the process environment (see .env.example), not this file.
+name: demo
+module: github.com/example/demo
+database: sqlite
+cache: memory
+# Bearer JWT is the v0.1 API default (C3). `--auth cookie` records HttpOnly
+# session cookies + CSRF; see docs/auth-cookie.md and .env.example for the
+# GOMBIT_AUTH_MODE / GOMBIT_COOKIE_* settings this wires.
+auth: cookie
+# Minimal/headless is the default (C4). `--ui mui` records MUI; the MUI
+# CRUD preset lands in M5-4.
+ui: minimal
+api_prefix: /api/v1

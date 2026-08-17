@@ -316,6 +316,7 @@ export interface operations {
       };
     };
   };
+
   "get-me": {
     parameters: {
       query?: never;

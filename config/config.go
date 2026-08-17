@@ -38,6 +38,9 @@ const (
 	envJWTSecret               = "GOMBIT_JWT_SECRET" // #nosec G101 -- environment variable name, not a credential.
 	envJWTAccessTTL            = "GOMBIT_JWT_ACCESS_TTL"
 	envJWTRefreshTTL           = "GOMBIT_JWT_REFRESH_TTL"
+	envAuthMode                = "GOMBIT_AUTH_MODE"
+	envCookieSecure            = "GOMBIT_COOKIE_SECURE"
+	envCookieSameSite          = "GOMBIT_COOKIE_SAMESITE"
 )
 
 const (
@@ -189,9 +192,39 @@ type LoggingConfig struct {
 	Sink  LogSink
 }
 
-// AuthConfig contains Bearer JWT configuration. Cookie/session mode is M5-3.
+// AuthMode selects the runtime auth surface framework.New mounts (C3).
+// AuthModeJWT (the v0.1 API default) mounts Bearer JWT + refresh rotation.
+// AuthModeCookie (M5-3) mounts the HttpOnly/Secure/SameSite session + CSRF
+// double-submit defense documented in docs/auth-cookie.md.
+type AuthMode string
+
+const (
+	// AuthModeJWT is the v0.1 API default (C3). Empty Mode behaves as this.
+	AuthModeJWT AuthMode = "jwt"
+	// AuthModeCookie is the first-class session/CSRF mode (M5-3), a hard
+	// prerequisite of the admin milestone.
+	AuthModeCookie AuthMode = "cookie"
+)
+
+// CookieSameSite is the SameSite attribute for cookie-mode session and CSRF
+// cookies (M5-3). SameSite=None is intentionally not offered: cookie mode
+// always pairs with the CSRF double-submit defense in docs/auth-cookie.md,
+// and None requires cross-site use cases this framework does not target.
+type CookieSameSite string
+
+const (
+	// CookieSameSiteLax is the default: cookies ride along top-level GET
+	// navigations but not cross-site POSTs, pairing with CSRF double-submit.
+	CookieSameSiteLax CookieSameSite = "lax"
+	// CookieSameSiteStrict never sends cookies on cross-site requests.
+	CookieSameSiteStrict CookieSameSite = "strict"
+)
+
+// AuthConfig contains Bearer JWT (default) and cookie/session (M5-3) auth
+// configuration. Both modes share JWTSecret as the signing/HMAC key.
 type AuthConfig struct {
-	// JWTSecret is the HMAC key for access tokens. It is never a VITE_* value.
+	// JWTSecret is the HMAC key for access tokens and, in cookie mode, the
+	// CSRF double-submit token signature. It is never a VITE_* value.
 	// Empty disables framework-owned auth routes outside production.
 	JWTSecret string
 	// AccessTokenTTL is the signed access-token lifetime.
@@ -201,11 +234,37 @@ type AuthConfig struct {
 	// BcryptCost is the bcrypt cost for password hashes. Zero means
 	// bcrypt.DefaultCost. Tests may set a lower cost.
 	BcryptCost int
+	// Mode selects the mounted auth surface. Empty behaves as AuthModeJWT.
+	Mode AuthMode
+	// CookieSecure sets the Secure attribute on cookie-mode session and CSRF
+	// cookies. Production requires true (Appendix C); development may set
+	// false only for plain-HTTP localhost testing.
+	CookieSecure bool
+	// CookieSameSite sets the SameSite attribute on cookie-mode session and
+	// CSRF cookies. Empty behaves as CookieSameSiteLax.
+	CookieSameSite CookieSameSite
 }
 
-// Enabled reports whether Bearer auth should be mounted (JWT secret is set).
+// Enabled reports whether auth routes should be mounted (JWT secret is set).
 func (c AuthConfig) Enabled() bool {
 	return strings.TrimSpace(c.JWTSecret) != ""
+}
+
+// EffectiveMode returns c.Mode, defaulting empty to AuthModeJWT.
+func (c AuthConfig) EffectiveMode() AuthMode {
+	if c.Mode == "" {
+		return AuthModeJWT
+	}
+	return c.Mode
+}
+
+// EffectiveCookieSameSite returns c.CookieSameSite, defaulting empty to
+// CookieSameSiteLax.
+func (c AuthConfig) EffectiveCookieSameSite() CookieSameSite {
+	if c.CookieSameSite == "" {
+		return CookieSameSiteLax
+	}
+	return c.CookieSameSite
 }
 
 // IsInsecureJWTSecret reports whether secret is a well-known scaffold
@@ -273,6 +332,9 @@ func defaultAuthConfig() AuthConfig {
 	return AuthConfig{
 		AccessTokenTTL:  DefaultAccessTokenTTL,
 		RefreshTokenTTL: DefaultRefreshTokenTTL,
+		Mode:            AuthModeJWT,
+		CookieSecure:    true,
+		CookieSameSite:  CookieSameSiteLax,
 	}
 }
 
@@ -349,6 +411,9 @@ func LoadFromEnv(lookup EnvLookup) (Config, error) {
 	applyString(lookup, envJWTSecret, &cfg.Auth.JWTSecret)
 	applyDuration(lookup, envJWTAccessTTL, "Auth.AccessTokenTTL", &cfg.Auth.AccessTokenTTL, &errs)
 	applyDuration(lookup, envJWTRefreshTTL, "Auth.RefreshTokenTTL", &cfg.Auth.RefreshTokenTTL, &errs)
+	applyAuthMode(lookup, envAuthMode, &cfg.Auth.Mode)
+	applyBool(lookup, envCookieSecure, "Auth.CookieSecure", &cfg.Auth.CookieSecure, &errs)
+	applyCookieSameSite(lookup, envCookieSameSite, &cfg.Auth.CookieSameSite)
 	if docsEnabledSet {
 		applyBool(lookup, envDocsEnabled, "API.DocsEnabled", &cfg.API.DocsEnabled, &errs)
 	} else {
@@ -565,6 +630,42 @@ func validateAuthConfig(errs *FieldErrors, env Environment, cfg AuthConfig) {
 				Message: "must be greater than zero when a JWT secret is set",
 			})
 		}
+
+		switch cfg.EffectiveMode() {
+		case AuthModeJWT, AuthModeCookie:
+		default:
+			*errs = append(*errs, FieldError{
+				Field:   "Auth.Mode",
+				Env:     envAuthMode,
+				Value:   string(cfg.Mode),
+				Message: "must be one of jwt, cookie",
+			})
+		}
+
+		if cfg.EffectiveMode() == AuthModeCookie {
+			switch cfg.EffectiveCookieSameSite() {
+			case CookieSameSiteLax, CookieSameSiteStrict:
+			default:
+				*errs = append(*errs, FieldError{
+					Field:   "Auth.CookieSameSite",
+					Env:     envCookieSameSite,
+					Value:   string(cfg.CookieSameSite),
+					Message: "must be one of lax, strict",
+				})
+			}
+			// Appendix C: cookie auth without Secure under a production
+			// HTTPS deployment must fail loud. This framework does not
+			// track a public URL/scheme, so any production environment
+			// with cookie auth enabled must set CookieSecure.
+			if env == EnvironmentProduction && !cfg.CookieSecure {
+				*errs = append(*errs, FieldError{
+					Field:   "Auth.CookieSecure",
+					Env:     envCookieSecure,
+					Value:   "false",
+					Message: "must be true in production for cookie auth (Appendix C)",
+				})
+			}
+		}
 	}
 }
 
@@ -779,6 +880,18 @@ func applyLogLevel(lookup EnvLookup, key string, dest *LogLevel) {
 func applyLogSink(lookup EnvLookup, key string, dest *LogSink) {
 	if value, ok := lookup(key); ok {
 		*dest = LogSink(strings.TrimSpace(value))
+	}
+}
+
+func applyAuthMode(lookup EnvLookup, key string, dest *AuthMode) {
+	if value, ok := lookup(key); ok {
+		*dest = AuthMode(strings.ToLower(strings.TrimSpace(value)))
+	}
+}
+
+func applyCookieSameSite(lookup EnvLookup, key string, dest *CookieSameSite) {
+	if value, ok := lookup(key); ok {
+		*dest = CookieSameSite(strings.ToLower(strings.TrimSpace(value)))
 	}
 }
 

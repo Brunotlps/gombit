@@ -3,7 +3,11 @@
 `gombit new` writes a Vite + React + TypeScript app under `frontend/`.
 The default UI is **minimal/headless** (C4). `--ui mui` is recorded in
 `gombit.yaml` only; the MUI CRUD preset is [M5-4]. Bearer login, refresh
-rotation, and protected routes are documented in [auth.md](auth.md).
+rotation, and protected routes are documented in [auth.md](auth.md); this
+page describes that (default) `--auth jwt` wiring. `--auth cookie` swaps
+`auth/session.ts`, `api/client.ts`, `auth/RequireAuth.tsx`, and
+`pages/LoginPage.tsx` for the cookie/CSRF variants documented in
+[auth-cookie.md](auth-cookie.md).
 
 See also [cli.md](cli.md) (`gombit new`, `gombit dev`) and
 [client.md](client.md) (TypeScript client generation).
@@ -104,6 +108,5 @@ gombit dev
 
 ## What is not here yet
 
-- Cookie/session + CSRF (`--auth cookie`): M5-3
 - MUI CRUD preset (`--ui mui`): M5-4
 - `go:embed` single-binary SPA: M5-5

@@ -38,7 +38,9 @@ Backend reload uses `air` or `watchexec` when installed; otherwise it falls
 back to `go run ./cmd/server`. The frontend uses `pnpm` when available,
 otherwise `npm`. Node.js is required for Vite HMR. The frontend is a Vite +
 React + TypeScript skeleton (router, generated client, React Hook Form,
-Bearer login). The MUI preset is M5-4.
+{{if eq .Auth "cookie"}}HttpOnly cookie session + CSRF login — see
+[`docs/auth-cookie.md`](https://github.com/LAA-Software-Engineering/gombit/blob/main/docs/auth-cookie.md)
+for the threat model{{else}}Bearer login{{end}}). The MUI preset is M5-4.
 
 This module requires [`github.com/LAA-Software-Engineering/gombit`](https://github.com/LAA-Software-Engineering/gombit).
 After scaffolding, pin a released version:
@@ -57,7 +59,7 @@ The default module path is `github.com/example/{{.Name}}` (override with
 | --- | --- | --- |
 | database | `{{.Database}}` | sqlite, postgres, or mysql |
 | cache | `{{.Cache}}` | memory, redis, or noop |
-| auth | `{{.Auth}}` | Bearer JWT is the v0.1 default; cookie/CSRF is M5-3 |
+| auth | `{{.Auth}}` | Bearer JWT (v0.1 default) or `cookie` (HttpOnly session + CSRF, see `docs/auth-cookie.md`) |
 | ui | `{{.UI}}` | minimal/headless default; MUI CRUD preset is M5-4 |
 
 Runtime still reads `GOMBIT_*` environment variables, not `gombit.yaml`.
@@ -126,8 +128,8 @@ go run ./cmd/gombit greet
 gombit createsuperuser --email admin@example.com --password correct-horse-battery-staple
 ```
 
-Requires `GOMBIT_JWT_SECRET` to be set (Bearer auth on; `.env` already has
-one). Prompts interactively when `--email` / `--password` are omitted and
+Requires `GOMBIT_JWT_SECRET` to be set (auth on, Bearer or cookie mode;
+`.env` already has one). Prompts interactively when `--email` / `--password` are omitted and
 stdin is a TTY. Refuses duplicate emails and hashes the password with the
 same bcrypt hasher as `/auth/register`. See
 [`docs/cli.md`](https://github.com/LAA-Software-Engineering/gombit/blob/main/docs/cli.md#gombit-createsuperuser).

@@ -1,7 +1,9 @@
 # Bearer JWT auth
 
 Gombit's v0.1 API default is **Bearer JWT with refresh rotation** (C3 / D3).
-Cookie/session + CSRF is a first-class mode but a separate issue ([M5-3]).
+Cookie/session + CSRF ([M5-3]) is a first-class alternative mode
+(`gombit new --auth cookie`) — see [`docs/auth-cookie.md`](auth-cookie.md)
+for its threat model; this page documents the Bearer default.
 `gombit createsuperuser` ([M4-6]) is the CLI admin seed path; see
 [cli.md](cli.md#gombit-createsuperuser).
 
@@ -17,9 +19,10 @@ Generated apps (`gombit new --auth jwt`, the default) wire this through
 | Access JWT | **Memory only** | `Authorization: Bearer`. Never `localStorage` / `sessionStorage`. Lost on refresh, which is intended. |
 | Refresh token | **Memory only** (JSON body) | Returned once on login/refresh. Rotated on each successful refresh. Not a cookie in v0.1. |
 
-An HttpOnly refresh cookie is compatible with the Bearer *access* default, but
-this milestone keeps the refresh token in the JSON body so M5-3 can add
-cookie/CSRF without mixing modes. Do not put tokens in `VITE_*`.
+The refresh token stays in the JSON body (not a cookie) so this mode's
+transport does not mix with `--auth cookie`'s HttpOnly session cookies
+(see [`docs/auth-cookie.md`](auth-cookie.md)). Do not put tokens in
+`VITE_*`.
 
 ## Endpoints
 
@@ -55,6 +58,12 @@ the generated-app development placeholder, at `config.Load` / `Validate` and
 `gombit doctor` (Appendix C). The secret is redacted by `Config.Redacted()`
 and `gombit config show`. Empty in production leaves Bearer auth off; set a
 long random secret to enable it.
+
+`Config.Auth.Mode` (`GOMBIT_AUTH_MODE`, default `jwt`) selects between this
+Bearer surface and `cookie` mode; see
+[`docs/auth-cookie.md`](auth-cookie.md#config) for the cookie-only fields
+(`GOMBIT_COOKIE_SECURE`, `GOMBIT_COOKIE_SAMESITE`) and their production
+requirements.
 
 `gombit new` writes a gitignored `.env` with a per-project random HMAC secret.
 Generated `.env.example` keeps a short development placeholder so

@@ -91,6 +91,58 @@ func assertFrontendInvariants(t *testing.T, files fileMap) {
 	}
 }
 
+// assertCookieFrontendInvariants is assertFrontendInvariants' counterpart for
+// `--auth cookie` (M5-3): no web-storage tokens, and the cookie/CSRF wiring
+// (X-CSRF-Token double-submit, GET /auth/csrf bootstrap) is present instead
+// of the Bearer in-memory token helpers.
+func assertCookieFrontendInvariants(t *testing.T, files fileMap) {
+	t.Helper()
+	var sawFrontend bool
+	for rel, data := range files {
+		if !strings.HasPrefix(rel, "frontend/") {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(rel))
+		switch ext {
+		case ".ts", ".tsx", ".js", ".jsx", ".json", ".html", ".mjs":
+		default:
+			continue
+		}
+		sawFrontend = true
+		lower := strings.ToLower(string(data))
+		if strings.Contains(lower, "localstorage") || strings.Contains(lower, "sessionstorage") {
+			t.Errorf("%s contains localStorage/sessionStorage", rel)
+		}
+	}
+	if !sawFrontend {
+		t.Fatal("generated tree has no frontend/ source files")
+	}
+	session := string(files["frontend/src/auth/session.ts"])
+	if session == "" {
+		t.Fatal("missing frontend/src/auth/session.ts")
+	}
+	if !strings.Contains(session, "isAuthenticated") || !strings.Contains(session, "getCSRFToken") {
+		t.Error("session.ts missing cookie-mode session/CSRF helpers")
+	}
+	if strings.Contains(session, "getAccessToken") {
+		t.Error("cookie-mode session.ts must not expose getAccessToken")
+	}
+	login := string(files["frontend/src/pages/LoginPage.tsx"])
+	if login == "" {
+		t.Fatal("missing frontend/src/pages/LoginPage.tsx")
+	}
+	if !strings.Contains(login, "bootstrapCSRF") {
+		t.Error("cookie-mode LoginPage.tsx missing bootstrapCSRF call")
+	}
+	client := string(files["frontend/src/api/client.ts"])
+	if client == "" {
+		t.Fatal("missing frontend/src/api/client.ts")
+	}
+	if !strings.Contains(client, "X-CSRF-Token") {
+		t.Error("cookie-mode client.ts missing X-CSRF-Token double-submit")
+	}
+}
+
 func moduleRoot(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)

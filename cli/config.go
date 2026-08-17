@@ -38,8 +38,8 @@ key=value lines. Database DSN userinfo/passwords, the Redis password, and
 the JWT secret are replaced with ***** and never printed.
 
 Appendix C rejects a production JWT secret shorter than 32 characters,
-and the generated-app development placeholder, at config.Load / gombit
-doctor. Cookie and CORS fields land with M5-3.`,
+the generated-app development placeholder, and a cookie-mode auth
+without CookieSecure=true, at config.Load / gombit doctor.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := LoadConfig()
@@ -82,6 +82,9 @@ func writeConfigShow(w io.Writer, cfg config.Config) error {
 		{"Auth.AccessTokenTTL", cfg.Auth.AccessTokenTTL.String()},
 		{"Auth.RefreshTokenTTL", cfg.Auth.RefreshTokenTTL.String()},
 		{"Auth.BcryptCost", strconv.Itoa(cfg.Auth.BcryptCost)},
+		{"Auth.Mode", string(cfg.Auth.EffectiveMode())},
+		{"Auth.CookieSecure", strconv.FormatBool(cfg.Auth.CookieSecure)},
+		{"Auth.CookieSameSite", string(cfg.Auth.EffectiveCookieSameSite())},
 	}
 
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)
