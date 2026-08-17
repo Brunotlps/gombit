@@ -37,6 +37,39 @@ var skipSnapshotDirs = map[string]struct{}{
 
 type fileMap map[string][]byte
 
+func assertFrontendInvariants(t *testing.T, files fileMap) {
+	t.Helper()
+	var sawFrontend bool
+	for rel, data := range files {
+		if !strings.HasPrefix(rel, "frontend/") {
+			continue
+		}
+		ext := strings.ToLower(filepath.Ext(rel))
+		switch ext {
+		case ".ts", ".tsx", ".js", ".jsx", ".json", ".html", ".mjs":
+		default:
+			continue
+		}
+		sawFrontend = true
+		lower := strings.ToLower(string(data))
+		if strings.Contains(lower, "localstorage") || strings.Contains(lower, "sessionstorage") {
+			t.Errorf("%s contains localStorage/sessionStorage", rel)
+		}
+	}
+	if !sawFrontend {
+		t.Fatal("generated tree has no frontend/ source files")
+	}
+	formErrors := string(files["frontend/src/api/formErrors.ts"])
+	if formErrors == "" {
+		t.Fatal("missing frontend/src/api/formErrors.ts")
+	}
+	for _, want := range []string{"setError", "fields", "ContractError", "isD10ErrorBody"} {
+		if !strings.Contains(formErrors, want) {
+			t.Errorf("formErrors.ts missing %q", want)
+		}
+	}
+}
+
 func moduleRoot(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)

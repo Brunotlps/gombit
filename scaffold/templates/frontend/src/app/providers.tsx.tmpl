@@ -1,0 +1,8 @@
+import { useMemo, type ReactNode } from "react";
+
+import { ApiClientProvider, createAppClient } from "../api/client";
+
+export function AppProviders({ children }: { children: ReactNode }) {
+  const client = useMemo(() => createAppClient(), []);
+  return <ApiClientProvider client={client}>{children}</ApiClientProvider>;
+}

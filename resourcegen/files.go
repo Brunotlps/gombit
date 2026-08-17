@@ -65,8 +65,8 @@ func renderFeatureFiles(ctx renderContext) ([]fileSpec, error) {
 	}
 
 	files = append(files,
-		fileSpec{relPath: fmt.Sprintf("frontend/src/%s/list.ts", ctx.Resource.Package), content: []byte(renderListTS(ctx))},
-		fileSpec{relPath: fmt.Sprintf("frontend/src/%s/form.ts", ctx.Resource.Package), content: []byte(renderFormTS(ctx))},
+		fileSpec{relPath: fmt.Sprintf("frontend/src/%s/list.tsx", ctx.Resource.Package), content: []byte(renderListTSX(ctx))},
+		fileSpec{relPath: fmt.Sprintf("frontend/src/%s/form.tsx", ctx.Resource.Package), content: []byte(renderFormTSX(ctx))},
 	)
 	return files, nil
 }
@@ -297,173 +297,218 @@ func jsIdent(name string) string {
 	return strings.ReplaceAll(name, "-", "_")
 }
 
-func renderListTS(ctx renderContext) string {
+func renderListTSX(ctx renderContext) string {
+	listPath := ctx.APIPrefix + ctx.Resource.HTTPPath
 	labels := `["id"`
-	values := "[(row as { id?: unknown }).id"
 	for _, field := range ctx.Fields {
 		labels += `, "` + field.JSONName + `"`
-		values += ", (row as { " + field.JSONName + "?: unknown })." + field.JSONName
 	}
 	labels += "]"
-	values += "]"
 
 	var b strings.Builder
 	b.WriteString(tsBanner())
-	b.WriteString("\nimport type { paths } from \"../api/generated/schema\";\n\n")
-	b.WriteString("const apiBase = import.meta.env.VITE_API_URL || \"" + ctx.APIPrefix + "\";\n\n")
+	b.WriteString("\nimport { useEffect, useState } from \"react\";\n")
+	b.WriteString("import { Link } from \"react-router\";\n\n")
+	b.WriteString("import { useApiClient } from \"../api/client\";\n")
+	b.WriteString("import { unwrap } from \"../api/generated/client\";\n")
+	b.WriteString("import type { paths } from \"../api/generated/schema\";\n\n")
+	b.WriteString("const listPath = \"" + listPath + "\" as const;\n\n")
 	b.WriteString("type ListResponse =\n")
-	b.WriteString("  paths[\"" + ctx.APIPrefix + ctx.Resource.HTTPPath + "\"][\"get\"][\"responses\"][200][\"content\"][\"application/json\"];\n\n")
-	b.WriteString("/**\n * Vanilla list/table page. Types come from the generated OpenAPI client\n")
+	b.WriteString("  paths[typeof listPath][\"get\"][\"responses\"][200][\"content\"][\"application/json\"];\n")
+	b.WriteString("type ListRow = NonNullable<ListResponse[\"data\"]>[number];\n\n")
+	b.WriteString("/**\n * React list/table page. Types come from the generated OpenAPI client\n")
 	b.WriteString(" * (gombit client generate / gombit dev). Do not duplicate API DTOs here.\n */\n")
-	b.WriteString("export async function render" + ctx.Resource.TypeName + "List(root: HTMLElement): Promise<void> {\n")
-	b.WriteString("  root.replaceChildren();\n")
-	b.WriteString("  const heading = document.createElement(\"h1\");\n")
-	b.WriteString("  heading.textContent = \"" + ctx.Resource.Tag + "\";\n")
-	b.WriteString("  root.append(heading);\n\n")
-	b.WriteString("  const nav = document.createElement(\"p\");\n")
-	b.WriteString("  const home = document.createElement(\"a\");\n")
-	b.WriteString("  home.href = \"?\";\n")
-	b.WriteString("  home.textContent = \"All resources\";\n")
-	b.WriteString("  const create = document.createElement(\"a\");\n")
-	b.WriteString("  create.href = \"?resource=" + ctx.Resource.Package + "&view=new\";\n")
-	b.WriteString("  create.textContent = \"New " + ctx.Resource.TypeName + "\";\n")
-	b.WriteString("  nav.append(home, document.createTextNode(\" · \"), create);\n")
-	b.WriteString("  root.append(nav);\n\n")
-	b.WriteString("  const table = document.createElement(\"table\");\n")
-	b.WriteString("  const thead = document.createElement(\"thead\");\n")
-	b.WriteString("  const headerRow = document.createElement(\"tr\");\n")
-	b.WriteString("  for (const label of " + labels + ") {\n")
-	b.WriteString("    const th = document.createElement(\"th\");\n")
-	b.WriteString("    th.textContent = label;\n")
-	b.WriteString("    headerRow.append(th);\n")
-	b.WriteString("  }\n")
-	b.WriteString("  thead.append(headerRow);\n")
-	b.WriteString("  table.append(thead);\n")
-	b.WriteString("  const tbody = document.createElement(\"tbody\");\n")
-	b.WriteString("  table.append(tbody);\n")
-	b.WriteString("  root.append(table);\n\n")
-	b.WriteString("  const status = document.createElement(\"p\");\n")
-	b.WriteString("  root.append(status);\n\n")
-	b.WriteString("  try {\n")
-	b.WriteString("    const response = await fetch(`${apiBase}" + ctx.Resource.HTTPPath + "`);\n")
-	b.WriteString("    const body = (await response.json()) as ListResponse;\n")
-	b.WriteString("    const rows = Array.isArray(body.data) ? body.data : [];\n")
-	b.WriteString("    if (rows.length === 0) {\n")
-	b.WriteString("      status.textContent = \"No " + ctx.Resource.Kebab + " yet.\";\n")
-	b.WriteString("      return;\n")
-	b.WriteString("    }\n")
-	b.WriteString("    for (const row of rows) {\n")
-	b.WriteString("      const tr = document.createElement(\"tr\");\n")
-	b.WriteString("      const values: unknown[] = " + values + ";\n")
-	b.WriteString("      for (const value of values) {\n")
-	b.WriteString("        const td = document.createElement(\"td\");\n")
-	b.WriteString("        td.textContent = value == null ? \"\" : String(value);\n")
-	b.WriteString("        tr.append(td);\n")
+	b.WriteString("export function " + ctx.Resource.TypeName + "ListPage() {\n")
+	b.WriteString("  const client = useApiClient();\n")
+	b.WriteString("  const [rows, setRows] = useState<ListRow[]>([]);\n")
+	b.WriteString("  const [status, setStatus] = useState(\"Loading…\");\n\n")
+	b.WriteString("  useEffect(() => {\n")
+	b.WriteString("    let cancelled = false;\n")
+	b.WriteString("    void (async () => {\n")
+	b.WriteString("      try {\n")
+	b.WriteString("        const listed = await unwrap(await client.GET(listPath));\n")
+	b.WriteString("        if (cancelled) {\n")
+	b.WriteString("          return;\n")
+	b.WriteString("        }\n")
+	b.WriteString("        const data = Array.isArray(listed.data) ? listed.data : [];\n")
+	b.WriteString("        setRows(data);\n")
+	b.WriteString("        setStatus(data.length === 0 ? \"No " + ctx.Resource.Kebab + " yet.\" : \"\");\n")
+	b.WriteString("      } catch (err: unknown) {\n")
+	b.WriteString("        if (cancelled) {\n")
+	b.WriteString("          return;\n")
+	b.WriteString("        }\n")
+	b.WriteString("        setStatus(err instanceof Error ? err.message : \"request failed\");\n")
 	b.WriteString("      }\n")
-	b.WriteString("      tbody.append(tr);\n")
-	b.WriteString("    }\n")
-	b.WriteString("  } catch (err: unknown) {\n")
-	b.WriteString("    const message = err instanceof Error ? err.message : \"request failed\";\n")
-	b.WriteString("    status.textContent = message;\n")
-	b.WriteString("  }\n")
+	b.WriteString("    })();\n")
+	b.WriteString("    return () => {\n")
+	b.WriteString("      cancelled = true;\n")
+	b.WriteString("    };\n")
+	b.WriteString("  }, [client]);\n\n")
+	b.WriteString("  return (\n")
+	b.WriteString("    <section>\n")
+	b.WriteString("      <h1>" + ctx.Resource.Tag + "</h1>\n")
+	b.WriteString("      <p>\n")
+	b.WriteString("        <Link to=\"/\">Products</Link>\n")
+	b.WriteString("        {\" · \"}\n")
+	b.WriteString("        <Link to=\"/" + ctx.Resource.Kebab + "/new\">New " + ctx.Resource.TypeName + "</Link>\n")
+	b.WriteString("      </p>\n")
+	b.WriteString("      <table>\n")
+	b.WriteString("        <thead>\n")
+	b.WriteString("          <tr>\n")
+	b.WriteString("            {" + labels + ".map((label) => (\n")
+	b.WriteString("              <th key={label}>{label}</th>\n")
+	b.WriteString("            ))}\n")
+	b.WriteString("          </tr>\n")
+	b.WriteString("        </thead>\n")
+	b.WriteString("        <tbody>\n")
+	b.WriteString("          {rows.map((row, index) => {\n")
+	b.WriteString("            const record = row as { id?: unknown")
+	for _, field := range ctx.Fields {
+		b.WriteString("; " + field.JSONName + "?: unknown")
+	}
+	b.WriteString(" };\n")
+	b.WriteString("            const values: unknown[] = [record.id")
+	for _, field := range ctx.Fields {
+		b.WriteString(", record." + field.JSONName)
+	}
+	b.WriteString("];\n")
+	b.WriteString("            const key = record.id == null ? String(index) : String(record.id);\n")
+	b.WriteString("            return (\n")
+	b.WriteString("              <tr key={key}>\n")
+	b.WriteString("                {values.map((value, cell) => (\n")
+	b.WriteString("                  <td key={cell}>{value == null ? \"\" : String(value)}</td>\n")
+	b.WriteString("                ))}\n")
+	b.WriteString("              </tr>\n")
+	b.WriteString("            );\n")
+	b.WriteString("          })}\n")
+	b.WriteString("        </tbody>\n")
+	b.WriteString("      </table>\n")
+	b.WriteString("      {status ? <p>{status}</p> : null}\n")
+	b.WriteString("    </section>\n")
+	b.WriteString("  );\n")
 	b.WriteString("}\n")
 	return b.String()
 }
 
-func renderFormTS(ctx renderContext) string {
+func renderFormTSX(ctx renderContext) string {
+	createPath := ctx.APIPrefix + ctx.Resource.HTTPPath
 	var b strings.Builder
 	b.WriteString(tsBanner())
-	b.WriteString("\nimport type { paths } from \"../api/generated/schema\";\n\n")
-	b.WriteString("const apiBase = import.meta.env.VITE_API_URL || \"" + ctx.APIPrefix + "\";\n\n")
+	b.WriteString("\nimport { useState } from \"react\";\n")
+	b.WriteString("import { useForm } from \"react-hook-form\";\n")
+	b.WriteString("import { Link, useNavigate } from \"react-router\";\n\n")
+	b.WriteString("import { useApiClient } from \"../api/client\";\n")
+	b.WriteString("import { applyContractErrors } from \"../api/formErrors\";\n")
+	b.WriteString("import { unwrap } from \"../api/generated/client\";\n")
+	b.WriteString("import type { paths } from \"../api/generated/schema\";\n\n")
+	b.WriteString("const createPath = \"" + createPath + "\" as const;\n\n")
 	b.WriteString("type CreateBody =\n")
-	b.WriteString("  paths[\"" + ctx.APIPrefix + ctx.Resource.HTTPPath + "\"][\"post\"][\"requestBody\"][\"content\"][\"application/json\"];\n\n")
-	b.WriteString("/**\n * Vanilla create form. Request/response types come from the generated\n")
-	b.WriteString(" * OpenAPI client. Run gombit client generate or gombit dev after adding\n")
-	b.WriteString(" * routes so frontend/src/api/generated exists.\n */\n")
-	b.WriteString("export function render" + ctx.Resource.TypeName + "Form(root: HTMLElement): void {\n")
-	b.WriteString("  root.replaceChildren();\n")
-	b.WriteString("  const heading = document.createElement(\"h1\");\n")
-	b.WriteString("  heading.textContent = \"New " + ctx.Resource.TypeName + "\";\n")
-	b.WriteString("  root.append(heading);\n\n")
-	b.WriteString("  const back = document.createElement(\"p\");\n")
-	b.WriteString("  const link = document.createElement(\"a\");\n")
-	b.WriteString("  link.href = \"?resource=" + ctx.Resource.Package + "\";\n")
-	b.WriteString("  link.textContent = \"Back to list\";\n")
-	b.WriteString("  back.append(link);\n")
-	b.WriteString("  root.append(back);\n\n")
-	b.WriteString("  const form = document.createElement(\"form\");\n")
-
+	b.WriteString("  paths[typeof createPath][\"post\"][\"requestBody\"][\"content\"][\"application/json\"];\n\n")
+	b.WriteString("type FormValues = {\n")
 	for _, field := range ctx.Fields {
-		ident := jsIdent(field.JSONName)
-		elem := "input"
-		if field.Type == FieldText {
-			elem = "textarea"
-		}
-		b.WriteString("  const " + ident + "Label = document.createElement(\"label\");\n")
-		b.WriteString("  " + ident + "Label.textContent = \"" + field.GoName + "\";\n")
-		b.WriteString("  const " + ident + "Input = document.createElement(\"" + elem + "\");\n")
-		if field.Type != FieldText {
-			b.WriteString("  " + ident + "Input.setAttribute(\"type\", \"" + field.inputKind() + "\");\n")
-		}
-		b.WriteString("  " + ident + "Input.setAttribute(\"name\", \"" + field.JSONName + "\");\n")
-		if field.Required {
-			b.WriteString("  " + ident + "Input.setAttribute(\"required\", \"true\");\n")
-		}
-		b.WriteString("  " + ident + "Label.append(" + ident + "Input);\n")
-		b.WriteString("  form.append(" + ident + "Label);\n")
+		b.WriteString("  " + field.JSONName + ": " + tsFormType(field) + ";\n")
 	}
-
-	b.WriteString("  const submit = document.createElement(\"button\");\n")
-	b.WriteString("  submit.type = \"submit\";\n")
-	b.WriteString("  submit.textContent = \"Create\";\n")
-	b.WriteString("  form.append(submit);\n")
-	b.WriteString("  const status = document.createElement(\"p\");\n")
-	b.WriteString("  root.append(form, status);\n\n")
-	b.WriteString("  form.addEventListener(\"submit\", (event) => {\n")
-	b.WriteString("    event.preventDefault();\n")
-	b.WriteString("    const payload = {")
+	b.WriteString("};\n\n")
+	b.WriteString("/**\n * React Hook Form create page. Request/response types come from the\n")
+	b.WriteString(" * generated OpenAPI client. D10 error.fields map through applyContractErrors.\n")
+	b.WriteString(" * Run gombit client generate or gombit dev after adding routes.\n */\n")
+	b.WriteString("export function " + ctx.Resource.TypeName + "FormPage() {\n")
+	b.WriteString("  const client = useApiClient();\n")
+	b.WriteString("  const navigate = useNavigate();\n")
+	b.WriteString("  const [status, setStatus] = useState(\"\");\n")
+	b.WriteString("  const {\n")
+	b.WriteString("    register,\n")
+	b.WriteString("    handleSubmit,\n")
+	b.WriteString("    setError,\n")
+	b.WriteString("    formState: { errors, isSubmitting },\n")
+	b.WriteString("  } = useForm<FormValues>({\n")
+	b.WriteString("    defaultValues: {")
 	for i, field := range ctx.Fields {
 		if i > 0 {
 			b.WriteString(",")
 		}
-		b.WriteString(" " + field.JSONName + ": read" + field.GoName + "()")
+		b.WriteString(" " + field.JSONName + ": " + tsDefaultValue(field))
 	}
-	b.WriteString(" } as CreateBody;\n")
-	b.WriteString("    void fetch(`${apiBase}" + ctx.Resource.HTTPPath + "`, {\n")
-	b.WriteString("      method: \"POST\",\n")
-	b.WriteString("      headers: { \"Content-Type\": \"application/json\" },\n")
-	b.WriteString("      body: JSON.stringify(payload),\n")
-	b.WriteString("    })\n")
-	b.WriteString("      .then(async (response) => {\n")
-	b.WriteString("        if (!response.ok) {\n")
-	b.WriteString("          status.textContent = `create failed (${response.status})`;\n")
-	b.WriteString("          return;\n")
-	b.WriteString("        }\n")
-	b.WriteString("        window.location.search = \"?resource=" + ctx.Resource.Package + "\";\n")
-	b.WriteString("      })\n")
-	b.WriteString("      .catch((err: unknown) => {\n")
-	b.WriteString("        status.textContent = err instanceof Error ? err.message : \"request failed\";\n")
-	b.WriteString("      });\n")
-	b.WriteString("  });\n")
-
+	b.WriteString(" },\n")
+	b.WriteString("  });\n\n")
+	b.WriteString("  async function onSubmit(values: FormValues) {\n")
+	b.WriteString("    setStatus(\"\");\n")
+	b.WriteString("    try {\n")
+	b.WriteString("      await unwrap(await client.POST(createPath, { body: values as CreateBody }));\n")
+	b.WriteString("      navigate(\"/" + ctx.Resource.Kebab + "\");\n")
+	b.WriteString("    } catch (err: unknown) {\n")
+	b.WriteString("      if (!applyContractErrors(setError, err)) {\n")
+	b.WriteString("        setStatus(err instanceof Error ? err.message : \"request failed\");\n")
+	b.WriteString("      }\n")
+	b.WriteString("    }\n")
+	b.WriteString("  }\n\n")
+	b.WriteString("  return (\n")
+	b.WriteString("    <section>\n")
+	b.WriteString("      <h1>New " + ctx.Resource.TypeName + "</h1>\n")
+	b.WriteString("      <p>\n")
+	b.WriteString("        <Link to=\"/" + ctx.Resource.Kebab + "\">Back to list</Link>\n")
+	b.WriteString("      </p>\n")
+	b.WriteString("      <form onSubmit={handleSubmit(onSubmit)}>\n")
 	for _, field := range ctx.Fields {
-		ident := jsIdent(field.JSONName)
-		tsType := "string"
-		readExpr := "(" + ident + "Input as HTMLInputElement).value"
-		switch field.Type {
-		case FieldBool:
-			tsType = "boolean"
-			readExpr = "(" + ident + "Input as HTMLInputElement).checked"
-		case FieldInt, FieldInt64, FieldUint:
-			tsType = "number"
-			readExpr = "Number((" + ident + "Input as HTMLInputElement).value)"
-		case FieldText:
-			readExpr = "(" + ident + "Input as HTMLTextAreaElement).value"
-		}
-		b.WriteString("  function read" + field.GoName + "(): " + tsType + " {\n")
-		b.WriteString("    return " + readExpr + ";\n")
-		b.WriteString("  }\n")
+		b.WriteString(renderFormField(field))
 	}
+	b.WriteString("        <button type=\"submit\" disabled={isSubmitting}>\n")
+	b.WriteString("          Create\n")
+	b.WriteString("        </button>\n")
+	b.WriteString("      </form>\n")
+	b.WriteString("      {status ? <p>{status}</p> : null}\n")
+	b.WriteString("    </section>\n")
+	b.WriteString("  );\n")
 	b.WriteString("}\n")
+	return b.String()
+}
+
+func tsFormType(field Field) string {
+	switch field.Type {
+	case FieldBool:
+		return "boolean"
+	case FieldInt, FieldInt64, FieldUint:
+		return "number"
+	default:
+		return "string"
+	}
+}
+
+func tsDefaultValue(field Field) string {
+	switch field.Type {
+	case FieldBool:
+		return "false"
+	case FieldInt, FieldInt64, FieldUint:
+		return "0"
+	default:
+		return `""`
+	}
+}
+
+func renderFormField(field Field) string {
+	ident := jsIdent(field.JSONName)
+	var b strings.Builder
+	b.WriteString("        <label>\n")
+	b.WriteString("          " + field.GoName + "\n")
+	switch field.Type {
+	case FieldText:
+		b.WriteString("          <textarea {...register(\"" + field.JSONName + "\"")
+		if field.Required {
+			b.WriteString(", { required: true }")
+		}
+		b.WriteString(")} />\n")
+	case FieldBool:
+		b.WriteString("          <input type=\"checkbox\" {...register(\"" + field.JSONName + "\")} />\n")
+	case FieldInt, FieldInt64, FieldUint:
+		b.WriteString("          <input type=\"number\" {...register(\"" + field.JSONName + "\", { valueAsNumber: true })} />\n")
+	default:
+		b.WriteString("          <input type=\"text\" {...register(\"" + field.JSONName + "\"")
+		if field.Required {
+			b.WriteString(", { required: true }")
+		}
+		b.WriteString(")} />\n")
+	}
+	b.WriteString("        </label>\n")
+	b.WriteString("        {errors." + ident + "?.message ? <p>{errors." + ident + ".message}</p> : null}\n")
 	return b.String()
 }

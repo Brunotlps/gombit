@@ -93,12 +93,23 @@ func TestGenerateBookFeaturePackage(t *testing.T) {
 		t.Fatal("default generate wrote repo.go")
 	}
 
-	listTS := readFile(t, filepath.Join(appDir, "frontend", "src", "book", "list.ts"))
+	listTS := readFile(t, filepath.Join(appDir, "frontend", "src", "book", "list.tsx"))
 	if !strings.Contains(listTS, `from "../api/generated/schema"`) {
-		t.Fatal("list.ts does not import generated OpenAPI types")
+		t.Fatal("list.tsx does not import generated OpenAPI types")
+	}
+	if !strings.Contains(listTS, `from "../api/generated/client"`) {
+		t.Fatal("list.tsx does not import the generated client")
 	}
 	if strings.Contains(strings.ToLower(listTS), "localstorage") {
-		t.Fatal("list.ts uses localStorage")
+		t.Fatal("list.tsx uses localStorage")
+	}
+	formTS := readFile(t, filepath.Join(appDir, "frontend", "src", "book", "form.tsx"))
+	if !strings.Contains(formTS, "applyContractErrors") || !strings.Contains(formTS, "setError") {
+		t.Fatal("form.tsx does not map D10 field errors through applyContractErrors")
+	}
+	resources := readFile(t, filepath.Join(appDir, "frontend", "src", "resources.tsx"))
+	if !strings.Contains(resources, "generatedResourceRoutes") || !strings.Contains(resources, "BookListPage") {
+		t.Fatal("resources.tsx missing React Router registry for Book")
 	}
 
 	// Idempotent re-run does not duplicate Register.

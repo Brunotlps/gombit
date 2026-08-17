@@ -38,8 +38,8 @@ func newMakeResourceCommand(stdout io.Writer, stderr io.Writer) *cobra.Command {
 		Use:   "resource <Name> [field:type[:modifiers]...]",
 		Short: "Generate a feature-package resource (AST-safe)",
 		Long: `Generate a feature-package under internal/<name>/ with a GORM model,
-thin Huma handler (list/get/create), routes, and vanilla TypeScript
-list/table + create form pages.
+thin Huma handler (list/get/create), routes, and React list/table +
+React Hook Form create pages.
 
 Route registration is appended in cmd/server/main.go via go/ast (never
 regex), next to product.Register(app). AutoMigrate is updated the same way.
@@ -60,11 +60,12 @@ Examples:
 handler over GORM. --dry-run prints the file list without writing.
 Re-running refuses to clobber user edits unless --force is set.
 
-Frontend pages import types from frontend/src/api/generated. Run
-gombit client generate or gombit dev after the API is up so those types
-exist. Atlas SQL is generated when the atlas binary is on PATH, using every
-AutoMigrate model in internal/platform (not only the new resource).
-Otherwise the GORM model is still loader-ready for gombit db makemigrations.`,
+Frontend pages import types from frontend/src/api/generated and map D10
+error.fields into React Hook Form. Run gombit client generate or gombit
+dev after the API is up so those types exist. Atlas SQL is generated when
+the atlas binary is on PATH, using every AutoMigrate model in
+internal/platform (not only the new resource). Otherwise the GORM model is
+still loader-ready for gombit db makemigrations.`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			err := resourcegen.Generate(cmd.Context(), resourcegen.Options{

@@ -17,7 +17,7 @@ const (
 	defaultAPIPrefix = "/api/v1"
 	serverMainRel    = "cmd/server/main.go"
 	platformDBRel    = "internal/platform/database.go"
-	resourcesTSRel   = "frontend/src/resources.ts"
+	resourcesTSRel   = "frontend/src/resources.tsx"
 )
 
 // Options configures resource generation inside an existing application.

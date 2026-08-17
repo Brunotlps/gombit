@@ -247,8 +247,7 @@ func collectFrontendResources(workDir string, current ResourceName) []ResourceNa
 		if _, ok := seen[entry.Name()]; ok {
 			continue
 		}
-		listPath := filepath.Join(dir, entry.Name(), "list.ts")
-		if _, err := os.Stat(listPath); err != nil {
+		if !hasGeneratedListPage(dir, entry.Name()) {
 			continue
 		}
 		parsed, err := parseResourceName(entry.Name())
@@ -264,78 +263,55 @@ func collectFrontendResources(workDir string, current ResourceName) []ResourceNa
 	return result
 }
 
+func hasGeneratedListPage(srcDir, pkg string) bool {
+	for _, name := range []string{"list.tsx", "list.ts"} {
+		if _, err := os.Stat(filepath.Join(srcDir, pkg, name)); err == nil {
+			return true
+		}
+	}
+	return false
+}
+
 func renderResourcesTS(resources []ResourceName, apiPrefix string) []byte {
 	var b strings.Builder
 	b.WriteString(tsBanner())
 	b.WriteString("\n")
-	b.WriteString("// Vanilla list/table + create form pages. Types are imported from\n")
-	b.WriteString("// ./api/generated (gombit client generate / gombit dev). Full React\n")
-	b.WriteString("// Router + React Hook Form is M5-1. API prefix: " + apiPrefix + "\n")
-	b.WriteString("// Access tokens stay in memory; this file does not use localStorage.\n\n")
+	b.WriteString("// React list + create-form pages. Types come from ./api/generated\n")
+	b.WriteString("// (gombit client generate / gombit dev). API prefix: " + apiPrefix + "\n")
+	b.WriteString("// Access tokens stay in memory; this file does not use web storage.\n\n")
+	b.WriteString("import type { RouteObject } from \"react-router\";\n\n")
 	for _, res := range resources {
-		b.WriteString("import { render")
+		b.WriteString("import { ")
 		b.WriteString(res.TypeName)
-		b.WriteString("List } from \"./")
+		b.WriteString("ListPage } from \"./")
 		b.WriteString(res.Package)
 		b.WriteString("/list\";\n")
-		b.WriteString("import { render")
+		b.WriteString("import { ")
 		b.WriteString(res.TypeName)
-		b.WriteString("Form } from \"./")
+		b.WriteString("FormPage } from \"./")
 		b.WriteString(res.Package)
 		b.WriteString("/form\";\n")
 	}
 	b.WriteString("\nexport type GeneratedResource = {\n")
 	b.WriteString("  slug: string;\n  title: string;\n")
-	b.WriteString("  mountList: (root: HTMLElement) => Promise<void> | void;\n")
-	b.WriteString("  mountForm: (root: HTMLElement) => Promise<void> | void;\n")
+	b.WriteString("  listPath: string;\n  createPath: string;\n")
 	b.WriteString("};\n\n")
 	b.WriteString("export const generatedResources: GeneratedResource[] = [\n")
 	for _, res := range resources {
 		b.WriteString("  {\n")
 		b.WriteString("    slug: \"" + res.Package + "\",\n")
 		b.WriteString("    title: \"" + res.TypeName + "\",\n")
-		b.WriteString("    mountList: render" + res.TypeName + "List,\n")
-		b.WriteString("    mountForm: render" + res.TypeName + "Form,\n")
+		b.WriteString("    listPath: \"/" + res.Kebab + "\",\n")
+		b.WriteString("    createPath: \"/" + res.Kebab + "/new\",\n")
 		b.WriteString("  },\n")
 	}
 	b.WriteString("];\n\n")
-	b.WriteString("export function mountIfResource(root: HTMLElement): boolean {\n")
-	b.WriteString("  const params = new URLSearchParams(window.location.search);\n")
-	b.WriteString("  const slug = params.get(\"resource\");\n")
-	b.WriteString("  if (!slug) {\n")
-	b.WriteString("    if (generatedResources.length === 0) {\n")
-	b.WriteString("      return false;\n")
-	b.WriteString("    }\n")
-	b.WriteString("    renderResourceIndex(root);\n")
-	b.WriteString("    return true;\n")
-	b.WriteString("  }\n")
-	b.WriteString("  const resource = generatedResources.find((item) => item.slug === slug);\n")
-	b.WriteString("  if (!resource) {\n")
-	b.WriteString("    return false;\n")
-	b.WriteString("  }\n")
-	b.WriteString("  if (params.get(\"view\") === \"new\") {\n")
-	b.WriteString("    void resource.mountForm(root);\n")
-	b.WriteString("  } else {\n")
-	b.WriteString("    void resource.mountList(root);\n")
-	b.WriteString("  }\n")
-	b.WriteString("  return true;\n")
-	b.WriteString("}\n\n")
-	b.WriteString("function renderResourceIndex(root: HTMLElement): void {\n")
-	b.WriteString("  root.replaceChildren();\n")
-	b.WriteString("  const heading = document.createElement(\"h1\");\n")
-	b.WriteString("  heading.textContent = \"Resources\";\n")
-	b.WriteString("  root.append(heading);\n")
-	b.WriteString("  const list = document.createElement(\"ul\");\n")
-	b.WriteString("  for (const resource of generatedResources) {\n")
-	b.WriteString("    const item = document.createElement(\"li\");\n")
-	b.WriteString("    const link = document.createElement(\"a\");\n")
-	b.WriteString("    link.href = `?resource=${resource.slug}`;\n")
-	b.WriteString("    link.textContent = resource.title;\n")
-	b.WriteString("    item.append(link);\n")
-	b.WriteString("    list.append(item);\n")
-	b.WriteString("  }\n")
-	b.WriteString("  root.append(list);\n")
-	b.WriteString("}\n")
+	b.WriteString("export const generatedResourceRoutes: RouteObject[] = [\n")
+	for _, res := range resources {
+		b.WriteString("  { path: \"" + res.Kebab + "\", element: <" + res.TypeName + "ListPage /> },\n")
+		b.WriteString("  { path: \"" + res.Kebab + "/new\", element: <" + res.TypeName + "FormPage /> },\n")
+	}
+	b.WriteString("];\n")
 	return []byte(b.String())
 }
 

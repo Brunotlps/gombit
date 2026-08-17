@@ -24,6 +24,7 @@ func TestNewGolden(t *testing.T) {
 	got := snapshotTree(t, appDir)
 	assertNoReplace(t, got)
 	assertGoFormatted(t, got)
+	assertFrontendInvariants(t, got)
 	checkOrUpdateGolden(t, "new", got)
 
 	t.Run("compile", func(t *testing.T) {
@@ -71,6 +72,7 @@ func TestMakeResourceGolden(t *testing.T) {
 	got := snapshotTree(t, appDir)
 	assertNoReplace(t, got)
 	assertGoFormatted(t, got)
+	assertFrontendInvariants(t, got)
 	checkOrUpdateGolden(t, "make-resource", got)
 
 	mainSrc := got["cmd/server/main.go"]
