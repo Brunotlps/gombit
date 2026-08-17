@@ -349,7 +349,7 @@ func TestRunClientGenerateDryRun(t *testing.T) {
 	}
 }
 
-func TestRunClientCheckDetectsHandlerDrift(t *testing.T) {
+func TestRunClientCheckDetectsStaleSpec(t *testing.T) {
 	requireNodeCLI(t)
 
 	root := cmdModuleRoot(t)

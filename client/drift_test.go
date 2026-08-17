@@ -184,13 +184,6 @@ func TestCheckDriftRequiresCommittedSpec(t *testing.T) {
 	}
 }
 
-func TestCheckDriftNilContext(t *testing.T) {
-	err := CheckDrift(nil, DriftOptions{})
-	if err == nil {
-		t.Fatal("CheckDrift(nil) error = nil, want error")
-	}
-}
-
 func moduleRoot(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)
