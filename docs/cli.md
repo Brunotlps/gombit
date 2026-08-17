@@ -214,13 +214,16 @@ of `required`.
 Generators print created/modified files. `--dry-run` writes nothing.
 Identical re-runs are no-ops. A user-owned file (no generated banner) or a
 generated file that differs from this run is refused unless `--force`.
+`frontend/src/resources.ts` is the exception: it is always rewritten as a
+scanned registry of generated feature pages (banner present), so edits to
+that file are not preserved.
 
 ### Migrations
 
 Gombit does not invent a migration DSL. The generated GORM model is
 Atlas-loader ready. If the `atlas` binary is on `PATH`, `make resource`
-attempts `migrations.MakeMigrations`. If Atlas is missing (or the loader
-cannot run yet), SQL is skipped and the command prints:
+attempts `migrations.MakeMigrations` and returns any Atlas/loader error.
+If Atlas is missing from `PATH`, SQL is skipped and the command prints:
 
 ```sh
 gombit db makemigrations create_books --model github.com/example/demo/internal/book.Book

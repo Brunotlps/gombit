@@ -52,6 +52,51 @@ func AutoMigrate(db *database.DB) error {
 }
 `
 
+const fixtureMainIfRunOnly = `package main
+
+import (
+	"log"
+
+	"github.com/LAA-Software-Engineering/gombit/config"
+	"github.com/LAA-Software-Engineering/gombit/framework"
+)
+
+func main() {
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatal(err)
+	}
+	app, err := framework.New(framework.WithConfig(cfg))
+	if err != nil {
+		log.Fatal(err)
+	}
+	if err := framework.Run(app); err != nil {
+		log.Fatal(err)
+	}
+}
+`
+
+const fixtureMainNestedIfRun = `package main
+
+import (
+	"log"
+
+	"github.com/LAA-Software-Engineering/gombit/framework"
+)
+
+func main() {
+	app, err := framework.New()
+	if err != nil {
+		log.Fatal(err)
+	}
+	if app != nil {
+		if err := framework.Run(app); err != nil {
+			log.Fatal(err)
+		}
+	}
+}
+`
+
 func TestAddImportAndRegisterIdempotent(t *testing.T) {
 	t.Parallel()
 
@@ -83,6 +128,53 @@ func TestAddImportAndRegisterIdempotent(t *testing.T) {
 	}
 	if count != 1 {
 		t.Fatalf("second run duplicated Register: count = %d\n%s", count, twice)
+	}
+}
+
+func TestAddImportAndRegisterBeforeIfInitRun(t *testing.T) {
+	t.Parallel()
+
+	once, err := AddImportAndRegister([]byte(fixtureMainIfRunOnly), "github.com/example/demo/internal/book", "book")
+	if err != nil {
+		t.Fatalf("AddImportAndRegister() error = %v", err)
+	}
+	if countMust(t, once, "book") != 1 {
+		t.Fatalf("book.Register count = %d, want 1\n%s", countMust(t, once, "book"), once)
+	}
+	src := string(once)
+	if !strings.Contains(src, "github.com/example/demo/internal/book") {
+		t.Fatalf("missing import:\n%s", src)
+	}
+	registerIdx := strings.Index(src, "book.Register(app)")
+	runIdx := strings.Index(src, "framework.Run(app)")
+	if registerIdx < 0 || runIdx < 0 || registerIdx > runIdx {
+		t.Fatalf("Register should appear before framework.Run:\n%s", src)
+	}
+
+	twice, err := AddImportAndRegister(once, "github.com/example/demo/internal/book", "book")
+	if err != nil {
+		t.Fatalf("second AddImportAndRegister() error = %v", err)
+	}
+	if countMust(t, twice, "book") != 1 {
+		t.Fatalf("second run duplicated Register: count = %d\n%s", countMust(t, twice, "book"), twice)
+	}
+}
+
+func TestAddImportAndRegisterNestedIfInitRun(t *testing.T) {
+	t.Parallel()
+
+	got, err := AddImportAndRegister([]byte(fixtureMainNestedIfRun), "github.com/example/demo/internal/book", "book")
+	if err != nil {
+		t.Fatalf("AddImportAndRegister() error = %v", err)
+	}
+	if countMust(t, got, "book") != 1 {
+		t.Fatalf("book.Register count = %d, want 1\n%s", countMust(t, got, "book"), got)
+	}
+	src := string(got)
+	registerIdx := strings.Index(src, "book.Register(app)")
+	runIdx := strings.Index(src, "framework.Run(app)")
+	if registerIdx < 0 || runIdx < 0 || registerIdx > runIdx {
+		t.Fatalf("Register should appear before nested framework.Run:\n%s", src)
 	}
 }
 

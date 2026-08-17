@@ -110,11 +110,7 @@ func Generate(ctx context.Context, opts Options) error {
 		if err := os.MkdirAll(filepath.Dir(full), 0o750); err != nil {
 			return fmt.Errorf("resourcegen: mkdir %s: %w", filepath.Dir(full), err)
 		}
-		mode := os.FileMode(0o600)
-		if strings.HasSuffix(item.relPath, ".ts") {
-			mode = 0o644
-		}
-		if err := os.WriteFile(full, item.content, mode); err != nil { //nolint:gosec // generated TS is a non-secret artifact
+		if err := os.WriteFile(full, item.content, 0o644); err != nil { //nolint:gosec // generated source is a non-secret artifact
 			return fmt.Errorf("resourcegen: write %s: %w", item.display, err)
 		}
 	}
@@ -348,7 +344,7 @@ func maybeMakeMigrations(ctx context.Context, opts Options, spec renderContext) 
 	}
 
 	driver := readDatabaseDriver(opts.WorkDir)
-	err := migrations.MakeMigrations(ctx, migrations.Options{
+	err := makeMigrations(ctx, migrations.Options{
 		WorkDir:      opts.WorkDir,
 		Name:         "create_" + spec.Resource.PluralSnake,
 		Driver:       driver,
@@ -361,7 +357,7 @@ func maybeMakeMigrations(ctx context.Context, opts Options, spec renderContext) 
 		Stderr: opts.Stderr,
 	})
 	if err != nil {
-		return printMakemigrationsHint(opts, spec, err.Error())
+		return fmt.Errorf("resourcegen: makemigrations: %w", err)
 	}
 	return nil
 }
@@ -414,3 +410,5 @@ func displayPath(workDir, full string) (string, error) {
 var lookPath = func(name string) (string, error) {
 	return execLookPath(name)
 }
+
+var makeMigrations = migrations.MakeMigrations

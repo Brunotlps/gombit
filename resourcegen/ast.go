@@ -13,9 +13,10 @@ import (
 
 // AddImportAndRegister adds `importPath` and `<pkg>.Register(app)` next to an
 // existing `*.Register(app)` call (the scaffold's product.Register) or, if
-// none exists, immediately before `framework.Run(app)`. The edit is
-// idempotent: a second call does not duplicate the import or the Register
-// invocation.
+// none exists, immediately before `framework.Run(app)` — including the
+// `if err := framework.Run(app); err != nil` form used by the app template.
+// The edit is idempotent: a second call does not duplicate the import or the
+// Register invocation.
 func AddImportAndRegister(src []byte, importPath, pkgName string) ([]byte, error) {
 	if strings.TrimSpace(importPath) == "" || !isGoIdent(pkgName) {
 		return nil, fmt.Errorf("resourcegen: invalid import %q package %q", importPath, pkgName)
@@ -114,31 +115,124 @@ func insertRegisterCall(file *ast.File, pkgName string) error {
 		if !ok || fn.Body == nil {
 			continue
 		}
-		insertAt := -1
-		afterRegister := -1
-		beforeRun := -1
-		for i, item := range fn.Body.List {
-			if isSelectorCallStmt(item, "", "Register") {
-				afterRegister = i + 1
-			}
-			if isSelectorCallStmt(item, "framework", "Run") {
-				beforeRun = i
-			}
+		if insertIntoBlock(fn.Body, stmt) {
+			return nil
 		}
-		switch {
-		case afterRegister >= 0:
-			insertAt = afterRegister
-		case beforeRun >= 0:
-			insertAt = beforeRun
-		}
-		if insertAt < 0 {
-			continue
-		}
-		list := fn.Body.List
-		fn.Body.List = append(list[:insertAt:insertAt], append([]ast.Stmt{stmt}, list[insertAt:]...)...)
-		return nil
 	}
 	return fmt.Errorf("resourcegen: no product.Register(app) or framework.Run(app) registration point in %s", serverMainRel)
+}
+
+func insertIntoBlock(block *ast.BlockStmt, stmt ast.Stmt) bool {
+	if block == nil {
+		return false
+	}
+	afterRegister := -1
+	beforeRun := -1
+	for i, item := range block.List {
+		if stmtAnchorsSelectorCall(item, "", "Register") {
+			afterRegister = i + 1
+		}
+		if stmtAnchorsSelectorCall(item, "framework", "Run") {
+			beforeRun = i
+		}
+	}
+	insertAt := -1
+	switch {
+	case afterRegister >= 0:
+		insertAt = afterRegister
+	case beforeRun >= 0:
+		insertAt = beforeRun
+	}
+	if insertAt >= 0 {
+		list := block.List
+		block.List = append(list[:insertAt:insertAt], append([]ast.Stmt{stmt}, list[insertAt:]...)...)
+		return true
+	}
+	for _, item := range block.List {
+		for _, child := range nestedBlocks(item) {
+			if insertIntoBlock(child, stmt) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func nestedBlocks(stmt ast.Stmt) []*ast.BlockStmt {
+	switch s := stmt.(type) {
+	case *ast.BlockStmt:
+		return []*ast.BlockStmt{s}
+	case *ast.IfStmt:
+		var blocks []*ast.BlockStmt
+		if s.Body != nil {
+			blocks = append(blocks, s.Body)
+		}
+		if s.Else != nil {
+			blocks = append(blocks, nestedBlocks(s.Else)...)
+		}
+		return blocks
+	case *ast.ForStmt:
+		if s.Body != nil {
+			return []*ast.BlockStmt{s.Body}
+		}
+	case *ast.RangeStmt:
+		if s.Body != nil {
+			return []*ast.BlockStmt{s.Body}
+		}
+	}
+	return nil
+}
+
+// stmtAnchorsSelectorCall reports whether stmt itself wraps a selector call,
+// including IfStmt.Init and AssignStmt RHS. Nested bodies are ignored so the
+// caller can recurse and insert at the inner block.
+func stmtAnchorsSelectorCall(stmt ast.Stmt, pkgName, selName string) bool {
+	switch s := stmt.(type) {
+	case *ast.ExprStmt:
+		return exprContainsSelectorCall(s.X, pkgName, selName)
+	case *ast.AssignStmt:
+		for _, rhs := range s.Rhs {
+			if exprContainsSelectorCall(rhs, pkgName, selName) {
+				return true
+			}
+		}
+	case *ast.IfStmt:
+		if s.Init != nil && stmtAnchorsSelectorCall(s.Init, pkgName, selName) {
+			return true
+		}
+		if exprContainsSelectorCall(s.Cond, pkgName, selName) {
+			return true
+		}
+	case *ast.ReturnStmt:
+		for _, result := range s.Results {
+			if exprContainsSelectorCall(result, pkgName, selName) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func exprContainsSelectorCall(expr ast.Expr, pkgName, selName string) bool {
+	if expr == nil {
+		return false
+	}
+	found := false
+	ast.Inspect(expr, func(n ast.Node) bool {
+		if found || n == nil {
+			return false
+		}
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		if isSelectorCall(call, pkgName, selName) {
+			found = true
+			return false
+		}
+		return true
+	})
+	return found
 }
 
 func insertAutoMigrateArg(file *ast.File, pkgName, typeName string) error {
@@ -218,18 +312,6 @@ func countSelectorCalls(file *ast.File, pkgName, selName string) int {
 		return true
 	})
 	return count
-}
-
-func isSelectorCallStmt(stmt ast.Stmt, pkgName, selName string) bool {
-	expr, ok := stmt.(*ast.ExprStmt)
-	if !ok {
-		return false
-	}
-	call, ok := expr.X.(*ast.CallExpr)
-	if !ok {
-		return false
-	}
-	return isSelectorCall(call, pkgName, selName)
 }
 
 func isSelectorCall(call *ast.CallExpr, pkgName, selName string) bool {

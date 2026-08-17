@@ -82,6 +82,10 @@ func TestGenerateBookFeaturePackage(t *testing.T) {
 	}
 
 	handlerPath := filepath.Join(appDir, "internal", "book", "handler.go")
+	handlerSrc := readFile(t, handlerPath)
+	if !strings.Contains(handlerSrc, `contract.Internal("list books")`) {
+		t.Fatalf("handler Internal message = %q, want list books", handlerSrc)
+	}
 	if _, err := os.Stat(filepath.Join(appDir, "internal", "book", "service.go")); !os.IsNotExist(err) {
 		t.Fatal("default generate wrote service.go")
 	}
@@ -202,6 +206,75 @@ func TestGenerateDryRunAndServiceRepo(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(appDir, "internal", "invoice", "repo.go")); err != nil {
 		t.Fatalf("missing repo.go: %v", err)
+	}
+}
+
+func TestGenerateMissingAtlasPrintsHint(t *testing.T) {
+	workDir := t.TempDir()
+	if err := scaffold.Generate(context.Background(), scaffold.Options{
+		Name:     "demo",
+		Database: "sqlite",
+		WorkDir:  workDir,
+		Stdout:   ioDiscard{},
+	}); err != nil {
+		t.Fatalf("scaffold: %v", err)
+	}
+
+	previousLook := lookPath
+	lookPath = func(string) (string, error) { return "", errors.New("atlas missing") }
+	t.Cleanup(func() { lookPath = previousLook })
+
+	stdout := new(bytes.Buffer)
+	err := Generate(context.Background(), Options{
+		WorkDir: filepath.Join(workDir, "demo"),
+		Name:    "Book",
+		Fields:  []string{"title:string:required"},
+		Stdout:  stdout,
+	})
+	if err != nil {
+		t.Fatalf("Generate() error = %v, want missing-atlas hint", err)
+	}
+	if !strings.Contains(stdout.String(), "atlas not on PATH") {
+		t.Fatalf("stdout = %q, want atlas not on PATH hint", stdout.String())
+	}
+}
+
+func TestGenerateSurfacesMakeMigrationsError(t *testing.T) {
+	workDir := t.TempDir()
+	if err := scaffold.Generate(context.Background(), scaffold.Options{
+		Name:     "demo",
+		Database: "sqlite",
+		WorkDir:  workDir,
+		Stdout:   ioDiscard{},
+	}); err != nil {
+		t.Fatalf("scaffold: %v", err)
+	}
+
+	previousLook := lookPath
+	lookPath = func(string) (string, error) { return "/usr/bin/atlas", nil }
+	t.Cleanup(func() { lookPath = previousLook })
+
+	previousMake := makeMigrations
+	makeMigrations = func(context.Context, migrations.Options) error {
+		return errors.New("atlas migrate diff failed")
+	}
+	t.Cleanup(func() { makeMigrations = previousMake })
+
+	stdout := new(bytes.Buffer)
+	err := Generate(context.Background(), Options{
+		WorkDir: filepath.Join(workDir, "demo"),
+		Name:    "Book",
+		Fields:  []string{"title:string:required"},
+		Stdout:  stdout,
+	})
+	if err == nil {
+		t.Fatal("Generate() error = nil, want makemigrations failure")
+	}
+	if !strings.Contains(err.Error(), "makemigrations") || !strings.Contains(err.Error(), "atlas migrate diff failed") {
+		t.Fatalf("error = %v, want wrapped atlas failure", err)
+	}
+	if strings.Contains(stdout.String(), "note:") {
+		t.Fatalf("stdout = %q, did not want swallowed atlas note", stdout.String())
 	}
 }
 

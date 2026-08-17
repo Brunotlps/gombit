@@ -155,7 +155,7 @@ func renderHandler(ctx renderContext) string {
 	b.WriteString("func (h *Handler) list(ctx context.Context, _ *struct{}) (*" + listOut + ", error) {\n")
 	b.WriteString("\tvar rows []" + typ + "\n")
 	b.WriteString("\tif err := h.DB.WithContext(ctx).Order(\"id\").Find(&rows).Error; err != nil {\n")
-	b.WriteString("\t\treturn nil, contract.WithContext(ctx, contract.Internal(\"list " + pkg + "s\"))\n")
+	b.WriteString("\t\treturn nil, contract.WithContext(ctx, contract.Internal(\"list " + ctx.Resource.PluralSnake + "\"))\n")
 	b.WriteString("\t}\n")
 	b.WriteString("\titems := make([]" + data + ", 0, len(rows))\n")
 	b.WriteString("\tfor _, row := range rows {\n\t\titems = append(items, to" + typ + "Data(row))\n\t}\n")
