@@ -36,6 +36,7 @@ func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
 		"frontend/vite.config.ts",
 		"frontend/index.html",
 		"frontend/src/main.ts",
+		"frontend/src/resources.ts",
 		"frontend/src/vite-env.d.ts",
 		"frontend/tsconfig.json",
 		"frontend/README.md",
@@ -104,6 +105,9 @@ func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
 	mainTS := readFile(t, filepath.Join(dest, "frontend", "src", "main.ts"))
 	if strings.Contains(strings.ToLower(mainTS), "localstorage") {
 		t.Fatal("frontend/src/main.ts uses localStorage")
+	}
+	if !strings.Contains(mainTS, `from "./resources"`) {
+		t.Fatal("frontend/src/main.ts does not import the resource registry")
 	}
 }
 

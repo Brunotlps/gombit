@@ -15,13 +15,14 @@ go run ./cmd/gombit --help
 | --- | --- | --- |
 | `gombit new` | Scaffold an application | M4-1 |
 | `gombit dev` | Run API + Vite with HMR and live client regen | M4-2 |
+| `gombit make resource` | Generate a feature-package resource (AST-safe) | M4-3 |
 | `gombit db …` | Atlas-backed migrations | M2, migrated onto Cobra in M4-1 |
 | `gombit openapi generate` | Write the live OpenAPI 3.1 document | M3-3 |
 | `gombit client generate` / `check` | TypeScript client + drift | M3-4, M3-5 |
 
-Not in this milestone: `gombit make resource` (M4-3),
-`routes` / `doctor` / `config show` (M4-4), `createsuperuser` (M4-6),
-`make command` (M4-7).
+Not in this milestone: `routes` / `doctor` / `config show` (M4-4),
+`createsuperuser` (M4-6), `make command` (M4-7). Golden tests for generators
+are M4-5; this command still has unit tests.
 
 ## `gombit new`
 
@@ -87,7 +88,7 @@ demo/
 ├── database/migrations/
 ├── database/seeds/
 ├── config/
-├── frontend/             # Vite stub (package.json, vite.config.ts, src/main.ts)
+├── frontend/             # Vite stub (package.json, vite.config.ts, src/main.ts, src/resources.ts)
 ├── gombit.yaml
 ├── .air.toml
 ├── .env.example
@@ -98,7 +99,7 @@ demo/
 `cmd/server/main.go` calls `config.Load()`, `framework.New`, registers
 `internal/product` routes explicitly (no reflection), and `framework.Run`.
 Public product routes are Huma-typed under `/api/v1`. There is no generated
-`service.go` or `repo.go` (`--service` / `--repo` are M4-3).
+`service.go` or `repo.go` until `gombit make resource --service` / `--repo`.
 
 `.env.example` lists `GOMBIT_*` server variables from the `config` package
 and public `VITE_API_URL`. `VITE_*` is baked into the browser bundle — never
@@ -155,6 +156,77 @@ group so air/npm grandchildren exit. On Windows, teardown uses
 
 The scaffold's Vite stub is enough to start HMR. M5-1 replaces it with the
 React skeleton.
+
+## `gombit make resource`
+
+From an application directory (the output of `gombit new`):
+
+```sh
+gombit make resource Widget name:string:required price:int
+gombit make resource Invoice --service --repo --dry-run
+gombit make resource Widget --force
+```
+
+`make` is a Cobra parent (`AddCommand`); `resource` is the subcommand. Root
+help lists `make`.
+
+This writes a feature-package under `internal/<snake>/`:
+
+| File | When |
+| --- | --- |
+| `<snake>.go` | GORM model (`gorm.Model` + fields) |
+| `handler.go` | Thin Huma list/get/create over GORM (D10 envelope) |
+| `routes.go` | `Register(app *framework.App)` |
+| `service.go` | Only with `--service` (pass-through) |
+| `repo.go` | Only with `--repo` (pass-through) |
+
+Default API prefix is `/api/v1`. The handler stays thin over GORM; `--service`
+and `--repo` are C6 opt-in and are not used by the generated handler.
+
+Route registration is appended in `cmd/server/main.go` via `go/ast` +
+`go/parser` + `go/format` (never regex), next to `product.Register(app)`.
+`internal/platform` AutoMigrate is updated the same way. Re-running does not
+duplicate the `Register` call.
+
+Frontend pages are vanilla TypeScript (list/table + create form) under
+`frontend/src/<feature>/`. They import types from
+`frontend/src/api/generated` — no hand-written API DTOs. A generated
+`frontend/src/resources.ts` registry is the TypeScript registration point
+(not regex-patched `main.ts`). Full React Router + React Hook Form is M5-1.
+
+After generating routes, run `gombit client generate` or `gombit dev` so
+`frontend/src/api/generated` exists.
+
+### Field grammar
+
+Design §27 subset:
+
+```text
+name:type[:required][,unique][,index]
+```
+
+Supported types: `string`, `text`, `int`, `int64`, `bool`, `uint`. Unknown
+types error with the supported list. `nullable` is accepted as the opposite
+of `required`.
+
+### Idempotency
+
+Generators print created/modified files. `--dry-run` writes nothing.
+Identical re-runs are no-ops. A user-owned file (no generated banner) or a
+generated file that differs from this run is refused unless `--force`.
+
+### Migrations
+
+Gombit does not invent a migration DSL. The generated GORM model is
+Atlas-loader ready. If the `atlas` binary is on `PATH`, `make resource`
+attempts `migrations.MakeMigrations`. If Atlas is missing (or the loader
+cannot run yet), SQL is skipped and the command prints:
+
+```sh
+gombit db makemigrations create_books --model github.com/example/demo/internal/book.Book
+```
+
+See [migrations.md](migrations.md).
 
 ## `gombit db`
 

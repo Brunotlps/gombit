@@ -1,0 +1,153 @@
+package resourcegen
+
+import (
+	"go/parser"
+	"go/token"
+	"os"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+)
+
+const fixtureMain = `package main
+
+import (
+	"context"
+	"log"
+
+	"github.com/LAA-Software-Engineering/gombit/config"
+	"github.com/LAA-Software-Engineering/gombit/framework"
+
+	"github.com/example/demo/internal/platform"
+	"github.com/example/demo/internal/product"
+)
+
+func main() {
+	cfg, err := config.Load()
+	if err != nil {
+		log.Fatal(err)
+	}
+	app, err := framework.New(framework.WithConfig(cfg))
+	if err != nil {
+		log.Fatal(err)
+	}
+	product.Register(app)
+	if err := framework.Run(app); err != nil {
+		log.Fatal(err)
+	}
+}
+`
+
+const fixturePlatform = `package platform
+
+import (
+	"github.com/LAA-Software-Engineering/gombit/database"
+
+	"github.com/example/demo/internal/product"
+)
+
+func AutoMigrate(db *database.DB) error {
+	return db.AutoMigrate(&product.Product{})
+}
+`
+
+func TestAddImportAndRegisterIdempotent(t *testing.T) {
+	t.Parallel()
+
+	once, err := AddImportAndRegister([]byte(fixtureMain), "github.com/example/demo/internal/book", "book")
+	if err != nil {
+		t.Fatalf("AddImportAndRegister() error = %v", err)
+	}
+	count, err := CountRegisterCalls(once, "book")
+	if err != nil {
+		t.Fatalf("CountRegisterCalls: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("book.Register count = %d, want 1\n%s", count, once)
+	}
+	if !strings.Contains(string(once), "github.com/example/demo/internal/book") {
+		t.Fatalf("missing import:\n%s", once)
+	}
+	if countMust(t, once, "product") != 1 {
+		t.Fatalf("product.Register was disturbed:\n%s", once)
+	}
+
+	twice, err := AddImportAndRegister(once, "github.com/example/demo/internal/book", "book")
+	if err != nil {
+		t.Fatalf("second AddImportAndRegister() error = %v", err)
+	}
+	count, err = CountRegisterCalls(twice, "book")
+	if err != nil {
+		t.Fatalf("CountRegisterCalls second: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("second run duplicated Register: count = %d\n%s", count, twice)
+	}
+}
+
+func TestAddAutoMigrateModelIdempotent(t *testing.T) {
+	t.Parallel()
+
+	once, err := AddAutoMigrateModel([]byte(fixturePlatform), "github.com/example/demo/internal/book", "book", "Book")
+	if err != nil {
+		t.Fatalf("AddAutoMigrateModel() error = %v", err)
+	}
+	if !strings.Contains(string(once), "&book.Book{}") {
+		t.Fatalf("missing book model:\n%s", once)
+	}
+	if !strings.Contains(string(once), "&product.Product{}") {
+		t.Fatalf("lost product model:\n%s", once)
+	}
+
+	twice, err := AddAutoMigrateModel(once, "github.com/example/demo/internal/book", "book", "Book")
+	if err != nil {
+		t.Fatalf("second AddAutoMigrateModel() error = %v", err)
+	}
+	if strings.Count(string(twice), "&book.Book{}") != 1 {
+		t.Fatalf("duplicated AutoMigrate arg:\n%s", twice)
+	}
+}
+
+func TestGoEditPathUsesParserASTNotRegexp(t *testing.T) {
+	t.Parallel()
+
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	astPath := filepath.Join(filepath.Dir(thisFile), "ast.go")
+	// #nosec G304 -- package source next to this test
+	src, err := os.ReadFile(astPath)
+	if err != nil {
+		t.Fatalf("read ast.go: %v", err)
+	}
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, astPath, src, parser.ImportsOnly)
+	if err != nil {
+		t.Fatalf("parse ast.go: %v", err)
+	}
+	imports := map[string]bool{}
+	for _, imp := range file.Imports {
+		if imp.Path != nil {
+			imports[strings.Trim(imp.Path.Value, `"`)] = true
+		}
+	}
+	for _, want := range []string{"go/ast", "go/parser", "go/format"} {
+		if !imports[want] {
+			t.Fatalf("ast.go missing import %q", want)
+		}
+	}
+	if imports["regexp"] {
+		t.Fatal("ast.go must not import regexp")
+	}
+}
+
+func countMust(t *testing.T, src []byte, pkg string) int {
+	t.Helper()
+	count, err := CountRegisterCalls(src, pkg)
+	if err != nil {
+		t.Fatalf("CountRegisterCalls(%s): %v", pkg, err)
+	}
+	return count
+}
