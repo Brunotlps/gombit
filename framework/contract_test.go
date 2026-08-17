@@ -157,9 +157,9 @@ func TestAPIDocsServesSwaggerUIAndOmitsRawRoutes(t *testing.T) {
 	}
 }
 
-func TestAPIDocsDisabledInProductionConfig(t *testing.T) {
+func TestAPIDocsCanBeDisabled(t *testing.T) {
 	cfg := config.Default()
-	cfg.Environment = config.EnvironmentProduction
+	cfg.Environment = config.EnvironmentTest
 	cfg.HTTP.Addr = "127.0.0.1:0"
 	cfg.API.DocsEnabled = false
 	app := newTestApp(t, WithConfig(cfg))
