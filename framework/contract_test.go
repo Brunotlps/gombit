@@ -157,6 +157,23 @@ func TestAPIDocsServesSwaggerUIAndOmitsRawRoutes(t *testing.T) {
 	}
 }
 
+func TestAPIDocsOffForDefaultForProduction(t *testing.T) {
+	previousMode := gin.Mode()
+	t.Cleanup(func() {
+		gin.SetMode(previousMode)
+	})
+
+	cfg := config.DefaultFor(config.EnvironmentProduction)
+	cfg.HTTP.Addr = "127.0.0.1:0"
+	app := newTestApp(t, WithConfig(cfg))
+
+	docs := httptest.NewRecorder()
+	app.Router().ServeHTTP(docs, httptest.NewRequest(http.MethodGet, "/docs", nil))
+	if docs.Code != http.StatusNotFound {
+		t.Fatalf("GET /docs status = %d, want %d for DefaultFor(production)", docs.Code, http.StatusNotFound)
+	}
+}
+
 func TestAPIDocsCanBeDisabled(t *testing.T) {
 	cfg := config.Default()
 	cfg.Environment = config.EnvironmentTest

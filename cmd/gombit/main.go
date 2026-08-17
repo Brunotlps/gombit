@@ -242,9 +242,8 @@ func (m *modelFlags) Set(value string) error {
 func usage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "usage: gombit <command>")
 	_, _ = fmt.Fprintln(w, "available commands:")
-	_, _ = fmt.Fprintln(w, "  db <subcommand>")
+	_, _ = fmt.Fprintln(w, "  db <subcommand>   see gombit db")
 	_, _ = fmt.Fprintln(w, "  openapi generate [--out openapi.json] [--url http://127.0.0.1:8080/openapi.json]")
-	dbUsage(w)
 }
 
 func dbUsage(w io.Writer) {

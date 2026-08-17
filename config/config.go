@@ -69,7 +69,12 @@ type HTTPConfig struct {
 
 // APIConfig contains public API configuration.
 type APIConfig struct {
-	Prefix      string
+	Prefix string
+	// DocsEnabled serves the FastAPI-style UI at /docs.
+	// Default() (development) leaves this true. Changing Environment on a
+	// Default() value does not flip it — use DefaultFor(env) or set this
+	// field. LoadFromEnv uses DefaultDocsEnabled when GOMBIT_DOCS_ENABLED
+	// is unset.
 	DocsEnabled bool
 }
 
@@ -161,18 +166,30 @@ type LoggingConfig struct {
 // EnvLookup reads an environment variable by name.
 type EnvLookup func(key string) (value string, ok bool)
 
-// Default returns the default development configuration.
+// Default returns the default development configuration, including /docs on.
+// It does not follow Environment: mutating Environment on the result leaves
+// DocsEnabled and the cache namespace at development values. Use DefaultFor
+// when constructing a non-development config for framework.WithConfig.
 func Default() Config {
+	return DefaultFor(EnvironmentDevelopment)
+}
+
+// DefaultFor returns Default-shaped configuration for env, including
+// environment-derived DocsEnabled and cache namespace.
+func DefaultFor(env Environment) Config {
+	if env == "" {
+		env = EnvironmentDevelopment
+	}
 	return Config{
 		AppName:     "Gombit",
-		Environment: EnvironmentDevelopment,
+		Environment: env,
 		HTTP: HTTPConfig{
 			Addr:           ":8080",
 			RequestTimeout: 60 * time.Second,
 		},
 		API: APIConfig{
 			Prefix:      "/api/v1",
-			DocsEnabled: true,
+			DocsEnabled: DefaultDocsEnabled(env),
 		},
 		Database: DatabaseConfig{
 			Driver: DatabaseDriverSQLite,
@@ -180,7 +197,7 @@ func Default() Config {
 		},
 		Cache: CacheConfig{
 			Driver:    CacheDriverMemory,
-			Namespace: DefaultCacheNamespace("Gombit", EnvironmentDevelopment),
+			Namespace: DefaultCacheNamespace("Gombit", env),
 			Redis: RedisConfig{
 				Addr:         "127.0.0.1:6379",
 				DialTimeout:  5 * time.Second,
@@ -193,6 +210,21 @@ func Default() Config {
 			Sink:  LogSinkStderr,
 		},
 	}
+}
+
+// DefaultDocsEnabled reports whether /docs is on when GOMBIT_DOCS_ENABLED is
+// unset. Production is off; development and test are on.
+func DefaultDocsEnabled(env Environment) bool {
+	return env != EnvironmentProduction
+}
+
+// ApplyEnvironmentDefaults sets fields that follow Environment when the
+// caller did not set them explicitly. LoadFromEnv uses this when
+// GOMBIT_DOCS_ENABLED is unset. WithConfig callers that only change
+// Environment on Default() should use DefaultFor instead.
+func ApplyEnvironmentDefaults(cfg Config) Config {
+	cfg.API.DocsEnabled = DefaultDocsEnabled(cfg.Environment)
+	return cfg
 }
 
 // Load reads configuration from the process environment and validates it.
@@ -252,8 +284,8 @@ func LoadFromEnv(lookup EnvLookup) (Config, error) {
 	applyLogSink(lookup, envLogSink, &cfg.Logging.Sink)
 	if docsEnabledSet {
 		applyBool(lookup, envDocsEnabled, "API.DocsEnabled", &cfg.API.DocsEnabled, &errs)
-	} else if cfg.Environment == EnvironmentProduction {
-		cfg.API.DocsEnabled = false
+	} else {
+		cfg = ApplyEnvironmentDefaults(cfg)
 	}
 
 	if err := cfg.Validate(); err != nil {

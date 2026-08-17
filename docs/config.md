@@ -6,7 +6,10 @@ runtime packages.
 
 ## Defaults
 
-`config.Default()` returns the current development defaults:
+`config.Default()` returns the current development defaults
+(`config.DefaultFor(development)`). `config.DefaultFor(env)` applies the same
+shape with environment-derived `/docs` and cache namespace. Mutating
+`Environment` on `Default()` does not flip those fields.
 
 - app name: `Gombit`
 - environment: `development`

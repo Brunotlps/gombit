@@ -131,6 +131,9 @@ func New(options ...Option) (*App, error) {
 }
 
 // WithConfig sets the app configuration.
+// DocsEnabled is taken as given: Default() leaves /docs on even if you later
+// set Environment to production. Use config.DefaultFor(env) or set
+// API.DocsEnabled yourself.
 func WithConfig(cfg config.Config) Option {
 	return func(app *App) error {
 		if err := cfg.Validate(); err != nil {

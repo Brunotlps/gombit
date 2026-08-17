@@ -151,8 +151,7 @@ func TestProductionRouterAddsHSTS(t *testing.T) {
 		gin.SetMode(previousMode)
 	})
 
-	cfg := config.Default()
-	cfg.Environment = config.EnvironmentProduction
+	cfg := config.DefaultFor(config.EnvironmentProduction)
 	cfg.HTTP.Addr = "127.0.0.1:0"
 	app := newTestApp(t, WithConfig(cfg))
 

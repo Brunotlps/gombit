@@ -38,7 +38,11 @@ available so codegen and drift checks still work.
 | --- | --- | --- |
 | `GOMBIT_DOCS_ENABLED` | `Config.API.DocsEnabled` | `true` outside production; `false` in production when unset |
 
-Applications that pass `framework.WithConfig` set `API.DocsEnabled` explicitly.
+`config.Default()` is the development preset (`DocsEnabled` true). Changing
+only `Environment` on that value does not turn docs off. Use
+`config.DefaultFor(env)` or set `API.DocsEnabled` when passing
+`framework.WithConfig`. `config.Load` / `LoadFromEnv` apply
+`DefaultDocsEnabled` when `GOMBIT_DOCS_ENABLED` is unset.
 `contract.HumaConfigFor(title, version, docsEnabled)` is the Huma helper
 `framework.New` uses.
 
@@ -65,7 +69,10 @@ if err != nil {
 return contract.WriteOpenAPI("openapi.json", app.API())
 ```
 
-`contract.OpenAPIJSON` matches the bytes served at `/openapi.json`.
+`contract.OpenAPIJSON` is semantically identical to `GET /openapi.json` (same
+document; `OpenAPIJSON` pretty-prints, Huma's route does not). The CLI writes
+the fetched live bytes. Do not treat whitespace-only differences as contract
+drift (M3-5).
 
 ## What is not here yet
 

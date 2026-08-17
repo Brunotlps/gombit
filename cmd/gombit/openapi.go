@@ -17,9 +17,15 @@ import (
 	openapivalidator "github.com/pb33f/libopenapi-validator"
 )
 
-const defaultOpenAPIURL = "http://127.0.0.1:8080/openapi.json"
+const (
+	defaultOpenAPIURL     = "http://127.0.0.1:8080/openapi.json"
+	defaultMaxOpenAPISize = 8 << 20
+)
 
-var openAPIHTTPClient = &http.Client{Timeout: 30 * time.Second}
+var (
+	openAPIHTTPClient = &http.Client{Timeout: 30 * time.Second}
+	maxOpenAPISize    int64 = defaultMaxOpenAPISize
+)
 
 func runOpenAPI(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) error {
 	if len(args) == 0 {
@@ -81,9 +87,12 @@ func fetchOpenAPI(ctx context.Context, rawURL string) ([]byte, error) {
 		return nil, fmt.Errorf("gombit openapi generate: fetch %s: %w", parsed.String(), err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxOpenAPISize+1))
 	if err != nil {
 		return nil, fmt.Errorf("gombit openapi generate: read response: %w", err)
+	}
+	if int64(len(body)) > maxOpenAPISize {
+		return nil, fmt.Errorf("gombit openapi generate: spec exceeds 8MiB")
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("gombit openapi generate: GET %s: status %d", parsed.String(), resp.StatusCode)

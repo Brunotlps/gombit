@@ -247,6 +247,48 @@ func TestRunOpenAPIGenerateRejectsInvalidSpec(t *testing.T) {
 	}
 }
 
+func TestRunOpenAPIGenerateRejectsOversizedSpec(t *testing.T) {
+	previous := maxOpenAPISize
+	maxOpenAPISize = 16
+	t.Cleanup(func() { maxOpenAPISize = previous })
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"openapi":"3.1.0","info":{"title":"t","version":"0"},"paths":{}}`))
+	}))
+	t.Cleanup(server.Close)
+
+	err := run(context.Background(), []string{
+		"openapi", "generate",
+		"--url", server.URL,
+		"--out", filepath.Join(t.TempDir(), "openapi.json"),
+	}, ioDiscard{}, ioDiscard{})
+	if err == nil {
+		t.Fatal("run() error = nil, want oversized spec error")
+	}
+	if !strings.Contains(err.Error(), "exceeds 8MiB") {
+		t.Fatalf("run() error = %q, want exceeds 8MiB", err)
+	}
+}
+
+func TestRunRejectsUnknownCommandUsageListsFamilies(t *testing.T) {
+	stderr := new(bytes.Buffer)
+	err := run(context.Background(), []string{"unknown"}, ioDiscard{}, stderr)
+	if err == nil {
+		t.Fatal("run() error = nil, want unknown command error")
+	}
+	got := stderr.String()
+	if !strings.Contains(got, "openapi generate") {
+		t.Fatalf("usage = %q, want openapi generate", got)
+	}
+	if !strings.Contains(got, "see gombit db") {
+		t.Fatalf("usage = %q, want pointer to gombit db", got)
+	}
+	if strings.Contains(got, "makemigrations") {
+		t.Fatalf("usage = %q, does not want full db help", got)
+	}
+}
+
 func TestRunOpenAPIGenerateRejectsBadURL(t *testing.T) {
 	err := run(context.Background(), []string{
 		"openapi", "generate",

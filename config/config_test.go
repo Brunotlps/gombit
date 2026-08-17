@@ -132,6 +132,42 @@ func TestLoadFromEnv(t *testing.T) {
 	}
 }
 
+func TestDefaultForAppliesEnvironmentDocsAndNamespace(t *testing.T) {
+	dev := DefaultFor(EnvironmentDevelopment)
+	if !dev.API.DocsEnabled {
+		t.Fatal("DefaultFor(development) DocsEnabled = false, want true")
+	}
+	if dev.Cache.Namespace != "gombit:development" {
+		t.Fatalf("DefaultFor(development) Namespace = %q", dev.Cache.Namespace)
+	}
+
+	prod := DefaultFor(EnvironmentProduction)
+	if prod.Environment != EnvironmentProduction {
+		t.Fatalf("DefaultFor(production) Environment = %q", prod.Environment)
+	}
+	if prod.API.DocsEnabled {
+		t.Fatal("DefaultFor(production) DocsEnabled = true, want false")
+	}
+	if prod.Cache.Namespace != "gombit:production" {
+		t.Fatalf("DefaultFor(production) Namespace = %q", prod.Cache.Namespace)
+	}
+	if !Default().API.DocsEnabled {
+		t.Fatal("Default() DocsEnabled = false, want development default true")
+	}
+}
+
+func TestApplyEnvironmentDefaultsSetsDocsFromEnvironment(t *testing.T) {
+	cfg := Default()
+	cfg.Environment = EnvironmentProduction
+	if !cfg.API.DocsEnabled {
+		t.Fatal("precondition: Default()+production still has DocsEnabled true")
+	}
+	got := ApplyEnvironmentDefaults(cfg)
+	if got.API.DocsEnabled {
+		t.Fatal("ApplyEnvironmentDefaults(production) DocsEnabled = true, want false")
+	}
+}
+
 func TestLoadFromEnvDisablesDocsInProductionByDefault(t *testing.T) {
 	got, err := LoadFromEnv(mapLookup(map[string]string{
 		envEnv: string(EnvironmentProduction),
