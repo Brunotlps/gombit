@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"context"
@@ -44,7 +44,7 @@ func newMakeMigrationsCommand(stdout io.Writer, stderr io.Writer) *cobra.Command
 			if len(args) != 1 {
 				return fmt.Errorf("gombit db makemigrations: unexpected argument %q", args[1])
 			}
-			cfg, err := loadConfig()
+			cfg, err := LoadConfig()
 			if err != nil {
 				return err
 			}
@@ -143,7 +143,7 @@ func newSeedCommand(stdout io.Writer, stderr io.Writer) *cobra.Command {
 			if len(args) != 0 {
 				return fmt.Errorf("gombit db seed: unexpected argument %q", args[0])
 			}
-			cfg, err := loadConfig()
+			cfg, err := LoadConfig()
 			if err != nil {
 				return err
 			}
@@ -173,7 +173,7 @@ func newResetCommand(stdout io.Writer, stderr io.Writer) *cobra.Command {
 			if len(args) != 0 {
 				return fmt.Errorf("gombit db reset: unexpected argument %q", args[0])
 			}
-			cfg, err := loadConfig()
+			cfg, err := LoadConfig()
 			if err != nil {
 				return err
 			}
@@ -220,7 +220,7 @@ func bindApplyFlags(cmd *cobra.Command) {
 }
 
 func applyOptionsFromCmd(cmd *cobra.Command) (migrations.ApplyOptions, error) {
-	cfg, err := loadConfig()
+	cfg, err := LoadConfig()
 	if err != nil {
 		return migrations.ApplyOptions{}, err
 	}

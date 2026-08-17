@@ -1,4 +1,4 @@
-package resourcegen
+package commandgen
 
 import (
 	"fmt"
@@ -17,72 +17,78 @@ var goKeywords = map[string]struct{}{
 
 var reservedPackages = map[string]struct{}{
 	"platform": {}, "cmd": {}, "config": {}, "database": {}, "frontend": {},
-	"internal": {}, "main": {}, "testdata": {}, "vendor": {}, "commands": {},
+	"internal": {}, "main": {}, "testdata": {}, "vendor": {}, "product": {},
 }
 
-var reservedFields = map[string]struct{}{
-	"id": {}, "created_at": {}, "updated_at": {}, "deleted_at": {},
+var reservedCommands = map[string]struct{}{
+	"new": {}, "dev": {}, "make": {}, "db": {}, "openapi": {}, "client": {},
+	"routes": {}, "doctor": {}, "config": {}, "help": {}, "completion": {},
+	"gombit": {}, "register": {},
 }
 
-// ResourceName is the derived identifiers for one generated feature-package.
-type ResourceName struct {
+// CommandName is the derived identifiers for one generated management command.
+type CommandName struct {
 	Input       string
-	TypeName    string
-	Package     string
+	Use         string
+	Constructor string
 	FileBase    string
-	PluralSnake string
-	HTTPPath    string
-	Tag         string
-	Kebab       string
+	Package     string
 }
 
-func parseResourceName(raw string) (ResourceName, error) {
+func parseCommandName(raw, pkg string) (CommandName, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
-		return ResourceName{}, fmt.Errorf("resourcegen: resource name is required")
+		return CommandName{}, fmt.Errorf("commandgen: command name is required")
 	}
 	if strings.ContainsAny(raw, `/\`) || strings.Contains(raw, "..") {
-		return ResourceName{}, fmt.Errorf("resourcegen: resource name %q must be a single identifier", raw)
+		return CommandName{}, fmt.Errorf("commandgen: command name %q must be a single identifier", raw)
 	}
 	for _, r := range raw {
 		if unicode.IsSpace(r) {
-			return ResourceName{}, fmt.Errorf("resourcegen: resource name %q must not contain whitespace", raw)
+			return CommandName{}, fmt.Errorf("commandgen: command name %q must not contain whitespace", raw)
 		}
 		if !unicode.IsLetter(r) && !unicode.IsDigit(r) && r != '_' && r != '-' {
-			return ResourceName{}, fmt.Errorf("resourcegen: resource name %q contains invalid character %q", raw, string(r))
+			return CommandName{}, fmt.Errorf("commandgen: command name %q contains invalid character %q", raw, string(r))
 		}
 	}
 	first, _ := utf8.DecodeRuneInString(strings.TrimLeft(raw, "_-"))
 	if first == utf8.RuneError || unicode.IsDigit(first) {
-		return ResourceName{}, fmt.Errorf("resourcegen: resource name %q must start with a letter", raw)
+		return CommandName{}, fmt.Errorf("commandgen: command name %q must start with a letter", raw)
 	}
 
 	typeName := toPascal(raw)
 	if typeName == "" || !isExportedIdent(typeName) {
-		return ResourceName{}, fmt.Errorf("resourcegen: resource name %q is not a valid exported Go type", raw)
+		return CommandName{}, fmt.Errorf("commandgen: command name %q is not a valid exported Go identifier", raw)
 	}
-	pkg := toSnake(typeName)
-	if _, reserved := reservedPackages[pkg]; reserved {
-		return ResourceName{}, fmt.Errorf("resourcegen: resource name %q maps to reserved package %q", raw, pkg)
+	fileBase := toSnake(typeName)
+	use := strings.ReplaceAll(fileBase, "_", "-")
+	if _, reserved := reservedCommands[use]; reserved {
+		return CommandName{}, fmt.Errorf("commandgen: command name %q collides with a framework command", raw)
 	}
-	if _, kw := goKeywords[pkg]; kw {
-		return ResourceName{}, fmt.Errorf("resourcegen: resource name %q maps to Go keyword %q", raw, pkg)
-	}
-	if !isGoIdent(pkg) {
-		return ResourceName{}, fmt.Errorf("resourcegen: resource name %q maps to invalid package %q", raw, pkg)
+	if fileBase == "register" {
+		return CommandName{}, fmt.Errorf("commandgen: command name %q maps to reserved file register.go", raw)
 	}
 
-	plural := pluralizeSnake(pkg)
-	kebab := strings.ReplaceAll(plural, "_", "-")
-	return ResourceName{
+	pkg = strings.TrimSpace(pkg)
+	if pkg == "" {
+		pkg = defaultPackage
+	}
+	if _, reserved := reservedPackages[pkg]; reserved {
+		return CommandName{}, fmt.Errorf("commandgen: package %q is reserved", pkg)
+	}
+	if _, kw := goKeywords[pkg]; kw {
+		return CommandName{}, fmt.Errorf("commandgen: package %q is a Go keyword", pkg)
+	}
+	if !isGoIdent(pkg) {
+		return CommandName{}, fmt.Errorf("commandgen: package %q is not a valid Go identifier", pkg)
+	}
+
+	return CommandName{
 		Input:       raw,
-		TypeName:    typeName,
+		Use:         use,
+		Constructor: "New" + typeName + "Command",
+		FileBase:    fileBase,
 		Package:     pkg,
-		FileBase:    pkg,
-		PluralSnake: plural,
-		HTTPPath:    "/" + kebab,
-		Tag:         toPascal(plural),
-		Kebab:       kebab,
 	}, nil
 }
 
@@ -101,16 +107,9 @@ func toPascal(s string) string {
 		if part == "" {
 			continue
 		}
-		switch strings.ToLower(part) {
-		case "id":
-			b.WriteString("ID")
-		case "url":
-			b.WriteString("URL")
-		default:
-			r, size := utf8.DecodeRuneInString(part)
-			b.WriteRune(unicode.ToUpper(r))
-			b.WriteString(strings.ToLower(part[size:]))
-		}
+		r, size := utf8.DecodeRuneInString(part)
+		b.WriteRune(unicode.ToUpper(r))
+		b.WriteString(strings.ToLower(part[size:]))
 	}
 	return b.String()
 }
@@ -140,23 +139,6 @@ func toSnake(s string) string {
 		b.WriteRune(r)
 	}
 	return b.String()
-}
-
-func pluralizeSnake(snake string) string {
-	if snake == "" {
-		return "s"
-	}
-	if strings.HasSuffix(snake, "s") || strings.HasSuffix(snake, "x") || strings.HasSuffix(snake, "z") ||
-		strings.HasSuffix(snake, "ch") || strings.HasSuffix(snake, "sh") {
-		return snake + "es"
-	}
-	if strings.HasSuffix(snake, "y") && len(snake) > 1 {
-		before := snake[len(snake)-2]
-		if before != 'a' && before != 'e' && before != 'i' && before != 'o' && before != 'u' {
-			return snake[:len(snake)-1] + "ies"
-		}
-	}
-	return snake + "s"
 }
 
 func isGoIdent(name string) bool {

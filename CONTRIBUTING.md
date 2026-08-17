@@ -12,6 +12,8 @@ Run the same baseline checks as CI before opening a pull request:
 go test ./...
 golangci-lint run
 go run ./cmd/gombit --help
+go run ./cmd/gombit make --help
+go run ./cmd/gombit client check
 go run ./cmd/gombit client check
 go run ./cmd/gombit doctor
 go run ./cmd/gombit config show

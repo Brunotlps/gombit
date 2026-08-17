@@ -167,6 +167,9 @@ func TestRunMakeHelp(t *testing.T) {
 	if !strings.Contains(stdout.String(), "resource") {
 		t.Fatalf("make help missing resource:\n%s", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "command") {
+		t.Fatalf("make help missing command:\n%s", stdout.String())
+	}
 }
 
 func TestRunRejectsUnknownMakeSubcommand(t *testing.T) {
@@ -180,6 +183,9 @@ func TestRunRejectsUnknownMakeSubcommand(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "resource") {
 		t.Fatalf("make usage = %q, want resource", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "command") {
+		t.Fatalf("make usage = %q, want command", stderr.String())
 	}
 }
 

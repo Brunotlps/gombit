@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/LAA-Software-Engineering/gombit/cli"
 	clientpkg "github.com/LAA-Software-Engineering/gombit/client"
 	"github.com/LAA-Software-Engineering/gombit/config"
 	"github.com/LAA-Software-Engineering/gombit/contract"
@@ -251,9 +252,9 @@ func TestRunOpenAPIGenerateRejectsInvalidSpec(t *testing.T) {
 }
 
 func TestRunOpenAPIGenerateRejectsOversizedSpec(t *testing.T) {
-	previous := maxOpenAPISize
-	maxOpenAPISize = 16
-	t.Cleanup(func() { maxOpenAPISize = previous })
+	previous := cli.MaxOpenAPISize
+	cli.MaxOpenAPISize = 16
+	t.Cleanup(func() { cli.MaxOpenAPISize = previous })
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -292,6 +293,9 @@ func TestRunRejectsUnknownCommandUsageListsFamilies(t *testing.T) {
 	}
 	if !strings.Contains(got, "make resource") {
 		t.Fatalf("usage = %q, want make resource", got)
+	}
+	if !strings.Contains(got, "make command") {
+		t.Fatalf("usage = %q, want make command", got)
 	}
 	if !strings.Contains(got, "see gombit db") {
 		t.Fatalf("usage = %q, want pointer to gombit db", got)
@@ -631,12 +635,12 @@ func (ioDiscard) Write(p []byte) (int, error) {
 func stubConfig(t *testing.T, cfg config.Config) {
 	t.Helper()
 
-	previous := loadConfig
-	loadConfig = func() (config.Config, error) {
+	previous := cli.LoadConfig
+	cli.LoadConfig = func() (config.Config, error) {
 		return cfg, nil
 	}
 	t.Cleanup(func() {
-		loadConfig = previous
+		cli.LoadConfig = previous
 	})
 }
 

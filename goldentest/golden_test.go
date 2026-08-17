@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/LAA-Software-Engineering/gombit/client"
+	"github.com/LAA-Software-Engineering/gombit/commandgen"
 	"github.com/LAA-Software-Engineering/gombit/contract"
 	"github.com/LAA-Software-Engineering/gombit/resourcegen"
 	"github.com/LAA-Software-Engineering/gombit/scaffold"
@@ -108,6 +109,64 @@ func TestMakeResourceGolden(t *testing.T) {
 		}
 		if count != 1 {
 			t.Fatalf("re-run duplicated book.Register: count = %d", count)
+		}
+	})
+}
+
+func TestMakeCommandGolden(t *testing.T) {
+	appDir := scaffoldDemo(t)
+	stdout := new(bytes.Buffer)
+	if err := commandgen.Generate(context.Background(), commandgen.Options{
+		WorkDir: appDir,
+		Name:    "greet",
+		Stdout:  stdout,
+	}); err != nil {
+		t.Fatalf("gombit make command: %v\nstdout=%s", err, stdout.String())
+	}
+
+	got := snapshotTree(t, appDir)
+	assertNoReplace(t, got)
+	assertGoFormatted(t, got)
+	checkOrUpdateGolden(t, "make-command", got)
+
+	mainSrc := got["cmd/gombit/main.go"]
+	count, err := commandgen.CountRegisterCalls(mainSrc, "commands")
+	if err != nil {
+		t.Fatalf("CountRegisterCalls: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("commands.Register count = %d, want 1\n%s", count, mainSrc)
+	}
+	registerSrc := got["internal/commands/register.go"]
+	ctor, err := commandgen.CountConstructorCalls(registerSrc, "NewGreetCommand")
+	if err != nil {
+		t.Fatalf("CountConstructorCalls: %v", err)
+	}
+	if ctor != 1 {
+		t.Fatalf("NewGreetCommand count = %d, want 1\n%s", ctor, registerSrc)
+	}
+
+	t.Run("compile", func(t *testing.T) {
+		compileBackend(t, appDir)
+	})
+	t.Run("idempotent", func(t *testing.T) {
+		if err := commandgen.Generate(context.Background(), commandgen.Options{
+			WorkDir: appDir,
+			Name:    "greet",
+			Stdout:  io.Discard,
+		}); err != nil {
+			t.Fatalf("idempotent make command: %v", err)
+		}
+		second := snapshotTree(t, appDir)
+		if !treesEqual(got, second) {
+			t.Fatalf("second make command changed files:\n%s", treeDiffSummary(second, got))
+		}
+		count, err := commandgen.CountRegisterCalls(second["cmd/gombit/main.go"], "commands")
+		if err != nil {
+			t.Fatalf("CountRegisterCalls after re-run: %v", err)
+		}
+		if count != 1 {
+			t.Fatalf("re-run duplicated commands.Register: count = %d", count)
 		}
 	})
 }

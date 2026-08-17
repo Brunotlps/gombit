@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"context"
@@ -23,8 +23,9 @@ const (
 )
 
 var (
-	openAPIHTTPClient       = &http.Client{Timeout: 30 * time.Second}
-	maxOpenAPISize    int64 = defaultMaxOpenAPISize
+	openAPIHTTPClient = &http.Client{Timeout: 30 * time.Second}
+	// MaxOpenAPISize is the fetch cap for gombit openapi generate.
+	MaxOpenAPISize int64 = defaultMaxOpenAPISize
 )
 
 func newOpenAPICommand(stdout io.Writer, stderr io.Writer) *cobra.Command {
@@ -101,11 +102,11 @@ func fetchOpenAPI(ctx context.Context, rawURL string) ([]byte, error) {
 		return nil, fmt.Errorf("gombit openapi generate: fetch %s: %w", parsed.String(), err)
 	}
 	defer func() { _ = resp.Body.Close() }()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxOpenAPISize+1))
+	body, err := io.ReadAll(io.LimitReader(resp.Body, MaxOpenAPISize+1))
 	if err != nil {
 		return nil, fmt.Errorf("gombit openapi generate: read response: %w", err)
 	}
-	if int64(len(body)) > maxOpenAPISize {
+	if int64(len(body)) > MaxOpenAPISize {
 		return nil, fmt.Errorf("gombit openapi generate: spec exceeds 8MiB")
 	}
 	if resp.StatusCode != http.StatusOK {

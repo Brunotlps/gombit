@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"fmt"
@@ -42,7 +42,7 @@ config fields exist (M5 auth). Appendix C checks for those settings
 land with the features that introduce them.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := loadConfig()
+			cfg, err := LoadConfig()
 			if err != nil {
 				return fmt.Errorf("gombit config show: %w", err)
 			}

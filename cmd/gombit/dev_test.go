@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/LAA-Software-Engineering/gombit/cli"
 	"github.com/LAA-Software-Engineering/gombit/config"
 	"github.com/LAA-Software-Engineering/gombit/dev"
 )
@@ -85,12 +86,12 @@ func TestRunDevUsesConfiguredHTTPAddr(t *testing.T) {
 	stubConfig(t, cfg)
 
 	var got dev.Options
-	previous := runDev
-	runDev = func(ctx context.Context, opts dev.Options) error {
+	previous := cli.RunDev
+	cli.RunDev = func(ctx context.Context, opts dev.Options) error {
 		got = opts
 		return errors.New("stopped")
 	}
-	t.Cleanup(func() { runDev = previous })
+	t.Cleanup(func() { cli.RunDev = previous })
 
 	chdir(t, t.TempDir())
 	err := run(context.Background(), []string{"dev"}, ioDiscard{}, ioDiscard{})
@@ -108,12 +109,12 @@ func TestRunDevHTTPFlagOverridesConfig(t *testing.T) {
 	stubConfig(t, cfg)
 
 	var got dev.Options
-	previous := runDev
-	runDev = func(ctx context.Context, opts dev.Options) error {
+	previous := cli.RunDev
+	cli.RunDev = func(ctx context.Context, opts dev.Options) error {
 		got = opts
 		return errors.New("stopped")
 	}
-	t.Cleanup(func() { runDev = previous })
+	t.Cleanup(func() { cli.RunDev = previous })
 
 	chdir(t, t.TempDir())
 	err := run(context.Background(), []string{"dev", "--http", ":9090"}, ioDiscard{}, ioDiscard{})

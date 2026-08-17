@@ -25,10 +25,12 @@ func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
 	dest := filepath.Join(workDir, "demo")
 	wantFiles := []string{
 		"cmd/server/main.go",
+		"cmd/gombit/main.go",
 		"internal/platform/database.go",
 		"internal/product/product.go",
 		"internal/product/handler.go",
 		"internal/product/routes.go",
+		"internal/product/commands.go",
 		"database/migrations/.gitkeep",
 		"database/seeds/.gitkeep",
 		"config/README.md",
@@ -87,6 +89,18 @@ func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "create demo/go.mod") {
 		t.Fatalf("stdout = %q, want created file list", stdout.String())
+	}
+
+	cliMain := readFile(t, filepath.Join(dest, "cmd", "gombit", "main.go"))
+	if !strings.Contains(cliMain, "product.RegisterCommands") {
+		t.Fatal("cmd/gombit/main.go does not call product.RegisterCommands")
+	}
+	if !strings.Contains(cliMain, "cli.NewRoot") {
+		t.Fatal("cmd/gombit/main.go does not use cli.NewRoot")
+	}
+	commands := readFile(t, filepath.Join(dest, "internal", "product", "commands.go"))
+	if !strings.Contains(commands, "func RegisterCommands") {
+		t.Fatal("internal/product/commands.go missing RegisterCommands")
 	}
 
 	viteConfig := readFile(t, filepath.Join(dest, "frontend", "vite.config.ts"))
