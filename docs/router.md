@@ -2,8 +2,9 @@
 
 M1-3 de-domains the router introduced in M1-2: `framework.New` builds a
 `*gin.Engine` with zero knowledge of any application domain and mounts only
-its own endpoints. Today that means `/livez`, `/readyz`, `/metrics`, and the
-Huma OpenAPI preview routes (`/openapi.json` and siblings). Public API handlers
+its own endpoints. Today that means `/livez`, `/readyz`, `/metrics`, the Huma
+OpenAPI routes (`/openapi.json` and siblings), and `/docs` when
+`API.DocsEnabled` is true. Public API handlers
 register on `app.API()` (see [`docs/contract.md`](contract.md)); raw Gin routes
 continue to use `app.Router()`.
 
@@ -131,7 +132,9 @@ Contract DTOs, validation → D10 field errors, and `app.API()` are documented i
 CORS, rate limiting, or authentication middleware:
 
 - auth middleware: M5
-- `gombit openapi generate` CLI: M3-3
+
+OpenAPI emission, `/docs`, and `gombit openapi generate` are documented in
+[`docs/openapi.md`](openapi.md).
 
 Until then, an application that needs middleware can add it directly via
 `app.Router().Use(...)` or on its own route groups; the framework will not

@@ -18,6 +18,15 @@ Emit the current spike OpenAPI document:
 go run ./cmd/contract-spike-openapi openapi.json
 ```
 
+Write the live app spec (app must be serving `/openapi.json`):
+
+```sh
+go run ./cmd/gombit openapi generate --out openapi.json
+```
+
+Interactive docs are at `/docs` when `GOMBIT_DOCS_ENABLED` is on (the local
+default). See [`docs/openapi.md`](docs/openapi.md).
+
 The authoritative implementation backlog and architecture decisions live in
 [`docs/GOMBIT_BUILD_PLAN.md`](docs/GOMBIT_BUILD_PLAN.md).
 
@@ -26,6 +35,7 @@ Runtime configuration is documented in [`docs/config.md`](docs/config.md).
 Application lifecycle is documented in [`docs/lifecycle.md`](docs/lifecycle.md).
 Application-owned route registration is documented in [`docs/router.md`](docs/router.md).
 Huma DTO and validation conventions are documented in [`docs/contract.md`](docs/contract.md).
+OpenAPI emission and `/docs` are documented in [`docs/openapi.md`](docs/openapi.md).
 Database runtime support is documented in [`docs/database.md`](docs/database.md).
 Cache runtime support is documented in [`docs/cache.md`](docs/cache.md).
 Runtime logging is documented in [`docs/logging.md`](docs/logging.md).

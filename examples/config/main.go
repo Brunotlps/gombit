@@ -13,5 +13,5 @@ func main() {
 		log.Fatal(err)
 	}
 
-	fmt.Printf("%s listens on %s with API prefix %s\n", cfg.AppName, cfg.HTTP.Addr, cfg.API.Prefix)
+	fmt.Printf("%s listens on %s with API prefix %s (docs enabled=%t)\n", cfg.AppName, cfg.HTTP.Addr, cfg.API.Prefix, cfg.API.DocsEnabled)
 }

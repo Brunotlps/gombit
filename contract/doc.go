@@ -19,5 +19,8 @@
 //
 //	{"error":{"code":"not_found","message":"...","request_id":"..."}}
 //
-// See docs/contract.md.
+// OpenAPI 3.1 is served at /openapi.json. Interactive docs are at /docs when
+// enabled. Use OpenAPIJSON / WriteOpenAPI to persist the live spec.
+//
+// See docs/contract.md and docs/openapi.md.
 package contract

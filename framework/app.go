@@ -114,7 +114,7 @@ func New(options ...Option) (*App, error) {
 			RequestID: GetRequestIDFromContext,
 		})
 		// OpenAPI Info.Version stays 0.0.0 until runtime versioning lands.
-		app.api = humagin.New(app.router, contract.HumaConfig(app.cfg.AppName, "0.0.0"))
+		app.api = humagin.New(app.router, contract.HumaConfigFor(app.cfg.AppName, "0.0.0", app.cfg.API.DocsEnabled))
 	}
 	if app.cache == nil {
 		store, err := cache.Open(app.cfg.Cache)
@@ -131,6 +131,9 @@ func New(options ...Option) (*App, error) {
 }
 
 // WithConfig sets the app configuration.
+// DocsEnabled is taken as given: Default() leaves /docs on even if you later
+// set Environment to production. Use config.DefaultFor(env) or set
+// API.DocsEnabled yourself.
 func WithConfig(cfg config.Config) Option {
 	return func(app *App) error {
 		if err := cfg.Validate(); err != nil {

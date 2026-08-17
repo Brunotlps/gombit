@@ -4,8 +4,9 @@ Gombit's public API contract conventions: Huma-typed handlers over Gin, D10
 success/error envelopes, validation tags → structured `fields`, and draft §41
 application error categories mapped centrally to HTTP status codes.
 
-ADR-011 selected Huma as the contract layer. OpenAPI CLI generation belongs to
-M3-3; the TypeScript client belongs to M3-4.
+ADR-011 selected Huma as the contract layer. OpenAPI emission, `/docs`, and
+`gombit openapi generate` are documented in [`docs/openapi.md`](openapi.md).
+The TypeScript client belongs to M3-4.
 
 ## Registering contract routes
 
@@ -156,15 +157,16 @@ validation still uses the Install path and always yields `validation_error`.
 The `validation_error` code is preserved from M3-1 / D10 (not renamed to
 `validation`).
 
-## OpenAPI preview
+## OpenAPI
 
-With the default Huma config, `/openapi.json` is served for local inspection and
-reflects the D10 `ErrorEnvelope` schema. `gombit openapi generate` and CI drift
-checks land in M3-3 / M3-5.
+`/openapi.json` is served from the Huma API and reflects the D10
+`ErrorEnvelope` schema. `/docs` is the FastAPI-style Swagger UI (on by default
+in local/dev). `gombit openapi generate` writes the live spec to disk. See
+[`docs/openapi.md`](openapi.md).
 
 ## What is not here yet
 
-- `gombit openapi generate` / `/docs` UI (M3-3)
 - TypeScript client generation (M3-4)
+- CI contract drift check (M3-5)
 - Pagination query DSL / filter/sort helpers (design §42)
 - gRPC status mapping (post-v0.1)
