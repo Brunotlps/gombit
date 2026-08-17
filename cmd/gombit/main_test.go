@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -286,6 +287,9 @@ func TestRunRejectsUnknownCommandUsageListsFamilies(t *testing.T) {
 	if !strings.Contains(got, "client generate") {
 		t.Fatalf("usage = %q, want client generate", got)
 	}
+	if !strings.Contains(got, "client check") {
+		t.Fatalf("usage = %q, want client check", got)
+	}
 	if !strings.Contains(got, "see gombit db") {
 		t.Fatalf("usage = %q, want pointer to gombit db", got)
 	}
@@ -345,6 +349,89 @@ func TestRunClientGenerateDryRun(t *testing.T) {
 	}
 }
 
+func TestRunClientCheckDetectsHandlerDrift(t *testing.T) {
+	requireNodeCLI(t)
+
+	root := cmdModuleRoot(t)
+	workDir := t.TempDir()
+	copyFile(t, filepath.Join(root, clientpkg.SampleSpecPath), filepath.Join(workDir, "openapi.json"))
+	for _, name := range []string{"schema.ts", "client.ts", "error.ts"} {
+		copyFile(t,
+			filepath.Join(root, clientpkg.SampleOutDir, name),
+			filepath.Join(workDir, "frontend", "src", "api", "generated", name),
+		)
+	}
+
+	spec := readFileString(t, filepath.Join(workDir, "openapi.json"))
+	tampered := strings.Replace(spec, "/api/v1/widgets", "/api/v1/stale-widgets", 1)
+	if tampered == spec {
+		t.Fatal("failed to tamper committed spec")
+	}
+	writeFile(t, filepath.Join(workDir, "openapi.json"), tampered)
+
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(previous) })
+
+	err = run(context.Background(), []string{
+		"client", "check",
+		"--spec", "openapi.json",
+		"--out", "frontend/src/api/generated",
+	}, ioDiscard{}, ioDiscard{})
+	if err == nil {
+		t.Fatal("run() error = nil, want contract drift")
+	}
+	if !strings.Contains(err.Error(), "contract drift") {
+		t.Fatalf("run() error = %q, want contract drift", err)
+	}
+}
+
+func TestRunClientCheckWriteThenClean(t *testing.T) {
+	requireNodeCLI(t)
+
+	workDir := t.TempDir()
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(previous) })
+
+	stdout := new(bytes.Buffer)
+	err = run(context.Background(), []string{
+		"client", "check",
+		"--write",
+		"--spec", "openapi.json",
+		"--out", "frontend/src/api/generated",
+	}, stdout, ioDiscard{})
+	if err != nil {
+		t.Fatalf("run(check --write) error = %v", err)
+	}
+	if !strings.Contains(stdout.String(), "openapi.json") {
+		t.Fatalf("stdout = %q, want wrote openapi.json", stdout.String())
+	}
+
+	stdout.Reset()
+	err = run(context.Background(), []string{
+		"client", "check",
+		"--spec", "openapi.json",
+		"--out", "frontend/src/api/generated",
+	}, stdout, ioDiscard{})
+	if err != nil {
+		t.Fatalf("run(check) error = %v, want nil after write", err)
+	}
+	if !strings.Contains(stdout.String(), "no contract drift") {
+		t.Fatalf("stdout = %q, want no contract drift", stdout.String())
+	}
+}
+
 func TestRunRejectsUnknownClientSubcommand(t *testing.T) {
 	stderr := new(bytes.Buffer)
 	err := run(context.Background(), []string{"client", "unknown"}, ioDiscard{}, stderr)
@@ -356,6 +443,9 @@ func TestRunRejectsUnknownClientSubcommand(t *testing.T) {
 	}
 	if !strings.Contains(stderr.String(), "--npx") {
 		t.Fatalf("client usage = %q, want --npx", stderr.String())
+	}
+	if !strings.Contains(stderr.String(), "check") {
+		t.Fatalf("client usage = %q, want check", stderr.String())
 	}
 }
 
@@ -555,6 +645,47 @@ func writeFile(t *testing.T, path string, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}
+}
+
+func copyFile(t *testing.T, src, dest string) {
+	t.Helper()
+	writeFile(t, dest, readFileString(t, src))
+}
+
+func readFileString(t *testing.T, path string) string {
+	t.Helper()
+	// #nosec G304 -- test fixture path
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(data)
+}
+
+func requireNodeCLI(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("npx openapi-typescript path handling differs on Windows")
+	}
+	if _, err := exec.LookPath("npx"); err != nil {
+		t.Skip("npx not available")
+	}
+	if _, err := exec.LookPath("npm"); err != nil {
+		t.Skip("npm not available")
+	}
+}
+
+func cmdModuleRoot(t *testing.T) string {
+	t.Helper()
+	_, file, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	root := filepath.Clean(filepath.Join(filepath.Dir(file), "..", ".."))
+	if _, err := os.Stat(filepath.Join(root, "go.mod")); err != nil {
+		t.Fatalf("module root %s: %v", root, err)
+	}
+	return root
 }
 
 func fakeAtlas(t *testing.T) string {

@@ -71,10 +71,28 @@ return contract.WriteOpenAPI("openapi.json", app.API())
 
 `contract.OpenAPIJSON` is semantically identical to `GET /openapi.json` (same
 document; `OpenAPIJSON` pretty-prints, Huma's route does not). The CLI writes
-the fetched live bytes. Do not treat whitespace-only differences as contract
-drift (M3-5).
+the fetched live bytes. Whitespace-only differences are not contract drift:
+`gombit client check` compares JSON semantically, and CI always rewrites the
+sample fixture with `contract.WriteOpenAPI` so formatting stays stable.
 
-## What is not here yet
+## Contract drift check
 
-- TypeScript client generation: [`docs/client.md`](client.md)
-- CI drift check that fails when the spec is stale: M3-5
+CI regenerates the sample widget spec and TypeScript client in-process from
+`client.SampleApp()` (no running server, no `gombit openapi generate --url`)
+and fails if the committed files would change. An intentional Huma handler
+change without regenerating those fixtures fails CI.
+
+From the repository root:
+
+```sh
+# Report drift without writing (whitespace-only JSON is not drift)
+go run ./cmd/gombit client check
+
+# Rewrite examples/client/openapi.json and the generated TypeScript client
+go run ./cmd/gombit client check --write
+
+# Same rewrite via go generate
+go generate ./client
+```
+
+`CheckDrift` is the reusable Go entry point. See [`docs/client.md`](client.md).

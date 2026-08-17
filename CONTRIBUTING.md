@@ -11,7 +11,11 @@ Run the same baseline checks as CI before opening a pull request:
 ```sh
 go test ./...
 golangci-lint run
+go run ./cmd/gombit client check
 ```
+
+`gombit client check --write` regenerates `examples/client/openapi.json` and
+the sample TypeScript client. CI fails if those files would change.
 
 ## Working agreement
 

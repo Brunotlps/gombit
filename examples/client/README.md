@@ -5,13 +5,24 @@ Sample OpenAPI 3.1 document for the contract widget API, plus the output of
 
 ## Generate
 
-From the repository root:
+From the repository root, regenerate the committed spec and client from
+`client.SampleApp()` (same path CI uses):
+
+```sh
+go run ./cmd/gombit client check --write
+```
+
+`go generate ./client` does the same rewrite. To generate only the TypeScript
+client from the committed spec:
 
 ```sh
 go run ./cmd/gombit client generate \
   --spec examples/client/openapi.json \
   --out examples/client/frontend/src/api/generated
 ```
+
+`gombit client check` (without `--write`) reports drift without touching files.
+Whitespace-only JSON is not drift; an extra or changed Huma route is.
 
 ## Typecheck
 

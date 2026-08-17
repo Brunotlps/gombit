@@ -15,11 +15,15 @@ func runClient(ctx context.Context, args []string, stdout io.Writer, stderr io.W
 		clientUsage(stderr)
 		return errors.New("gombit client: subcommand is required")
 	}
-	if args[0] != "generate" {
+	switch args[0] {
+	case "generate":
+		return runClientGenerate(ctx, args[1:], stdout, stderr)
+	case "check":
+		return runClientCheck(ctx, args[1:], stdout, stderr)
+	default:
 		clientUsage(stderr)
 		return fmt.Errorf("gombit client: unknown subcommand %q", args[0])
 	}
-	return runClientGenerate(ctx, args[1:], stdout, stderr)
 }
 
 func runClientGenerate(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) error {
@@ -50,7 +54,34 @@ func runClientGenerate(ctx context.Context, args []string, stdout io.Writer, std
 	})
 }
 
+func runClientCheck(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) error {
+	flags := flag.NewFlagSet("gombit client check", flag.ContinueOnError)
+	flags.SetOutput(stderr)
+	spec := flags.String("spec", client.SampleSpecPath, "committed OpenAPI 3.1 document path")
+	out := flags.String("out", client.SampleOutDir, "committed generated TypeScript directory")
+	write := flags.Bool("write", false, "rewrite committed fixtures instead of reporting drift")
+	npx := flags.String("npx", "npx", "npx binary used to run openapi-typescript")
+	if err := flags.Parse(args); err != nil {
+		return err
+	}
+	if flags.NArg() != 0 {
+		flags.Usage()
+		return fmt.Errorf("gombit client check: unexpected argument %q", flags.Arg(0))
+	}
+
+	return client.CheckDrift(ctx, client.DriftOptions{
+		WorkDir:   ".",
+		SpecPath:  *spec,
+		OutDir:    *out,
+		Write:     *write,
+		NPXBinary: *npx,
+		Stdout:    stdout,
+		Stderr:    stderr,
+	})
+}
+
 func clientUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "available client subcommands:")
 	_, _ = fmt.Fprintln(w, "  generate [--spec openapi.json] [--out frontend/src/api/generated] [--dry-run] [--force] [--npx npx]")
+	_, _ = fmt.Fprintln(w, "  check [--write] [--spec examples/client/openapi.json] [--out examples/client/frontend/src/api/generated] [--npx npx]")
 }
