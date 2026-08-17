@@ -1,0 +1,356 @@
+package client
+
+import (
+	"bytes"
+	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"runtime"
+	"strings"
+	"testing"
+
+	"github.com/LAA-Software-Engineering/gombit/contract"
+)
+
+func TestGenerateWritesCompilingClient(t *testing.T) {
+	requireNode(t)
+
+	workDir := t.TempDir()
+	specPath := writeSampleSpec(t, workDir)
+	outDir := filepath.Join(workDir, "frontend", "src", "api", "generated")
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+
+	err := Generate(context.Background(), Options{
+		WorkDir:  workDir,
+		SpecPath: specPath,
+		OutDir:   outDir,
+		Stdout:   stdout,
+		Stderr:   stderr,
+	})
+	if err != nil {
+		t.Fatalf("Generate() error = %v; stderr=%s", err, stderr.String())
+	}
+	for _, name := range []string{"schema.ts", "client.ts", "error.ts"} {
+		if _, err := os.Stat(filepath.Join(outDir, name)); err != nil {
+			t.Fatalf("missing %s: %v", name, err)
+		}
+	}
+	if !strings.Contains(stdout.String(), "created") {
+		t.Fatalf("stdout = %q, want created files", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "openapi-fetch") {
+		t.Fatalf("stdout = %q, want openapi-fetch dependency hint", stdout.String())
+	}
+
+	schema := readFile(t, filepath.Join(outDir, "schema.ts"))
+	if !strings.Contains(schema, generatedBanner) {
+		t.Fatal("schema.ts missing generated banner")
+	}
+	if !strings.Contains(schema, "/api/v1/widgets") {
+		t.Fatalf("schema.ts missing sample path; head=%s", truncate(schema, 400))
+	}
+	if strings.Contains(schema, "/raw/ping") {
+		t.Fatal("schema.ts unexpectedly contains raw Gin route")
+	}
+
+	errorSrc := readFile(t, filepath.Join(outDir, "error.ts"))
+	for _, want := range []string{"D10ErrorBody", "request_id", "fields", "ContractError"} {
+		if !strings.Contains(errorSrc, want) {
+			t.Fatalf("error.ts missing %s", want)
+		}
+	}
+	clientSrc := readFile(t, filepath.Join(outDir, "client.ts"))
+	if strings.Contains(clientSrc, "localStorage.getItem") || strings.Contains(clientSrc, "sessionStorage.getItem") {
+		t.Fatal("generated client must not use web storage for tokens")
+	}
+	if !strings.Contains(clientSrc, "getAccessToken") {
+		t.Fatal("client.ts missing in-memory token hook")
+	}
+
+	typecheckGenerated(t, workDir, outDir)
+}
+
+func TestGenerateDryRunDoesNotWrite(t *testing.T) {
+	workDir := t.TempDir()
+	specPath := writeSampleSpec(t, workDir)
+	outDir := filepath.Join(workDir, "out")
+	stdout := new(bytes.Buffer)
+
+	err := Generate(context.Background(), Options{
+		WorkDir:  workDir,
+		SpecPath: specPath,
+		OutDir:   outDir,
+		DryRun:   true,
+		Stdout:   stdout,
+	})
+	if err != nil {
+		t.Fatalf("Generate(dry-run) error = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(outDir, "schema.ts")); !os.IsNotExist(err) {
+		t.Fatal("dry-run wrote schema.ts")
+	}
+	if !strings.Contains(stdout.String(), "create") {
+		t.Fatalf("dry-run stdout = %q, want create", stdout.String())
+	}
+}
+
+func TestGenerateRefusesUserOwnedFile(t *testing.T) {
+	requireNode(t)
+
+	workDir := t.TempDir()
+	specPath := writeSampleSpec(t, workDir)
+	outDir := filepath.Join(workDir, "out")
+	if err := os.MkdirAll(outDir, 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	owned := filepath.Join(outDir, "client.ts")
+	if err := os.WriteFile(owned, []byte("export const mine = true;\n"), 0o600); err != nil {
+		t.Fatalf("write user file: %v", err)
+	}
+
+	err := Generate(context.Background(), Options{
+		WorkDir:  workDir,
+		SpecPath: specPath,
+		OutDir:   outDir,
+	})
+	if err == nil {
+		t.Fatal("Generate() error = nil, want refuse overwrite")
+	}
+	if !strings.Contains(err.Error(), "--force") {
+		t.Fatalf("Generate() error = %q, want --force", err)
+	}
+
+	err = Generate(context.Background(), Options{
+		WorkDir:  workDir,
+		SpecPath: specPath,
+		OutDir:   outDir,
+		Force:    true,
+		Stdout:   ioDiscard{},
+		Stderr:   ioDiscard{},
+	})
+	if err != nil {
+		t.Fatalf("Generate(force) error = %v", err)
+	}
+	got := readFile(t, owned)
+	if !strings.Contains(got, generatedBanner) {
+		t.Fatal("force did not replace user-owned client.ts")
+	}
+}
+
+func TestGenerateIsIdempotent(t *testing.T) {
+	requireNode(t)
+
+	workDir := t.TempDir()
+	specPath := writeSampleSpec(t, workDir)
+	outDir := filepath.Join(workDir, "out")
+	opts := Options{
+		WorkDir:  workDir,
+		SpecPath: specPath,
+		OutDir:   outDir,
+		Stdout:   ioDiscard{},
+		Stderr:   ioDiscard{},
+	}
+	if err := Generate(context.Background(), opts); err != nil {
+		t.Fatalf("first Generate() error = %v", err)
+	}
+	first := readFile(t, filepath.Join(outDir, "error.ts"))
+	if err := Generate(context.Background(), opts); err != nil {
+		t.Fatalf("second Generate() error = %v", err)
+	}
+	second := readFile(t, filepath.Join(outDir, "error.ts"))
+	if first != second {
+		t.Fatal("re-generate changed error.ts")
+	}
+}
+
+func TestGenerateRequiresSpec(t *testing.T) {
+	err := Generate(context.Background(), Options{
+		WorkDir:  t.TempDir(),
+		SpecPath: "missing.json",
+	})
+	if err == nil {
+		t.Fatal("Generate() error = nil, want missing spec")
+	}
+}
+
+func TestGenerateRejectsEmptySpec(t *testing.T) {
+	workDir := t.TempDir()
+	path := filepath.Join(workDir, "openapi.json")
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatalf("write empty spec: %v", err)
+	}
+	err := Generate(context.Background(), Options{
+		WorkDir:  workDir,
+		SpecPath: path,
+	})
+	if err == nil {
+		t.Fatal("Generate() error = nil, want empty spec")
+	}
+	if !strings.Contains(err.Error(), "empty") {
+		t.Fatalf("Generate() error = %q, want empty", err)
+	}
+}
+
+func TestGenerateRejectsNon31Spec(t *testing.T) {
+	workDir := t.TempDir()
+	path := filepath.Join(workDir, "openapi.json")
+	if err := os.WriteFile(path, []byte(`{"openapi":"3.0.3","info":{"title":"t","version":"0"},"paths":{}}`), 0o600); err != nil {
+		t.Fatalf("write spec: %v", err)
+	}
+	err := Generate(context.Background(), Options{
+		WorkDir:  workDir,
+		SpecPath: path,
+	})
+	if err == nil {
+		t.Fatal("Generate() error = nil, want non-3.1 spec")
+	}
+	if !strings.Contains(err.Error(), "3.1") {
+		t.Fatalf("Generate() error = %q, want 3.1", err)
+	}
+}
+
+func writeSampleSpec(t *testing.T, workDir string) string {
+	t.Helper()
+	app, err := SampleApp()
+	if err != nil {
+		t.Fatalf("SampleApp() error = %v", err)
+	}
+	path := filepath.Join(workDir, "openapi.json")
+	if err := contract.WriteOpenAPI(path, app.API()); err != nil {
+		t.Fatalf("WriteOpenAPI: %v", err)
+	}
+	return path
+}
+
+func typecheckGenerated(t *testing.T, workDir, outDir string) {
+	t.Helper()
+
+	relOut, err := filepath.Rel(workDir, outDir)
+	if err != nil {
+		t.Fatalf("rel: %v", err)
+	}
+	relOut = filepath.ToSlash(relOut)
+
+	writeFile(t, filepath.Join(workDir, "package.json"), `{
+  "name": "gombit-client-compile",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "openapi-fetch": "0.17.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}
+`)
+	writeFile(t, filepath.Join(workDir, "tsconfig.json"), `{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["usage.ts", "`+relOut+`/**/*.ts"]
+}
+`)
+	writeFile(t, filepath.Join(workDir, "usage.ts"), `
+import {
+  ContractError,
+  createGombitClient,
+  isD10ErrorBody,
+  unwrap,
+} from "./`+relOut+`/client";
+
+const client = createGombitClient({
+  baseUrl: "http://127.0.0.1:8080",
+  getAccessToken: () => undefined,
+});
+
+export async function listWidgets() {
+  const result = await client.GET("/api/v1/widgets");
+  if (result.error) {
+    if (isD10ErrorBody(result.error)) {
+      const code: string = result.error.error.code;
+      const fields = result.error.error.fields;
+      void code;
+      void fields;
+    }
+    throw ContractError.fromResponse(result.response, result.error);
+  }
+  return unwrap(result);
+}
+
+export async function createWidget() {
+  const result = await client.POST("/api/v1/widgets", {
+    body: { name: "Second widget", color: "green" },
+  });
+  if (result.error && isD10ErrorBody(result.error)) {
+    throw ContractError.fromResponse(result.response, result.error);
+  }
+  return result.data;
+}
+`)
+
+	install := exec.Command("npm", "install", "--no-fund", "--no-audit")
+	install.Dir = workDir
+	install.Env = append(os.Environ(), "npm_config_update_notifier=false")
+	if out, err := install.CombinedOutput(); err != nil {
+		t.Fatalf("npm install: %v\n%s", err, out)
+	}
+	//nolint:gosec // workDir is t.TempDir; tsc is invoked with fixed args
+	tsc := exec.Command("npx", "--no-install", "tsc", "--noEmit", "-p", workDir)
+	tsc.Dir = workDir
+	if out, err := tsc.CombinedOutput(); err != nil {
+		t.Fatalf("tsc --noEmit: %v\n%s", err, out)
+	}
+}
+
+func requireNode(t *testing.T) {
+	t.Helper()
+	if runtime.GOOS == "windows" {
+		t.Skip("npx openapi-typescript path handling differs on Windows")
+	}
+	if _, err := exec.LookPath("npx"); err != nil {
+		t.Skip("npx not available")
+	}
+	if _, err := exec.LookPath("npm"); err != nil {
+		t.Skip("npm not available")
+	}
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	// #nosec G304 -- test fixture path
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(data)
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatalf("mkdir %s: %v", path, err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+func truncate(s string, n int) string {
+	if len(s) <= n {
+		return s
+	}
+	return s[:n]
+}
+
+type ioDiscard struct{}
+
+func (ioDiscard) Write(p []byte) (int, error) {
+	return len(p), nil
+}

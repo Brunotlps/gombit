@@ -76,5 +76,5 @@ drift (M3-5).
 
 ## What is not here yet
 
-- TypeScript client generation (`gombit client generate`): M3-4
+- TypeScript client generation: [`docs/client.md`](client.md)
 - CI drift check that fails when the spec is stale: M3-5
