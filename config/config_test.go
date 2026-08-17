@@ -59,6 +59,15 @@ func TestDefault(t *testing.T) {
 	if got.Auth.RefreshTokenTTL != DefaultRefreshTokenTTL {
 		t.Fatalf("Auth.RefreshTokenTTL = %v, want %v", got.Auth.RefreshTokenTTL, DefaultRefreshTokenTTL)
 	}
+	if got.Auth.Mode != AuthModeJWT {
+		t.Fatalf("Auth.Mode = %q, want %q", got.Auth.Mode, AuthModeJWT)
+	}
+	if !got.Auth.CookieSecure {
+		t.Fatal("Auth.CookieSecure = false, want true default")
+	}
+	if got.Auth.CookieSameSite != CookieSameSiteLax {
+		t.Fatalf("Auth.CookieSameSite = %q, want %q", got.Auth.CookieSameSite, CookieSameSiteLax)
+	}
 	if err := got.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v, want nil", err)
 	}
@@ -93,6 +102,9 @@ func TestLoadFromEnv(t *testing.T) {
 		envJWTSecret:               "  test-jwt-secret-from-env  ", // #nosec G101 -- fake test secret.
 		envJWTAccessTTL:            " 10m ",
 		envJWTRefreshTTL:           " 48h ",
+		envAuthMode:                " Cookie ",
+		envCookieSecure:            " false ",
+		envCookieSameSite:          " Strict ",
 	}
 
 	got, err := LoadFromEnv(mapLookup(env))
@@ -142,6 +154,9 @@ func TestLoadFromEnv(t *testing.T) {
 			JWTSecret:       "test-jwt-secret-from-env",
 			AccessTokenTTL:  10 * time.Minute,
 			RefreshTokenTTL: 48 * time.Hour,
+			Mode:            AuthModeCookie,
+			CookieSecure:    false,
+			CookieSameSite:  CookieSameSiteStrict,
 		},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -289,6 +304,9 @@ func TestLoadUsesProcessEnvironment(t *testing.T) {
 			JWTSecret:       "production-jwt-secret-32-bytes-min",
 			AccessTokenTTL:  DefaultAccessTokenTTL,
 			RefreshTokenTTL: DefaultRefreshTokenTTL,
+			Mode:            AuthModeJWT,
+			CookieSecure:    true,
+			CookieSameSite:  CookieSameSiteLax,
 		},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -622,6 +640,145 @@ func TestAuthEnabled(t *testing.T) {
 	cfg.Auth.JWTSecret = "dev-secret"
 	if !cfg.Auth.Enabled() {
 		t.Fatal("Auth.Enabled() = false, want true when JWT secret is set")
+	}
+}
+
+func TestEffectiveModeDefaultsEmptyToJWT(t *testing.T) {
+	var cfg AuthConfig
+	if got := cfg.EffectiveMode(); got != AuthModeJWT {
+		t.Fatalf("EffectiveMode() = %q, want %q", got, AuthModeJWT)
+	}
+	cfg.Mode = AuthModeCookie
+	if got := cfg.EffectiveMode(); got != AuthModeCookie {
+		t.Fatalf("EffectiveMode() = %q, want %q", got, AuthModeCookie)
+	}
+}
+
+func TestEffectiveCookieSameSiteDefaultsEmptyToLax(t *testing.T) {
+	var cfg AuthConfig
+	if got := cfg.EffectiveCookieSameSite(); got != CookieSameSiteLax {
+		t.Fatalf("EffectiveCookieSameSite() = %q, want %q", got, CookieSameSiteLax)
+	}
+	cfg.CookieSameSite = CookieSameSiteStrict
+	if got := cfg.EffectiveCookieSameSite(); got != CookieSameSiteStrict {
+		t.Fatalf("EffectiveCookieSameSite() = %q, want %q", got, CookieSameSiteStrict)
+	}
+}
+
+// TestValidateRejectsInsecureCookieInProduction is the Appendix C case for
+// M5-3: cookie auth without Secure under a production deployment must fail
+// loud at config.Validate / gombit doctor.
+func TestValidateRejectsInsecureCookieInProduction(t *testing.T) {
+	cfg := DefaultFor(EnvironmentProduction)
+	cfg.Auth.JWTSecret = "production-jwt-secret-32-bytes-min"
+	cfg.Auth.Mode = AuthModeCookie
+	cfg.Auth.CookieSecure = false
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate() error = nil, want insecure cookie error")
+	}
+	var fieldErrors FieldErrors
+	if !errors.As(err, &fieldErrors) {
+		t.Fatalf("Validate() error type = %T, want FieldErrors", err)
+	}
+	want := FieldError{
+		Field:   "Auth.CookieSecure",
+		Env:     envCookieSecure,
+		Value:   "false",
+		Message: "must be true in production for cookie auth (Appendix C)",
+	}
+	for _, got := range fieldErrors {
+		if reflect.DeepEqual(got, want) {
+			return
+		}
+	}
+	t.Fatalf("Validate() field errors = %#v, want one to equal %#v", []FieldError(fieldErrors), want)
+}
+
+func TestValidateAllowsSecureCookieInProduction(t *testing.T) {
+	cfg := DefaultFor(EnvironmentProduction)
+	cfg.Auth.JWTSecret = "production-jwt-secret-32-bytes-min"
+	cfg.Auth.Mode = AuthModeCookie
+	cfg.Auth.CookieSecure = true
+	cfg.Auth.CookieSameSite = CookieSameSiteStrict
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v, want nil", err)
+	}
+}
+
+func TestValidateAllowsInsecureCookieOutsideProduction(t *testing.T) {
+	cfg := DefaultFor(EnvironmentDevelopment)
+	cfg.Auth.JWTSecret = "dev-jwt-secret-not-for-production"
+	cfg.Auth.Mode = AuthModeCookie
+	cfg.Auth.CookieSecure = false
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v, want nil (development may disable Secure for plain HTTP)", err)
+	}
+}
+
+func TestValidateRejectsUnknownAuthMode(t *testing.T) {
+	cfg := DefaultFor(EnvironmentTest)
+	cfg.Auth.JWTSecret = "test-jwt-secret-32-bytes-minimum!"
+	cfg.Auth.Mode = "oauth"
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate() error = nil, want unknown Auth.Mode error")
+	}
+	var fieldErrors FieldErrors
+	if !errors.As(err, &fieldErrors) {
+		t.Fatalf("Validate() error type = %T, want FieldErrors", err)
+	}
+	found := false
+	for _, got := range fieldErrors {
+		if got.Field == "Auth.Mode" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("Validate() field errors = %#v, want Auth.Mode", []FieldError(fieldErrors))
+	}
+}
+
+func TestValidateRejectsUnknownCookieSameSite(t *testing.T) {
+	cfg := DefaultFor(EnvironmentTest)
+	cfg.Auth.JWTSecret = "test-jwt-secret-32-bytes-minimum!"
+	cfg.Auth.Mode = AuthModeCookie
+	cfg.Auth.CookieSameSite = "none"
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate() error = nil, want unknown Auth.CookieSameSite error")
+	}
+	var fieldErrors FieldErrors
+	if !errors.As(err, &fieldErrors) {
+		t.Fatalf("Validate() error type = %T, want FieldErrors", err)
+	}
+	found := false
+	for _, got := range fieldErrors {
+		if got.Field == "Auth.CookieSameSite" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("Validate() field errors = %#v, want Auth.CookieSameSite", []FieldError(fieldErrors))
+	}
+}
+
+// TestValidateIgnoresAuthModeWhenAuthDisabled matches
+// TestValidateReportsExplicitFieldErrors: a zero-value AuthConfig (no JWT
+// secret) must not produce Auth.Mode/CookieSameSite errors, since no auth
+// routes are mounted regardless of Mode.
+func TestValidateIgnoresAuthModeWhenAuthDisabled(t *testing.T) {
+	cfg := Default()
+	cfg.Auth.Mode = "not-a-real-mode"
+	cfg.Auth.CookieSameSite = "not-a-real-samesite"
+	if cfg.Auth.Enabled() {
+		t.Fatal("precondition: empty JWT secret should disable auth")
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v, want nil when auth is disabled", err)
 	}
 }
 
