@@ -21,6 +21,9 @@ go run ./cmd/gombit routes
 `gombit new demo --database sqlite` scaffolds a compiling app. See
 [`docs/cli.md`](docs/cli.md).
 
+Generator golden tests live in `goldentest`. After an intentional generator
+change, refresh committed trees with `go test ./goldentest -update`.
+
 `gombit client check --write` regenerates `examples/client/openapi.json` and
 the sample TypeScript client. CI fails if those files would change.
 
