@@ -20,7 +20,7 @@ func main() {
 
 	root := cli.NewRoot(os.Stdout, os.Stderr)
 	product.RegisterCommands(root)
-	commands.Register(root)
+	commands.RegisterCommands(root)
 	if err := cli.ExecuteRoot(ctx, root, os.Args[1:]); err != nil {
 		if errors.Is(err, context.Canceled) {
 			return

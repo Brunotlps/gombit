@@ -8,7 +8,7 @@ import (
 )
 
 // NewGreetCommand returns the greet management command.
-// Attach it with cli.AddCommand from Register (D13 / ADR-014).
+// Attach it with cli.AddCommand from RegisterCommands (D13 / ADR-014).
 func NewGreetCommand() *cli.Command {
 	return &cli.Command{
 		Use:   "greet",

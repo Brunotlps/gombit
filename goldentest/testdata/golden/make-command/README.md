@@ -107,8 +107,8 @@ gombit make command greet
 ```
 
 That writes `internal/commands/greet.go`, appends
-`cli.AddCommand(root, NewGreetCommand())` in `internal/commands/register.go`,
-and registers `commands.Register(root)` in `cmd/gombit/main.go` via `go/ast`.
+`cli.AddCommand(root, NewGreetCommand())` in `internal/commands/commands.go`,
+and registers `commands.RegisterCommands(root)` in `cmd/gombit/main.go` via `go/ast`.
 Re-running is idempotent. Then:
 
 ```sh
