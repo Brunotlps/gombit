@@ -3,6 +3,8 @@ package main
 import (
 	"bytes"
 	"context"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -10,6 +12,9 @@ import (
 	"testing"
 
 	"github.com/LAA-Software-Engineering/gombit/config"
+	"github.com/LAA-Software-Engineering/gombit/framework"
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/gin-gonic/gin"
 )
 
 func TestRunMakeMigrationsInvokesAtlasAndWritesMigration(t *testing.T) {
@@ -106,6 +111,162 @@ func TestRunMakeMigrationsRequiresModel(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "at least one model") {
 		t.Fatalf("run() error = %q, want missing model message", err)
+	}
+}
+
+func TestRunOpenAPIGenerateMatchesLiveFrameworkRoutes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := config.Default()
+	cfg.Environment = config.EnvironmentTest
+	cfg.HTTP.Addr = "127.0.0.1:0"
+	app, err := framework.New(framework.WithConfig(cfg))
+	if err != nil {
+		t.Fatalf("framework.New() error = %v", err)
+	}
+	huma.Register(app.API(), huma.Operation{
+		OperationID: "list-widgets",
+		Method:      http.MethodGet,
+		Path:        app.Config().API.Prefix + "/widgets",
+		Summary:     "List widgets",
+	}, func(ctx context.Context, input *struct{}) (*struct{}, error) {
+		return nil, nil
+	})
+	app.Router().GET("/raw/ping", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"data": gin.H{"status": "ok"}})
+	})
+
+	server := httptest.NewServer(app.Router())
+	t.Cleanup(server.Close)
+
+	out := filepath.Join(t.TempDir(), "openapi.json")
+	stdout := new(bytes.Buffer)
+	err = run(context.Background(), []string{
+		"openapi", "generate",
+		"--url", server.URL + "/openapi.json",
+		"--out", out,
+	}, stdout, ioDiscard{})
+	if err != nil {
+		t.Fatalf("run() error = %v, want nil", err)
+	}
+	// #nosec G304 -- out is built from t.TempDir
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("read generated spec: %v", err)
+	}
+	if !strings.Contains(string(got), "/api/v1/widgets") {
+		t.Fatalf("generated spec missing live Huma route; body=%s", got)
+	}
+	if strings.Contains(string(got), "/raw/ping") {
+		t.Fatal("generated spec unexpectedly contains raw Gin route")
+	}
+
+	docs, err := http.Get(server.URL + "/docs")
+	if err != nil {
+		t.Fatalf("GET /docs: %v", err)
+	}
+	t.Cleanup(func() { _ = docs.Body.Close() })
+	if docs.StatusCode != http.StatusOK {
+		t.Fatalf("GET /docs status = %d, want %d", docs.StatusCode, http.StatusOK)
+	}
+}
+
+func TestRunOpenAPIGenerateWritesValidatedSpec(t *testing.T) {
+	spec := `{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Gombit",
+    "version": "0.0.0"
+  },
+  "paths": {
+    "/api/v1/widgets": {
+      "get": {
+        "operationId": "list-widgets",
+        "responses": {
+          "200": {
+            "description": "OK"
+          }
+        }
+      }
+    }
+  }
+}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/openapi.json" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(spec))
+	}))
+	t.Cleanup(server.Close)
+
+	out := filepath.Join(t.TempDir(), "openapi.json")
+	stdout := new(bytes.Buffer)
+	stderr := new(bytes.Buffer)
+	err := run(context.Background(), []string{
+		"openapi", "generate",
+		"--url", server.URL + "/openapi.json",
+		"--out", out,
+	}, stdout, stderr)
+	if err != nil {
+		t.Fatalf("run() error = %v, want nil; stderr=%q", err, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), out) {
+		t.Fatalf("stdout = %q, want output path %q", stdout.String(), out)
+	}
+	// #nosec G304 -- out is built from t.TempDir
+	got, err := os.ReadFile(out)
+	if err != nil {
+		t.Fatalf("read generated spec: %v", err)
+	}
+	if !strings.Contains(string(got), "/api/v1/widgets") {
+		t.Fatalf("generated spec missing live route; body=%s", got)
+	}
+	if strings.Contains(string(got), "/raw/ping") {
+		t.Fatal("generated spec unexpectedly contains raw Gin route")
+	}
+}
+
+func TestRunOpenAPIGenerateRejectsInvalidSpec(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"not":"openapi"}`))
+	}))
+	t.Cleanup(server.Close)
+
+	err := run(context.Background(), []string{
+		"openapi", "generate",
+		"--url", server.URL,
+		"--out", filepath.Join(t.TempDir(), "openapi.json"),
+	}, ioDiscard{}, ioDiscard{})
+	if err == nil {
+		t.Fatal("run() error = nil, want invalid spec error")
+	}
+	if !strings.Contains(err.Error(), "OpenAPI") {
+		t.Fatalf("run() error = %q, want OpenAPI validation message", err)
+	}
+}
+
+func TestRunOpenAPIGenerateRejectsBadURL(t *testing.T) {
+	err := run(context.Background(), []string{
+		"openapi", "generate",
+		"--url", "file:///tmp/openapi.json",
+	}, ioDiscard{}, ioDiscard{})
+	if err == nil {
+		t.Fatal("run() error = nil, want scheme error")
+	}
+	if !strings.Contains(err.Error(), "http or https") {
+		t.Fatalf("run() error = %q, want scheme message", err)
+	}
+}
+
+func TestRunRejectsUnknownOpenAPISubcommand(t *testing.T) {
+	err := run(context.Background(), []string{"openapi", "unknown"}, ioDiscard{}, ioDiscard{})
+	if err == nil {
+		t.Fatal("run() error = nil, want unknown subcommand error")
+	}
+	if !strings.Contains(err.Error(), "unknown subcommand") {
+		t.Fatalf("run() error = %q, want unknown subcommand message", err)
 	}
 }
 

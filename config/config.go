@@ -16,6 +16,7 @@ const (
 	envHTTPTrustedProxies      = "GOMBIT_HTTP_TRUSTED_PROXIES"
 	envHTTPRequestTimeout      = "GOMBIT_HTTP_REQUEST_TIMEOUT"
 	envAPIPrefix               = "GOMBIT_API_PREFIX"
+	envDocsEnabled             = "GOMBIT_DOCS_ENABLED"
 	envDatabaseDriver          = "GOMBIT_DATABASE_DRIVER"
 	envDatabaseDSN             = "GOMBIT_DATABASE_DSN"
 	envDatabaseMaxOpenConns    = "GOMBIT_DATABASE_MAX_OPEN_CONNS"
@@ -68,7 +69,8 @@ type HTTPConfig struct {
 
 // APIConfig contains public API configuration.
 type APIConfig struct {
-	Prefix string
+	Prefix      string
+	DocsEnabled bool
 }
 
 // DatabaseDriver names a supported SQL database driver.
@@ -169,7 +171,8 @@ func Default() Config {
 			RequestTimeout: 60 * time.Second,
 		},
 		API: APIConfig{
-			Prefix: "/api/v1",
+			Prefix:      "/api/v1",
+			DocsEnabled: true,
 		},
 		Database: DatabaseConfig{
 			Driver: DatabaseDriverSQLite,
@@ -209,6 +212,7 @@ func LoadFromEnv(lookup EnvLookup) (Config, error) {
 	applyString(lookup, envHTTPAddr, &cfg.HTTP.Addr)
 	applyStringList(lookup, envHTTPTrustedProxies, &cfg.HTTP.TrustedProxies)
 	applyString(lookup, envAPIPrefix, &cfg.API.Prefix)
+	_, docsEnabledSet := lookup(envDocsEnabled)
 
 	var errs FieldErrors
 	applyDuration(
@@ -246,6 +250,11 @@ func LoadFromEnv(lookup EnvLookup) (Config, error) {
 	}
 	applyLogLevel(lookup, envLogLevel, &cfg.Logging.Level)
 	applyLogSink(lookup, envLogSink, &cfg.Logging.Sink)
+	if docsEnabledSet {
+		applyBool(lookup, envDocsEnabled, "API.DocsEnabled", &cfg.API.DocsEnabled, &errs)
+	} else if cfg.Environment == EnvironmentProduction {
+		cfg.API.DocsEnabled = false
+	}
 
 	if err := cfg.Validate(); err != nil {
 		var fieldErrors FieldErrors

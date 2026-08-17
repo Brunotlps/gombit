@@ -26,6 +26,9 @@ func TestDefault(t *testing.T) {
 	if got.API.Prefix != "/api/v1" {
 		t.Fatalf("API.Prefix = %q, want %q", got.API.Prefix, "/api/v1")
 	}
+	if !got.API.DocsEnabled {
+		t.Fatal("API.DocsEnabled = false, want true")
+	}
 	if got.Database.Driver != DatabaseDriverSQLite {
 		t.Fatalf("Database.Driver = %q, want %q", got.Database.Driver, DatabaseDriverSQLite)
 	}
@@ -94,7 +97,8 @@ func TestLoadFromEnv(t *testing.T) {
 			RequestTimeout: 15 * time.Second,
 		},
 		API: APIConfig{
-			Prefix: "/api",
+			Prefix:      "/api",
+			DocsEnabled: true,
 		},
 		Database: DatabaseConfig{
 			Driver:          DatabaseDriverPostgres,
@@ -125,6 +129,43 @@ func TestLoadFromEnv(t *testing.T) {
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("LoadFromEnv() = %#v, want %#v", got, want)
+	}
+}
+
+func TestLoadFromEnvDisablesDocsInProductionByDefault(t *testing.T) {
+	got, err := LoadFromEnv(mapLookup(map[string]string{
+		envEnv: string(EnvironmentProduction),
+	}))
+	if err != nil {
+		t.Fatalf("LoadFromEnv() error = %v, want nil", err)
+	}
+	if got.API.DocsEnabled {
+		t.Fatal("API.DocsEnabled = true, want false in production when unset")
+	}
+}
+
+func TestLoadFromEnvAllowsDocsInProductionWhenEnabled(t *testing.T) {
+	got, err := LoadFromEnv(mapLookup(map[string]string{
+		envEnv:         string(EnvironmentProduction),
+		envDocsEnabled: "true",
+	}))
+	if err != nil {
+		t.Fatalf("LoadFromEnv() error = %v, want nil", err)
+	}
+	if !got.API.DocsEnabled {
+		t.Fatal("API.DocsEnabled = false, want true when GOMBIT_DOCS_ENABLED=true")
+	}
+}
+
+func TestLoadFromEnvDisablesDocsWhenExplicitlyOff(t *testing.T) {
+	got, err := LoadFromEnv(mapLookup(map[string]string{
+		envDocsEnabled: "false",
+	}))
+	if err != nil {
+		t.Fatalf("LoadFromEnv() error = %v, want nil", err)
+	}
+	if got.API.DocsEnabled {
+		t.Fatal("API.DocsEnabled = true, want false when GOMBIT_DOCS_ENABLED=false")
 	}
 }
 
@@ -174,7 +215,8 @@ func TestLoadUsesProcessEnvironment(t *testing.T) {
 			RequestTimeout: 60 * time.Second,
 		},
 		API: APIConfig{
-			Prefix: "/api",
+			Prefix:      "/api",
+			DocsEnabled: false,
 		},
 		Database: DatabaseConfig{
 			Driver: DatabaseDriverMySQL,
@@ -214,7 +256,8 @@ func TestValidateReportsExplicitFieldErrors(t *testing.T) {
 			RequestTimeout: -time.Second,
 		},
 		API: APIConfig{
-			Prefix: "api",
+			Prefix:      "api",
+			DocsEnabled: true,
 		},
 		Database: DatabaseConfig{
 			Driver:          "oracle",

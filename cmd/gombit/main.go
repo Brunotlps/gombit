@@ -26,30 +26,38 @@ func run(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer)
 		usage(stderr)
 		return errors.New("gombit: command is required")
 	}
-	if args[0] != "db" {
+	switch args[0] {
+	case "openapi":
+		return runOpenAPI(ctx, args[1:], stdout, stderr)
+	case "db":
+		return runDB(ctx, args[1:], stdout, stderr)
+	default:
 		usage(stderr)
 		return fmt.Errorf("gombit: unknown command %q", args[0])
 	}
-	if len(args) < 2 {
+}
+
+func runDB(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) error {
+	if len(args) == 0 {
 		dbUsage(stderr)
 		return errors.New("gombit db: subcommand is required")
 	}
-	switch args[1] {
+	switch args[0] {
 	case "makemigrations":
-		return runMakeMigrations(ctx, args[2:], stdout, stderr)
+		return runMakeMigrations(ctx, args[1:], stdout, stderr)
 	case "migrate":
-		return runMigrate(ctx, args[2:], stdout, stderr)
+		return runMigrate(ctx, args[1:], stdout, stderr)
 	case "rollback":
-		return runRollback(ctx, args[2:], stdout, stderr)
+		return runRollback(ctx, args[1:], stdout, stderr)
 	case "status":
-		return runStatus(ctx, args[2:], stdout, stderr)
+		return runStatus(ctx, args[1:], stdout, stderr)
 	case "seed":
-		return runSeed(ctx, args[2:], stdout, stderr)
+		return runSeed(ctx, args[1:], stdout, stderr)
 	case "reset":
-		return runReset(ctx, args[2:], stdout, stderr)
+		return runReset(ctx, args[1:], stdout, stderr)
 	default:
 		dbUsage(stderr)
-		return fmt.Errorf("gombit db: unknown subcommand %q", args[1])
+		return fmt.Errorf("gombit db: unknown subcommand %q", args[0])
 	}
 }
 
@@ -232,7 +240,10 @@ func (m *modelFlags) Set(value string) error {
 }
 
 func usage(w io.Writer) {
-	_, _ = fmt.Fprintln(w, "usage: gombit db <subcommand>")
+	_, _ = fmt.Fprintln(w, "usage: gombit <command>")
+	_, _ = fmt.Fprintln(w, "available commands:")
+	_, _ = fmt.Fprintln(w, "  db <subcommand>")
+	_, _ = fmt.Fprintln(w, "  openapi generate [--out openapi.json] [--url http://127.0.0.1:8080/openapi.json]")
 	dbUsage(w)
 }
 

@@ -13,6 +13,7 @@ runtime packages.
 - HTTP address: `:8080`
 - HTTP request timeout: `60s`
 - API prefix: `/api/v1`
+- interactive API docs: enabled (`/docs`)
 - database driver: `sqlite`
 - database DSN: `file:gombit.db?cache=shared&_fk=1`
 - cache driver: `memory`
@@ -34,6 +35,7 @@ configuration. The M1-1 boundary recognizes:
 | `GOMBIT_HTTP_TRUSTED_PROXIES` | `Config.HTTP.TrustedProxies` | unset |
 | `GOMBIT_HTTP_REQUEST_TIMEOUT` | `Config.HTTP.RequestTimeout` | `60s` |
 | `GOMBIT_API_PREFIX` | `Config.API.Prefix` | `/api/v1` |
+| `GOMBIT_DOCS_ENABLED` | `Config.API.DocsEnabled` | `true` (off in production when unset) |
 | `GOMBIT_DATABASE_DRIVER` | `Config.Database.Driver` | `sqlite` |
 | `GOMBIT_DATABASE_DSN` | `Config.Database.DSN` | `file:gombit.db?cache=shared&_fk=1` |
 | `GOMBIT_DATABASE_MAX_OPEN_CONNS` | `Config.Database.MaxOpenConns` | `0` |
@@ -69,6 +71,9 @@ The value sets the cooperative per-request context deadline and the
 `GOMBIT_DATABASE_CONN_MAX_LIFETIME` uses Go duration syntax such as `30m` or
 `1h`.
 Redis timeout values use the same Go duration syntax.
+`GOMBIT_DOCS_ENABLED` accepts boolean values (`true`/`false`, `1`/`0`,
+`yes`/`no`, `on`/`off`). When unset, docs stay on in `development` and `test`
+and turn off in `production`. `/openapi.json` is always served.
 `GOMBIT_LOG_LEVEL` accepts `debug`, `info`, `warn`, and `error`.
 `GOMBIT_LOG_SINK` accepts `stderr`, `stdout`, and `mongo`; Mongo logging is an
 external module hook, not a runtime dependency.

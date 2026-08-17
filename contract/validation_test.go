@@ -69,19 +69,27 @@ func TestValidationReturnsD10FieldErrors(t *testing.T) {
 	}
 }
 
-func TestHumaConfigDisablesDocsAndSchemas(t *testing.T) {
+func TestHumaConfigEnablesDocsAndDisablesSchemas(t *testing.T) {
 	cfg := contract.HumaConfig("Demo", "1.2.3")
-	if cfg.DocsPath != "" {
-		t.Fatalf("DocsPath = %q, want empty", cfg.DocsPath)
+	if cfg.DocsPath != contract.DocsPath {
+		t.Fatalf("DocsPath = %q, want %q", cfg.DocsPath, contract.DocsPath)
+	}
+	if cfg.DocsRenderer != huma.DocsRendererSwaggerUI {
+		t.Fatalf("DocsRenderer = %q, want %q", cfg.DocsRenderer, huma.DocsRendererSwaggerUI)
 	}
 	if cfg.SchemasPath != "" {
 		t.Fatalf("SchemasPath = %q, want empty", cfg.SchemasPath)
 	}
-	if cfg.OpenAPIPath != "/openapi" {
-		t.Fatalf("OpenAPIPath = %q, want /openapi", cfg.OpenAPIPath)
+	if cfg.OpenAPIPath != contract.OpenAPIPath {
+		t.Fatalf("OpenAPIPath = %q, want %q", cfg.OpenAPIPath, contract.OpenAPIPath)
 	}
 	if cfg.Info == nil || cfg.Info.Title != "Demo" || cfg.Info.Version != "1.2.3" {
 		t.Fatalf("Info = %#v, want Demo/1.2.3", cfg.Info)
+	}
+
+	disabled := contract.HumaConfigFor("Demo", "1.2.3", false)
+	if disabled.DocsPath != "" {
+		t.Fatalf("HumaConfigFor(docs=false) DocsPath = %q, want empty", disabled.DocsPath)
 	}
 }
 

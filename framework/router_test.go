@@ -23,6 +23,7 @@ func TestDefaultRouterMountsOnlyFrameworkEndpoints(t *testing.T) {
 	sort.Strings(got)
 
 	want := []string{
+		"GET /docs",
 		"GET /livez",
 		"GET /metrics",
 		"GET /openapi-3.0.json",
