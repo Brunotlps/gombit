@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os/exec"
+	"strconv"
 	"sync"
 	"time"
 )
@@ -37,7 +38,7 @@ func runProcesses(ctx context.Context, specs []ProcSpec, stdout, stderr io.Write
 		cmd := command(spec.Path, spec.Args...) //nolint:gosec // path/args come from LookPath and fixed flags
 		if cmd == nil {
 			cancel()
-			waitAll(&wg, &mu, running, wait)
+			_ = waitAll(&wg, &mu, running, wait)
 			return fmt.Errorf("dev: nil command for %s", spec.Name)
 		}
 		cmd.Dir = spec.Dir
@@ -53,7 +54,7 @@ func runProcesses(ctx context.Context, specs []ProcSpec, stdout, stderr io.Write
 		prepareProcessGroup(cmd)
 		if err := cmd.Start(); err != nil {
 			cancel()
-			waitAll(&wg, &mu, running, wait)
+			_ = waitAll(&wg, &mu, running, wait)
 			return fmt.Errorf("dev: start %s: %w", spec.Name, err)
 		}
 		mu.Lock()
@@ -79,11 +80,13 @@ func runProcesses(ctx context.Context, specs []ProcSpec, stdout, stderr io.Write
 	case <-runCtx.Done():
 	case err := <-errCh:
 		cancel()
-		waitAll(&wg, &mu, running, wait)
+		_ = waitAll(&wg, &mu, running, wait)
 		return err
 	}
 
-	waitAll(&wg, &mu, running, wait)
+	if err := waitAll(&wg, &mu, running, wait); err != nil {
+		return err
+	}
 	select {
 	case err := <-errCh:
 		return err
@@ -92,7 +95,7 @@ func runProcesses(ctx context.Context, specs []ProcSpec, stdout, stderr io.Write
 	}
 }
 
-func waitAll(wg *sync.WaitGroup, mu *sync.Mutex, running []*exec.Cmd, wait time.Duration) {
+func waitAll(wg *sync.WaitGroup, mu *sync.Mutex, running []*exec.Cmd, wait time.Duration) error {
 	mu.Lock()
 	cmds := append([]*exec.Cmd(nil), running...)
 	mu.Unlock()
@@ -107,15 +110,30 @@ func waitAll(wg *sync.WaitGroup, mu *sync.Mutex, running []*exec.Cmd, wait time.
 	}()
 	select {
 	case <-done:
-		return
+		return nil
 	case <-time.After(wait):
 		mu.Lock()
 		for _, cmd := range running {
 			_ = killProcessGroup(cmd)
 		}
 		mu.Unlock()
-		<-done
+		select {
+		case <-done:
+			return nil
+		case <-time.After(wait):
+			return fmt.Errorf("dev: timed out waiting for child processes to exit")
+		}
 	}
+}
+
+// windowsTaskkillArgs builds `taskkill` flags that terminate a PID and its
+// descendants. Used by the Windows supervisor; tested on all platforms.
+func windowsTaskkillArgs(pid int, force bool) []string {
+	args := []string{"/T"}
+	if force {
+		args = append(args, "/F")
+	}
+	return append(args, "/PID", strconv.Itoa(pid))
 }
 
 func runOne(ctx context.Context, spec ProcSpec, stdout, stderr io.Writer, command CommandFunc) error {
@@ -153,7 +171,10 @@ func runOne(ctx context.Context, spec ProcSpec, stdout, stderr io.Writer, comman
 		case <-done:
 		case <-time.After(2 * time.Second):
 			_ = killProcessGroup(cmd)
-			<-done
+			select {
+			case <-done:
+			case <-time.After(2 * time.Second):
+			}
 		}
 		return ctx.Err()
 	}

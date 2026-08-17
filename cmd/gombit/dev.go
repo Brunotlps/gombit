@@ -40,9 +40,6 @@ The Vite stub from gombit new is enough to start HMR. The full React
 skeleton (router, React Hook Form, auth pages) is M5-1.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := dev.ValidateFlags(dev.DefaultHTTPAddr, frontendHost, frontendPort, poll, clientOut); err != nil {
-				return fmt.Errorf("gombit %w", err)
-			}
 			if !cmd.Flags().Changed("http") {
 				cfg, err := loadConfig()
 				if err != nil {

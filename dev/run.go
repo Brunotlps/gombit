@@ -6,7 +6,9 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strconv"
+	"strings"
 )
 
 const (
@@ -67,7 +69,7 @@ func Run(ctx context.Context, opts Options) error {
 	}
 
 	frontendDir := filepath.Join(opts.WorkDir, "frontend")
-	if _, err := os.Stat(filepath.Join(frontendDir, "node_modules")); os.IsNotExist(err) {
+	if !frontendDepsInstalled(frontendDir) {
 		install := ProcSpec{
 			Name: "frontend-install",
 			Dir:  frontendDir,
@@ -83,13 +85,7 @@ func Run(ctx context.Context, opts Options) error {
 		}
 	}
 
-	childEnv := append([]string{}, os.Environ()...)
-	childEnv = append(childEnv,
-		"GOMBIT_HTTP_ADDR="+opts.HTTPAddr,
-		"GOMBIT_DEV_BACKEND="+services.Backend,
-		"GOMBIT_DEV_FRONTEND_PORT="+strconv.Itoa(opts.FrontendPort),
-		"VITE_API_URL=/api/v1",
-	)
+	env := childEnv(os.Environ(), opts, services.Backend)
 
 	procs := []ProcSpec{
 		{
@@ -97,14 +93,14 @@ func Run(ctx context.Context, opts Options) error {
 			Dir:  opts.WorkDir,
 			Path: backend.Path,
 			Args: backend.Args,
-			Env:  childEnv,
+			Env:  env,
 		},
 		{
 			Name: "frontend",
 			Dir:  frontendDir,
 			Path: frontend.Path,
 			Args: frontend.Args,
-			Env:  childEnv,
+			Env:  env,
 		},
 	}
 
@@ -127,4 +123,44 @@ func Run(ctx context.Context, opts Options) error {
 		return err
 	}
 	return nil
+}
+
+func frontendDepsInstalled(frontendDir string) bool {
+	info, err := os.Stat(filepath.Join(frontendDir, "node_modules"))
+	return err == nil && info.IsDir()
+}
+
+// childEnv copies parent then replaces the keys gombit dev owns so Linux
+// first-wins getenv cannot keep a parent GOMBIT_HTTP_ADDR / VITE_API_URL.
+func childEnv(parent []string, opts Options, backendOrigin string) []string {
+	return overlayEnv(parent,
+		"GOMBIT_HTTP_ADDR="+opts.HTTPAddr,
+		"GOMBIT_DEV_BACKEND="+backendOrigin,
+		"GOMBIT_DEV_FRONTEND_HOST="+opts.FrontendHost,
+		"GOMBIT_DEV_FRONTEND_PORT="+strconv.Itoa(opts.FrontendPort),
+		"VITE_API_URL=/api/v1",
+	)
+}
+
+func overlayEnv(parent []string, pairs ...string) []string {
+	drop := make(map[string]struct{}, len(pairs))
+	for _, pair := range pairs {
+		drop[envKey(pair)] = struct{}{}
+	}
+	out := make([]string, 0, len(parent)+len(pairs))
+	for _, entry := range parent {
+		if _, skip := drop[envKey(entry)]; skip {
+			continue
+		}
+		out = append(out, entry)
+	}
+	return append(out, pairs...)
+}
+
+func envKey(entry string) string {
+	key, _, _ := strings.Cut(entry, "=")
+	if runtime.GOOS == "windows" {
+		return strings.ToUpper(key)
+	}
+	return key
 }

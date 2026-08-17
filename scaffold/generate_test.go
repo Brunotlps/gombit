@@ -89,9 +89,9 @@ func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
 	}
 
 	viteConfig := readFile(t, filepath.Join(dest, "frontend", "vite.config.ts"))
-	for _, want := range []string{"/api", "/openapi.json", "/docs"} {
+	for _, want := range []string{"/api", "/openapi.json", "/docs", "GOMBIT_DEV_FRONTEND_HOST"} {
 		if !strings.Contains(viteConfig, want) {
-			t.Fatalf("vite.config.ts missing proxy %q:\n%s", want, viteConfig)
+			t.Fatalf("vite.config.ts missing %q:\n%s", want, viteConfig)
 		}
 	}
 	pkg := readFile(t, filepath.Join(dest, "frontend", "package.json"))

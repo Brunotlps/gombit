@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -313,4 +314,223 @@ func TestDetectPackageManagerRequiresNode(t *testing.T) {
 	if !strings.Contains(err.Error(), "npm and pnpm") {
 		t.Fatalf("error = %q, want npm and pnpm", err)
 	}
+}
+
+func TestDetectPackageManagerFallsBackToNpm(t *testing.T) {
+	t.Parallel()
+	name, path, err := detectPackageManager(t.TempDir(), func(file string) (string, error) {
+		if file == "npm" {
+			return "/usr/bin/npm", nil
+		}
+		return "", errors.New("missing")
+	})
+	if err != nil {
+		t.Fatalf("detectPackageManager() error = %v", err)
+	}
+	if name != "npm" {
+		t.Fatalf("manager = %q, want npm", name)
+	}
+	if path != "/usr/bin/npm" {
+		t.Fatalf("path = %q, want /usr/bin/npm", path)
+	}
+}
+
+func TestPlanFrontendUsesHostPortAndPnpm(t *testing.T) {
+	t.Parallel()
+	plan, err := planFrontend(t.TempDir(), func(file string) (string, error) {
+		if file == "pnpm" {
+			return "/usr/bin/pnpm", nil
+		}
+		return "", errors.New("missing")
+	}, "0.0.0.0", 4173)
+	if err != nil {
+		t.Fatalf("planFrontend() error = %v", err)
+	}
+	if plan.Manager != "pnpm" {
+		t.Fatalf("plan.Manager = %q, want pnpm", plan.Manager)
+	}
+	want := []string{"run", "dev", "--", "--host", "0.0.0.0", "--port", "4173"}
+	if strings.Join(plan.Args, " ") != strings.Join(want, " ") {
+		t.Fatalf("plan.Args = %v, want %v", plan.Args, want)
+	}
+}
+
+func TestPlanFrontendFallsBackToNpm(t *testing.T) {
+	t.Parallel()
+	plan, err := planFrontend(t.TempDir(), func(file string) (string, error) {
+		if file == "npm" {
+			return "/usr/bin/npm", nil
+		}
+		return "", errors.New("missing")
+	}, "127.0.0.1", 5173)
+	if err != nil {
+		t.Fatalf("planFrontend() error = %v", err)
+	}
+	if plan.Manager != "npm" {
+		t.Fatalf("plan.Manager = %q, want npm", plan.Manager)
+	}
+	if plan.Path != "/usr/bin/npm" {
+		t.Fatalf("plan.Path = %q, want /usr/bin/npm", plan.Path)
+	}
+	want := []string{"run", "dev", "--", "--host", "127.0.0.1", "--port", "5173"}
+	if strings.Join(plan.Args, " ") != strings.Join(want, " ") {
+		t.Fatalf("plan.Args = %v, want %v", plan.Args, want)
+	}
+}
+
+func TestFrontendDepsInstalledRequiresDirectory(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	if frontendDepsInstalled(dir) {
+		t.Fatal("missing node_modules reported as installed")
+	}
+	writeFile(t, filepath.Join(dir, "node_modules"), "not a directory")
+	if frontendDepsInstalled(dir) {
+		t.Fatal("node_modules file reported as installed")
+	}
+	if err := os.Remove(filepath.Join(dir, "node_modules")); err != nil {
+		t.Fatalf("remove: %v", err)
+	}
+	if err := os.Mkdir(filepath.Join(dir, "node_modules"), 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if !frontendDepsInstalled(dir) {
+		t.Fatal("node_modules directory reported as missing")
+	}
+}
+
+func TestOverlayEnvReplacesParentKeys(t *testing.T) {
+	t.Parallel()
+	parent := []string{
+		"PATH=/usr/bin",
+		"GOMBIT_HTTP_ADDR=:8080",
+		"VITE_API_URL=http://localhost:8080/api/v1",
+		"GOMBIT_HTTP_ADDR=:8080",
+		"HOME=/tmp",
+	}
+	got := overlayEnv(parent, "GOMBIT_HTTP_ADDR=:9090", "VITE_API_URL=/api/v1")
+	if values := envKeyValues(got, "GOMBIT_HTTP_ADDR"); len(values) != 1 || values[0] != ":9090" {
+		t.Fatalf("GOMBIT_HTTP_ADDR = %v, want single :9090", values)
+	}
+	if values := envKeyValues(got, "VITE_API_URL"); len(values) != 1 || values[0] != "/api/v1" {
+		t.Fatalf("VITE_API_URL = %v, want single /api/v1", values)
+	}
+	if values := envKeyValues(got, "PATH"); len(values) != 1 || values[0] != "/usr/bin" {
+		t.Fatalf("PATH = %v, want preserved /usr/bin", values)
+	}
+}
+
+func TestChildEnvReplacesParentKeysOnProcSpec(t *testing.T) {
+	t.Parallel()
+	parent := []string{
+		"GOMBIT_HTTP_ADDR=:8080",
+		"VITE_API_URL=http://localhost:8080/api/v1",
+		"GOMBIT_DEV_FRONTEND_HOST=0.0.0.0",
+	}
+	opts := Options{
+		HTTPAddr:     ":9090",
+		FrontendHost: "127.0.0.1",
+		FrontendPort: 4173,
+	}
+	spec := ProcSpec{Name: "backend", Env: childEnv(parent, opts, "http://127.0.0.1:9090")}
+	if values := envKeyValues(spec.Env, "GOMBIT_HTTP_ADDR"); len(values) != 1 || values[0] != opts.HTTPAddr {
+		t.Fatalf("ProcSpec.Env GOMBIT_HTTP_ADDR = %v, want single %s", values, opts.HTTPAddr)
+	}
+	if values := envKeyValues(spec.Env, "VITE_API_URL"); len(values) != 1 || values[0] != "/api/v1" {
+		t.Fatalf("ProcSpec.Env VITE_API_URL = %v, want single /api/v1", values)
+	}
+	if values := envKeyValues(spec.Env, "GOMBIT_DEV_FRONTEND_HOST"); len(values) != 1 || values[0] != "127.0.0.1" {
+		t.Fatalf("ProcSpec.Env GOMBIT_DEV_FRONTEND_HOST = %v, want 127.0.0.1", values)
+	}
+}
+
+func TestRunChildEnvReplacesParentHTTPAddr(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("POSIX sh process-group shutdown")
+	}
+
+	t.Setenv("GOMBIT_HTTP_ADDR", ":8080")
+	t.Setenv("VITE_API_URL", "http://localhost:8080/api/v1")
+
+	workDir := writeDevApp(t)
+	stdout := new(bytes.Buffer)
+	var mu sync.Mutex
+	var cmds []*exec.Cmd
+	startedCh := make(chan struct{}, 2)
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+
+	opts := Options{
+		WorkDir:      workDir,
+		HTTPAddr:     ":9090",
+		FrontendPort: 15174,
+		PollInterval: 50 * time.Millisecond,
+		ShutdownWait: 2 * time.Second,
+		Stdout:       stdout,
+		Stderr:       ioDiscard{},
+		LookPath: func(file string) (string, error) {
+			switch file {
+			case "go", "npm":
+				return file, nil
+			default:
+				return "", errors.New("not found")
+			}
+		},
+		Command: func(name string, args ...string) *exec.Cmd {
+			cmd := exec.Command("sh", "-c", "echo ready; trap 'exit 0' TERM; sleep 60")
+			mu.Lock()
+			cmds = append(cmds, cmd)
+			mu.Unlock()
+			startedCh <- struct{}{}
+			return cmd
+		},
+		HTTPGet: func(ctx context.Context, rawURL string) ([]byte, error) {
+			return nil, errors.New("backend not ready")
+		},
+	}
+
+	errCh := make(chan error, 1)
+	go func() {
+		errCh <- Run(ctx, opts)
+	}()
+
+	waitStarts(t, startedCh, 2)
+	mu.Lock()
+	captured := append([]*exec.Cmd(nil), cmds...)
+	mu.Unlock()
+	if len(captured) < 2 {
+		t.Fatalf("started %d commands, want 2", len(captured))
+	}
+	for _, cmd := range captured {
+		if values := envKeyValues(cmd.Env, "GOMBIT_HTTP_ADDR"); len(values) != 1 || values[0] != ":9090" {
+			t.Fatalf("child Env GOMBIT_HTTP_ADDR = %v, want single :9090", values)
+		}
+		if values := envKeyValues(cmd.Env, "VITE_API_URL"); len(values) != 1 || values[0] != "/api/v1" {
+			t.Fatalf("child Env VITE_API_URL = %v, want single /api/v1", values)
+		}
+	}
+
+	cancel()
+	select {
+	case err := <-errCh:
+		if err != nil {
+			t.Fatalf("Run() error = %v, want nil after cancel", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("Run() did not return after cancel")
+	}
+}
+
+func envKeyValues(env []string, key string) []string {
+	var values []string
+	for _, entry := range env {
+		k, v, ok := strings.Cut(entry, "=")
+		if !ok {
+			continue
+		}
+		if k == key || (runtime.GOOS == "windows" && strings.EqualFold(k, key)) {
+			values = append(values, v)
+		}
+	}
+	return values
 }

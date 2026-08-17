@@ -142,8 +142,16 @@ API docs     http://127.0.0.1:8080/docs
 | `--poll` | `1s` | OpenAPI poll interval |
 
 `frontend/package.json` is required. A missing file is an error — backend-only
-mode is not supported. Node.js is required for Vite. SIGINT/SIGTERM stops the
-child processes.
+mode is not supported. Node.js is required for Vite.
+
+`--http` and the Vite proxy origin are written into the child environment
+(`GOMBIT_HTTP_ADDR`, `GOMBIT_DEV_BACKEND`, `VITE_API_URL=/api/v1`), replacing
+any parent values so a shell-exported `.env.example` cannot keep the API on
+`:8080` while the service table prints `--http :9090`.
+
+SIGINT/SIGTERM stops the child processes. On Unix, Gombit signals the process
+group so air/npm grandchildren exit. On Windows, teardown uses
+`taskkill /T /F /PID` for the same process tree.
 
 The scaffold's Vite stub is enough to start HMR. M5-1 replaces it with the
 React skeleton.
