@@ -40,8 +40,8 @@ func TestGenerateWritesCompilingClient(t *testing.T) {
 	if !strings.Contains(stdout.String(), "created") {
 		t.Fatalf("stdout = %q, want created files", stdout.String())
 	}
-	if !strings.Contains(stdout.String(), "openapi-fetch") {
-		t.Fatalf("stdout = %q, want openapi-fetch dependency hint", stdout.String())
+	if !strings.Contains(stdout.String(), openapiFetchPackage) {
+		t.Fatalf("stdout = %q, want %s dependency hint", stdout.String(), openapiFetchPackage)
 	}
 
 	schema := readFile(t, filepath.Join(outDir, "schema.ts"))
@@ -238,7 +238,7 @@ func typecheckGenerated(t *testing.T, workDir, outDir string) {
   "private": true,
   "type": "module",
   "dependencies": {
-    "openapi-fetch": "0.17.0"
+    "openapi-fetch": "`+strings.TrimPrefix(openapiFetchPackage, "openapi-fetch@")+`"
   },
   "devDependencies": {
     "typescript": "5.9.3"

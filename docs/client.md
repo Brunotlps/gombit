@@ -14,7 +14,8 @@ go run ./cmd/gombit client generate \
 
 `--spec` defaults to `openapi.json`. `--out` defaults to
 `frontend/src/api/generated` (design §23.3). The command prints created or
-modified files and reminds you to add the `openapi-fetch` dependency.
+modified files and reminds you to add `openapi-fetch@0.17.0`. Schema types
+come from `openapi-typescript@7.13.0`.
 
 `--dry-run` prints the file list without writing. `--force` overwrites a file
 that was not produced by Gombit. Re-running replaces only files that carry
