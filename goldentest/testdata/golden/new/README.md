@@ -57,7 +57,7 @@ The default module path is `github.com/example/demo` (override with
 | --- | --- | --- |
 | database | `sqlite` | sqlite, postgres, or mysql |
 | cache | `memory` | memory, redis, or noop |
-| auth | `jwt` | Bearer JWT is the v0.1 default; cookie/CSRF is M5-3 |
+| auth | `jwt` | Bearer JWT (v0.1 default) or `cookie` (HttpOnly session + CSRF, see `docs/auth-cookie.md`) |
 | ui | `minimal` | minimal/headless default; MUI CRUD preset is M5-4 |
 
 Runtime still reads `GOMBIT_*` environment variables, not `gombit.yaml`.
@@ -126,8 +126,8 @@ go run ./cmd/gombit greet
 gombit createsuperuser --email admin@example.com --password correct-horse-battery-staple
 ```
 
-Requires `GOMBIT_JWT_SECRET` to be set (Bearer auth on; `.env` already has
-one). Prompts interactively when `--email` / `--password` are omitted and
+Requires `GOMBIT_JWT_SECRET` to be set (auth on, Bearer or cookie mode;
+`.env` already has one). Prompts interactively when `--email` / `--password` are omitted and
 stdin is a TTY. Refuses duplicate emails and hashes the password with the
 same bcrypt hasher as `/auth/register`. See
 [`docs/cli.md`](https://github.com/LAA-Software-Engineering/gombit/blob/main/docs/cli.md#gombit-createsuperuser).
