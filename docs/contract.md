@@ -6,7 +6,7 @@ application error categories mapped centrally to HTTP status codes.
 
 ADR-011 selected Huma as the contract layer. OpenAPI emission, `/docs`, and
 `gombit openapi generate` are documented in [`docs/openapi.md`](openapi.md).
-The TypeScript client belongs to M3-4.
+The TypeScript client is documented in [`docs/client.md`](client.md).
 
 ## Registering contract routes
 
@@ -166,7 +166,6 @@ in local/dev). `gombit openapi generate` writes the live spec to disk. See
 
 ## What is not here yet
 
-- TypeScript client generation (M3-4)
 - CI contract drift check (M3-5)
 - Pagination query DSL / filter/sort helpers (design §42)
 - gRPC status mapping (post-v0.1)

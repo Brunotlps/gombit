@@ -11,7 +11,9 @@ import (
 	"strings"
 	"testing"
 
+	clientpkg "github.com/LAA-Software-Engineering/gombit/client"
 	"github.com/LAA-Software-Engineering/gombit/config"
+	"github.com/LAA-Software-Engineering/gombit/contract"
 	"github.com/LAA-Software-Engineering/gombit/framework"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/gin-gonic/gin"
@@ -281,6 +283,9 @@ func TestRunRejectsUnknownCommandUsageListsFamilies(t *testing.T) {
 	if !strings.Contains(got, "openapi generate") {
 		t.Fatalf("usage = %q, want openapi generate", got)
 	}
+	if !strings.Contains(got, "client generate") {
+		t.Fatalf("usage = %q, want client generate", got)
+	}
 	if !strings.Contains(got, "see gombit db") {
 		t.Fatalf("usage = %q, want pointer to gombit db", got)
 	}
@@ -299,6 +304,58 @@ func TestRunOpenAPIGenerateRejectsBadURL(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "http or https") {
 		t.Fatalf("run() error = %q, want scheme message", err)
+	}
+}
+
+func TestRunClientGenerateDryRun(t *testing.T) {
+	app, err := clientpkg.SampleApp()
+	if err != nil {
+		t.Fatalf("SampleApp() error = %v", err)
+	}
+	workDir := t.TempDir()
+	spec := filepath.Join(workDir, "openapi.json")
+	if err := contract.WriteOpenAPI(spec, app.API()); err != nil {
+		t.Fatalf("WriteOpenAPI: %v", err)
+	}
+
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(previous) })
+
+	stdout := new(bytes.Buffer)
+	err = run(context.Background(), []string{
+		"client", "generate",
+		"--spec", "openapi.json",
+		"--out", "frontend/src/api/generated",
+		"--dry-run",
+	}, stdout, ioDiscard{})
+	if err != nil {
+		t.Fatalf("run() error = %v", err)
+	}
+	if !strings.Contains(stdout.String(), "schema.ts") {
+		t.Fatalf("stdout = %q, want schema.ts", stdout.String())
+	}
+	if _, err := os.Stat(filepath.Join(workDir, "frontend", "src", "api", "generated", "schema.ts")); !os.IsNotExist(err) {
+		t.Fatal("dry-run wrote schema.ts")
+	}
+}
+
+func TestRunRejectsUnknownClientSubcommand(t *testing.T) {
+	stderr := new(bytes.Buffer)
+	err := run(context.Background(), []string{"client", "unknown"}, ioDiscard{}, stderr)
+	if err == nil {
+		t.Fatal("run() error = nil, want unknown subcommand error")
+	}
+	if !strings.Contains(err.Error(), "unknown subcommand") {
+		t.Fatalf("run() error = %q, want unknown subcommand message", err)
+	}
+	if !strings.Contains(stderr.String(), "--npx") {
+		t.Fatalf("client usage = %q, want --npx", stderr.String())
 	}
 }
 

@@ -29,6 +29,8 @@ func run(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer)
 	switch args[0] {
 	case "openapi":
 		return runOpenAPI(ctx, args[1:], stdout, stderr)
+	case "client":
+		return runClient(ctx, args[1:], stdout, stderr)
 	case "db":
 		return runDB(ctx, args[1:], stdout, stderr)
 	default:
@@ -244,6 +246,7 @@ func usage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "available commands:")
 	_, _ = fmt.Fprintln(w, "  db <subcommand>   see gombit db")
 	_, _ = fmt.Fprintln(w, "  openapi generate [--out openapi.json] [--url http://127.0.0.1:8080/openapi.json]")
+	_, _ = fmt.Fprintln(w, "  client generate [--spec openapi.json] [--out frontend/src/api/generated] [--dry-run] [--force]")
 }
 
 func dbUsage(w io.Writer) {

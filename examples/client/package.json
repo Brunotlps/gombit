@@ -1,0 +1,11 @@
+{
+  "name": "gombit-client-example",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "openapi-fetch": "0.17.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}
