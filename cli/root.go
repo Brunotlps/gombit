@@ -65,6 +65,7 @@ func NewRoot(stdout io.Writer, stderr io.Writer) *Command {
 	root.AddCommand(newRoutesCommand(stdout, stderr))
 	root.AddCommand(newDoctorCommand(stdout))
 	root.AddCommand(newConfigCommand(stdout, stderr))
+	root.AddCommand(newCreateSuperuserCommand(stdout))
 	return root
 }
 
@@ -101,6 +102,7 @@ func rootLongHelp() string {
 		"  routes    Print HTTP routes",
 		"  doctor    Check Go, Node, config, database, Redis, migrations, and ports",
 		"  config    Show typed configuration (config show)",
+		"  createsuperuser  Create a superuser (admin) account",
 	}, "\n")
 }
 
@@ -118,6 +120,7 @@ func usage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  routes [--url http://127.0.0.1:8080]")
 	_, _ = fmt.Fprintln(w, "  doctor [--dir database/migrations]")
 	_, _ = fmt.Fprintln(w, "  config show")
+	_, _ = fmt.Fprintln(w, "  createsuperuser [--email you@example.com] [--password ...] [--no-input]")
 }
 
 func dbUsage(w io.Writer) {

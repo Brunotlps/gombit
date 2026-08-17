@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 	"path/filepath"
 	"testing"
 	"time"
@@ -65,5 +66,133 @@ func TestRotateRefreshKeepsNewAccessValid(t *testing.T) {
 	}
 	if _, err := svc.RotateRefresh(ctx, first.RefreshToken); err == nil {
 		t.Fatal("old refresh should be invalid")
+	}
+}
+
+func newTestService(t *testing.T) *Service {
+	t.Helper()
+	db, err := database.Open(config.DatabaseConfig{
+		Driver: config.DatabaseDriverSQLite,
+		DSN:    "file:" + filepath.Join(t.TempDir(), "auth.db") + "?cache=shared&_fk=1",
+	})
+	if err != nil {
+		t.Fatalf("open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if err := Migrate(db.DB); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+
+	cfg := config.DefaultFor(config.EnvironmentTest)
+	cfg.Auth.JWTSecret = "test-jwt-secret-32-bytes-minimum!"
+	cfg.Auth.BcryptCost = bcrypt.MinCost
+	svc, err := NewService(db.DB, cfg)
+	if err != nil {
+		t.Fatalf("NewService: %v", err)
+	}
+	return svc
+}
+
+// TestCreateSuperuserOnFreshDB is the M4-6 acceptance criterion: a
+// createsuperuser call on a fresh database creates an admin (IsSuperuser)
+// account whose password is bcrypt-hashed, not stored in plaintext.
+func TestCreateSuperuserOnFreshDB(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+
+	user, err := svc.CreateSuperuser(ctx, "Admin@Example.com", "correct-horse")
+	if err != nil {
+		t.Fatalf("CreateSuperuser: %v", err)
+	}
+	if !user.IsSuperuser {
+		t.Fatal("CreateSuperuser: IsSuperuser = false, want true")
+	}
+	if user.Email != "admin@example.com" {
+		t.Fatalf("CreateSuperuser: Email = %q, want normalized email", user.Email)
+	}
+	if user.PasswordHash == "correct-horse" {
+		t.Fatal("CreateSuperuser: password stored in plaintext")
+	}
+	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte("correct-horse")); err != nil {
+		t.Fatalf("CreateSuperuser: password hash does not verify: %v", err)
+	}
+
+	var stored User
+	if err := svc.db.First(&stored, user.ID).Error; err != nil {
+		t.Fatalf("load stored user: %v", err)
+	}
+	if !stored.IsSuperuser {
+		t.Fatal("stored user IsSuperuser = false, want true")
+	}
+}
+
+// TestCreateSuperuserRefusesDuplicateEmail matches Register's uniqueness
+// path (same errEmailTaken, exported as ErrEmailTaken).
+func TestCreateSuperuserRefusesDuplicateEmail(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+
+	if _, err := svc.CreateSuperuser(ctx, "admin@example.com", "correct-horse"); err != nil {
+		t.Fatalf("first CreateSuperuser: %v", err)
+	}
+	if _, err := svc.CreateSuperuser(ctx, "admin@example.com", "another-password"); !errors.Is(err, ErrEmailTaken) {
+		t.Fatalf("second CreateSuperuser error = %v, want ErrEmailTaken", err)
+	}
+	// Also refused against an existing non-superuser account for the same
+	// email, and vice versa: the unique index does not distinguish roles.
+	if _, err := svc.Register(ctx, "admin@example.com", "yet-another"); !errors.Is(err, ErrEmailTaken) {
+		t.Fatalf("Register against existing superuser email error = %v, want ErrEmailTaken", err)
+	}
+}
+
+// TestRegisterDoesNotGrantSuperuser is the non-superuser register path
+// acceptance criterion: /auth/register (Register) must not be a superuser
+// escalation path.
+func TestRegisterDoesNotGrantSuperuser(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+
+	user, err := svc.Register(ctx, "user@example.com", "correct-horse")
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if user.IsSuperuser {
+		t.Fatal("Register: IsSuperuser = true, want false")
+	}
+	if _, err := svc.Register(ctx, "user@example.com", "correct-horse-2"); !errors.Is(err, ErrEmailTaken) {
+		t.Fatalf("duplicate Register error = %v, want ErrEmailTaken", err)
+	}
+}
+
+func TestCreateSuperuserTable(t *testing.T) {
+	tests := []struct {
+		name      string
+		email     string
+		password  string
+		wantErr   error
+		wantEmpty bool
+	}{
+		{name: "valid", email: "ada@example.com", password: "correct-horse"},
+		{name: "empty email", email: "   ", password: "correct-horse", wantErr: errInvalidCredentials, wantEmpty: true},
+		{name: "empty password", email: "grace@example.com", password: "", wantErr: errPasswordRequired, wantEmpty: true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := newTestService(t)
+			user, err := svc.CreateSuperuser(context.Background(), tt.email, tt.password)
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Fatalf("CreateSuperuser() error = %v, want %v", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("CreateSuperuser() error = %v, want nil", err)
+			}
+			if !user.IsSuperuser {
+				t.Fatal("CreateSuperuser() IsSuperuser = false, want true")
+			}
+		})
 	}
 }

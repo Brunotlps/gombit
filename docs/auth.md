@@ -2,7 +2,8 @@
 
 Gombit's v0.1 API default is **Bearer JWT with refresh rotation** (C3 / D3).
 Cookie/session + CSRF is a first-class mode but a separate issue ([M5-3]).
-`gombit createsuperuser` is [M4-6].
+`gombit createsuperuser` ([M4-6]) is the CLI admin seed path; see
+[cli.md](cli.md#gombit-createsuperuser).
 
 Behavior lives in the `auth` runtime package. `framework.New` mounts the
 Huma routes when `GOMBIT_JWT_SECRET` is set **and** a database is attached.
@@ -26,7 +27,7 @@ All paths use `config.API.Prefix` (default `/api/v1`). D10 envelopes.
 
 | Method | Path | Auth |
 | --- | --- | --- |
-| `POST` | `/auth/register` | Public. Seeds a user (email + password). Until [M4-6]. |
+| `POST` | `/auth/register` | Public. Demo/bootstrap seed path (email + password); never sets `IsSuperuser`. |
 | `POST` | `/auth/login` | Public. Returns `access_token`, `refresh_token`, `token_type`, `expires_in`. |
 | `POST` | `/auth/refresh` | Public. Body `{ "refresh_token" }`. Issues a new pair; the old refresh token is invalid. |
 | `POST` | `/auth/logout` | Public. Body `{ "refresh_token" }`. Revokes that refresh token. Bound access JWTs then fail. |
@@ -35,6 +36,11 @@ All paths use `config.API.Prefix` (default `/api/v1`). D10 envelopes.
 Passwords are hashed with bcrypt. Access JWTs are HS256, bound to the refresh
 row so logout (and reuse of a rotated refresh token) 401s `/me`. Reusing a
 revoked refresh token revokes that user's remaining refresh tokens.
+
+`User.IsSuperuser` is the only identity flag beyond email/password hash.
+`gombit createsuperuser` is the only path that sets it; `/auth/register`
+never does. There is no groups/permissions table yet — that is the admin
+milestone's authorization surface (ADMIN-3), not this one.
 
 ## Config
 

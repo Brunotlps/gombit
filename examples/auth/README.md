@@ -48,4 +48,19 @@ curl -sS -X POST http://127.0.0.1:8080/api/v1/auth/logout \
 The development JWT secret in `main.go` is not a production secret.
 Production config rejects secrets shorter than 32 characters.
 
-See [`docs/auth.md`](../../docs/auth.md).
+## Create an admin account (`gombit createsuperuser`)
+
+The example uses an in-memory SQLite database, so point `gombit
+createsuperuser` at a file-backed database instead if you want the account
+to persist across runs:
+
+```sh
+GOMBIT_DATABASE_DRIVER=sqlite \
+GOMBIT_DATABASE_DSN='file:auth-example.db?cache=shared&_fk=1' \
+GOMBIT_JWT_SECRET='dev-only-example-jwt-secret-not-for-prod' \
+go run ./cmd/gombit createsuperuser --no-input \
+  --email admin@example.com --password correct-horse-battery-staple
+```
+
+See [`docs/cli.md`](../../docs/cli.md#gombit-createsuperuser) and
+[`docs/auth.md`](../../docs/auth.md).

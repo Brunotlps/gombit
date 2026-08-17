@@ -7,12 +7,15 @@ import (
 	"gorm.io/gorm"
 )
 
-// User is the v0.1 auth identity. Groups and permissions are out of scope
-// until createsuperuser / admin work; email + password hash is enough.
+// User is the v0.1 auth identity. Groups and permissions are out of scope;
+// IsSuperuser is the minimum identity flag gombit createsuperuser (M4-6)
+// and the admin milestone (ADMIN-3) need. Email + password hash + that flag
+// is enough.
 type User struct {
 	ID           uint   `gorm:"primaryKey"`
 	Email        string `gorm:"uniqueIndex;size:255;not null"`
 	PasswordHash string `gorm:"not null"`
+	IsSuperuser  bool   `gorm:"not null;default:false"`
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
