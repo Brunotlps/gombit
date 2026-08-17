@@ -44,7 +44,7 @@ func TestRunRejectsUnknownCommandUsageListsIntrospection(t *testing.T) {
 func TestRunConfigShowRedactsSecrets(t *testing.T) {
 	cfg := config.Default()
 	cfg.Database.Driver = config.DatabaseDriverPostgres
-	cfg.Database.DSN = "postgres://gombit:db-super-secret@127.0.0.1:5432/gombit?sslmode=disable"
+	cfg.Database.DSN = "postgres://gombit:db-super-secret@127.0.0.1:5432/gombit?sslmode=disable" // #nosec G101 -- fake local test DSN.
 	cfg.Cache.Redis.Password = "redis-super-secret"
 	stubConfig(t, cfg)
 

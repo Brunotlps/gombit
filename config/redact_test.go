@@ -9,7 +9,7 @@ import (
 func TestRedactDSNHidesURLPassword(t *testing.T) {
 	t.Parallel()
 
-	dsn := "postgres://gombit:super-secret@127.0.0.1:5432/gombit?sslmode=disable"
+	dsn := "postgres://gombit:super-secret@127.0.0.1:5432/gombit?sslmode=disable" // #nosec G101 -- fake local test DSN.
 	got := RedactDSN(dsn)
 	if strings.Contains(got, "super-secret") {
 		t.Fatalf("RedactDSN() = %q, still contains password", got)
@@ -61,7 +61,7 @@ func TestConfigRedactedHidesRedisPassword(t *testing.T) {
 	t.Parallel()
 
 	cfg := Default()
-	cfg.Database.DSN = "postgres://gombit:db-secret@localhost:5432/app"
+	cfg.Database.DSN = "postgres://gombit:db-secret@localhost:5432/app" // #nosec G101 -- fake local test DSN.
 	cfg.Cache.Redis.Password = "redis-secret"
 
 	got := cfg.Redacted()
@@ -80,7 +80,7 @@ func TestSanitizeErrorRemovesSecrets(t *testing.T) {
 	t.Parallel()
 
 	cfg := Default()
-	cfg.Database.DSN = "postgres://gombit:db-secret@localhost:5432/app"
+	cfg.Database.DSN = "postgres://gombit:db-secret@localhost:5432/app" // #nosec G101 -- fake local test DSN.
 	cfg.Cache.Redis.Password = "redis-secret"
 
 	err := errors.New("dial postgres://gombit:db-secret@localhost:5432/app with redis-secret")

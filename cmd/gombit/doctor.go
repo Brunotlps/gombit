@@ -282,15 +282,19 @@ func pendingMigrationFiles(ctx context.Context, cfg config.Config, files []migra
 		for _, rev := range revisions {
 			applied[rev.Version] = struct{}{}
 		}
-		pending = pending[:0]
+		found := make([]migrations.MigrationFile, 0)
 		for _, file := range files {
 			if _, ok := applied[file.Version]; !ok {
-				pending = append(pending, file)
+				found = append(found, file)
 			}
 		}
+		pending = found
 		return nil
 	})
-	return pending, err
+	if err != nil {
+		return nil, err
+	}
+	return pending, nil
 }
 
 func checkHTTPAddr(cfg config.Config) doctorCheck {

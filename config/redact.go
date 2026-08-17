@@ -33,12 +33,7 @@ func RedactDSN(dsn string) string {
 	if strings.Contains(trimmed, "://") {
 		u, err := url.Parse(trimmed)
 		if err == nil && u.Scheme != "" {
-			if u.User != nil {
-				if _, hasPassword := u.User.Password(); hasPassword {
-					u.User = url.UserPassword(u.User.Username(), RedactedSecret)
-				}
-			}
-			return redactQuerySecrets(u.String())
+			return redactURL(u)
 		}
 	}
 
@@ -74,7 +69,7 @@ func SanitizeSecretText(text string, cfg Config) string {
 				text = strings.ReplaceAll(text, password, RedactedSecret)
 			}
 		}
-		if !strings.HasPrefix(dsn, "file:") {
+		if !strings.Contains(dsn, "://") && !strings.HasPrefix(dsn, "file:") {
 			if at := strings.Index(dsn, "@"); at > 0 {
 				userinfo := dsn[:at]
 				if colon := strings.Index(userinfo, ":"); colon >= 0 {
@@ -94,4 +89,31 @@ func SanitizeSecretText(text string, cfg Config) string {
 
 func redactQuerySecrets(value string) string {
 	return querySecretPattern.ReplaceAllString(value, "${1}"+RedactedSecret)
+}
+
+func redactURL(u *url.URL) string {
+	var b strings.Builder
+	b.WriteString(u.Scheme)
+	b.WriteString("://")
+	if u.User != nil {
+		b.WriteString(u.User.Username())
+		if _, hasPassword := u.User.Password(); hasPassword {
+			b.WriteByte(':')
+			b.WriteString(RedactedSecret)
+		}
+		b.WriteByte('@')
+	}
+	b.WriteString(u.Host)
+	if path := u.EscapedPath(); path != "" {
+		b.WriteString(path)
+	}
+	if u.RawQuery != "" {
+		b.WriteByte('?')
+		b.WriteString(redactQuerySecrets(u.RawQuery))
+	}
+	if u.Fragment != "" {
+		b.WriteByte('#')
+		b.WriteString(u.Fragment)
+	}
+	return b.String()
 }
