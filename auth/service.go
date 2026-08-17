@@ -51,6 +51,17 @@ func (s *Service) now() time.Time {
 
 // Register creates a user. Duplicate emails return errEmailTaken.
 func (s *Service) Register(ctx context.Context, email, password string) (User, error) {
+	return s.createUser(ctx, email, password, false)
+}
+
+// CreateSuperuser creates a user with IsSuperuser set, for gombit
+// createsuperuser (M4-6). It shares Register's hasher and uniqueness path;
+// duplicate emails return errEmailTaken.
+func (s *Service) CreateSuperuser(ctx context.Context, email, password string) (User, error) {
+	return s.createUser(ctx, email, password, true)
+}
+
+func (s *Service) createUser(ctx context.Context, email, password string, superuser bool) (User, error) {
 	email = normalizeEmail(email)
 	if email == "" {
 		return User{}, errInvalidCredentials
@@ -59,7 +70,7 @@ func (s *Service) Register(ctx context.Context, email, password string) (User, e
 	if err != nil {
 		return User{}, err
 	}
-	user := User{Email: email, PasswordHash: hash}
+	user := User{Email: email, PasswordHash: hash, IsSuperuser: superuser}
 	if err := s.db.WithContext(ctx).Create(&user).Error; err != nil {
 		if isUniqueViolation(err) {
 			return User{}, errEmailTaken

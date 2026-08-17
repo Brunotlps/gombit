@@ -14,6 +14,12 @@ var (
 	errRefreshReuse       = errors.New("refresh token reuse detected")
 )
 
+// ErrEmailTaken is the exported form of errEmailTaken. Register and
+// CreateSuperuser return it (wrapped) so callers such as gombit
+// createsuperuser can detect duplicates with errors.Is without a second
+// uniqueness check.
+var ErrEmailTaken = errEmailTaken
+
 func normalizeEmail(email string) string {
 	return strings.ToLower(strings.TrimSpace(email))
 }
