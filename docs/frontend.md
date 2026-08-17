@@ -2,8 +2,8 @@
 
 `gombit new` writes a Vite + React + TypeScript app under `frontend/`.
 The default UI is **minimal/headless** (C4). `--ui mui` is recorded in
-`gombit.yaml` only; the MUI CRUD preset is [M5-4]. Bearer login, refresh,
-and protected routes are [M5-2].
+`gombit.yaml` only; the MUI CRUD preset is [M5-4]. Bearer login, refresh
+rotation, and protected routes are documented in [auth.md](auth.md).
 
 See also [cli.md](cli.md) (`gombit new`, `gombit dev`) and
 [client.md](client.md) (TypeScript client generation).
@@ -26,16 +26,18 @@ frontend/src/
 ├── main.tsx
 ├── app/
 │   ├── providers.tsx   # API client context
-│   └── router.tsx      # /, /products/new, generated resource routes
+│   └── router.tsx      # /login, RequireAuth, /, /products/new
 ├── api/
-│   ├── client.ts       # createAppClient + useApiClient
+│   ├── client.ts       # createAppClient + 401 refresh + useApiClient
 │   ├── formErrors.ts   # D10 fields → RHF setError
 │   └── generated/      # schema.ts, client.ts, error.ts
 ├── auth/
-│   └── session.ts      # in-memory access token
+│   ├── session.ts      # in-memory access + refresh tokens
+│   └── RequireAuth.tsx # redirect anonymous users to /login
 ├── layouts/
 │   └── AppLayout.tsx
 ├── pages/
+│   ├── LoginPage.tsx
 │   ├── ProductListPage.tsx
 │   └── ProductFormPage.tsx
 └── resources.tsx       # rewritten by gombit make resource
@@ -57,10 +59,14 @@ database passwords, or other server credentials there.
 
 ## Access token (in memory)
 
-`src/auth/session.ts` holds the access token in a module variable.
-`getAccessToken` is passed into `createGombitClient` and may return
-`undefined`. Login, refresh rotation, and protected routes are M5-2.
-Generated source never reads `localStorage` or `sessionStorage`.
+`src/auth/session.ts` holds the access and refresh tokens in module
+variables. `getAccessToken` is passed into `createGombitClient`.
+`createAppClient` attaches `Authorization: Bearer` and, on 401, calls
+`POST /api/v1/auth/refresh` once using the in-memory refresh token.
+Concurrent 401s wait on that refresh and retry instead of returning the
+stale failure. `RequireAuth` sends anonymous users to `/login`. Logout
+clears memory and revokes the refresh token. Generated source never reads
+`localStorage` or `sessionStorage`. See [auth.md](auth.md).
 
 ## D10 field errors
 
@@ -98,7 +104,6 @@ gombit dev
 
 ## What is not here yet
 
-- Bearer login, refresh, protected routes: M5-2
 - Cookie/session + CSRF (`--auth cookie`): M5-3
 - MUI CRUD preset (`--ui mui`): M5-4
 - `go:embed` single-binary SPA: M5-5

@@ -63,6 +63,7 @@ func TestConfigRedactedHidesRedisPassword(t *testing.T) {
 	cfg := Default()
 	cfg.Database.DSN = "postgres://gombit:db-secret@localhost:5432/app" // #nosec G101 -- fake local test DSN.
 	cfg.Cache.Redis.Password = "redis-secret"
+	cfg.Auth.JWTSecret = "jwt-super-secret"
 
 	got := cfg.Redacted()
 	if strings.Contains(got.Database.DSN, "db-secret") {
@@ -71,8 +72,14 @@ func TestConfigRedactedHidesRedisPassword(t *testing.T) {
 	if got.Cache.Redis.Password != RedactedSecret {
 		t.Fatalf("Redacted Redis password = %q, want %s", got.Cache.Redis.Password, RedactedSecret)
 	}
+	if got.Auth.JWTSecret != RedactedSecret {
+		t.Fatalf("Redacted JWT secret = %q, want %s", got.Auth.JWTSecret, RedactedSecret)
+	}
 	if cfg.Cache.Redis.Password != "redis-secret" {
 		t.Fatal("Redacted() mutated the original Redis password")
+	}
+	if cfg.Auth.JWTSecret != "jwt-super-secret" {
+		t.Fatal("Redacted() mutated the original JWT secret")
 	}
 }
 
@@ -82,10 +89,11 @@ func TestSanitizeErrorRemovesSecrets(t *testing.T) {
 	cfg := Default()
 	cfg.Database.DSN = "postgres://gombit:db-secret@localhost:5432/app" // #nosec G101 -- fake local test DSN.
 	cfg.Cache.Redis.Password = "redis-secret"
+	cfg.Auth.JWTSecret = "jwt-super-secret"
 
-	err := errors.New("dial postgres://gombit:db-secret@localhost:5432/app with redis-secret")
+	err := errors.New("dial postgres://gombit:db-secret@localhost:5432/app with redis-secret jwt-super-secret")
 	got := SanitizeError(err, cfg)
-	if strings.Contains(got, "db-secret") || strings.Contains(got, "redis-secret") {
+	if strings.Contains(got, "db-secret") || strings.Contains(got, "redis-secret") || strings.Contains(got, "jwt-super-secret") {
 		t.Fatalf("SanitizeError() = %q, still contains secrets", got)
 	}
 }

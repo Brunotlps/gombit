@@ -19,6 +19,9 @@ func (c Config) Redacted() Config {
 	if strings.TrimSpace(c.Cache.Redis.Password) != "" {
 		out.Cache.Redis.Password = RedactedSecret
 	}
+	if strings.TrimSpace(c.Auth.JWTSecret) != "" {
+		out.Auth.JWTSecret = RedactedSecret
+	}
 	return out
 }
 
@@ -83,6 +86,9 @@ func SanitizeSecretText(text string, cfg Config) string {
 	}
 	if password := cfg.Cache.Redis.Password; password != "" {
 		text = strings.ReplaceAll(text, password, RedactedSecret)
+	}
+	if secret := cfg.Auth.JWTSecret; secret != "" {
+		text = strings.ReplaceAll(text, secret, RedactedSecret)
 	}
 	return text
 }

@@ -1,8 +1,25 @@
-import { Link, Outlet } from "react-router";
+import { Link, Outlet, useNavigate } from "react-router";
 
+import { useApiClient } from "../api/client";
+import { clearSession, getRefreshToken } from "../auth/session";
 import { generatedResources } from "../resources";
 
 export function AppLayout() {
+  const client = useApiClient();
+  const navigate = useNavigate();
+
+  async function onLogout() {
+    const refreshToken = getRefreshToken();
+    try {
+      if (refreshToken) {
+        await client.POST("/api/v1/auth/logout", { body: { refresh_token: refreshToken } });
+      }
+    } finally {
+      clearSession();
+      navigate("/login", { replace: true });
+    }
+  }
+
   return (
     <div>
       <header>
@@ -16,6 +33,10 @@ export function AppLayout() {
               <Link to={resource.listPath}>{resource.title}</Link>
             </span>
           ))}
+          {" · "}
+          <button type="button" onClick={() => void onLogout()}>
+            Log out
+          </button>
         </nav>
       </header>
       <main>

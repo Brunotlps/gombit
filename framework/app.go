@@ -12,6 +12,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/LAA-Software-Engineering/gombit/auth"
 	"github.com/LAA-Software-Engineering/gombit/cache"
 	"github.com/LAA-Software-Engineering/gombit/config"
 	"github.com/LAA-Software-Engineering/gombit/contract"
@@ -125,6 +126,14 @@ func New(options ...Option) (*App, error) {
 		app.cacheStore = store
 		app.cacheOwned = true
 		app.redis = store.Redis()
+	}
+	if app.cfg.Auth.Enabled() {
+		if app.db == nil || app.db.DB == nil {
+			return nil, errors.New("framework: JWT secret is set but no database is attached")
+		}
+		if err := auth.Mount(app.api, app.db.DB, app.cfg); err != nil {
+			return nil, err
+		}
 	}
 
 	return app, nil

@@ -139,10 +139,13 @@ jobs:
           cache: true
 
       - name: Run Postgres database tests
-        run: >-
-          go test -tags integration ./database
-          -database.postgres-dsn
-          'postgres://gombit:gombit@127.0.0.1:5432/gombit?sslmode=disable'
+        run: |
+          go test -tags integration ./database \
+            -database.postgres-dsn \
+            'postgres://gombit:gombit@127.0.0.1:5432/gombit?sslmode=disable'
+          go test -tags integration ./auth \
+            -auth.postgres-dsn \
+            'postgres://gombit:gombit@127.0.0.1:5432/gombit?sslmode=disable'
 
   database-mysql:
     name: Database (mysql)
@@ -174,10 +177,13 @@ jobs:
           cache: true
 
       - name: Run MySQL database tests
-        run: >-
-          go test -tags integration ./database
-          -database.mysql-dsn
-          'gombit:gombit@tcp(127.0.0.1:3306)/gombit?parseTime=true'
+        run: |
+          go test -tags integration ./database \
+            -database.mysql-dsn \
+            'gombit:gombit@tcp(127.0.0.1:3306)/gombit?parseTime=true'
+          go test -tags integration ./auth \
+            -auth.mysql-dsn \
+            'gombit:gombit@tcp(127.0.0.1:3306)/gombit?parseTime=true'
 
   migrations-sqlite:
     name: Migrations (sqlite)

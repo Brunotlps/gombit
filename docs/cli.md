@@ -93,7 +93,7 @@ replace github.com/LAA-Software-Engineering/gombit => /path/to/gombit
 `--auth cookie` and `--ui mui` are recorded in `gombit.yaml` only. Cookie/CSRF
 is M5-3; the MUI CRUD preset is M5-4. The generated `frontend/` directory is a
 Vite + React + TypeScript skeleton (router, generated client, React Hook
-Form). Bearer login is M5-2. See [frontend.md](frontend.md).
+Form). Bearer login is documented in [auth.md](auth.md). See [frontend.md](frontend.md).
 
 If the project name is omitted and stdin is a TTY, `gombit new` prompts for
 name and the choices above. Tests and CI pass flags so the command never
@@ -188,7 +188,7 @@ group so air/npm grandchildren exit. On Windows, teardown uses
 `taskkill /T /F /PID` for the same process tree.
 
 The scaffold is a Vite + React + TypeScript skeleton. See
-[frontend.md](frontend.md). Bearer login is M5-2.
+[frontend.md](frontend.md). Bearer login is documented in [auth.md](auth.md).
 
 ## `gombit make resource`
 
@@ -367,16 +367,17 @@ Prints a status table. A `FAIL` row exits non-zero.
 | `redis` | ping when `GOMBIT_CACHE_DRIVER=redis` (timeout-bounded) |
 | `migrations` | pending Atlas SQL in `--dir` (**warn**); skip if the directory is absent |
 | `http` | `GOMBIT_HTTP_ADDR` parses; **warn** if the port is in use |
-| `insecure` | existing production issues: `/docs` on in production, SQLite DSN path not writable |
+| `insecure` | production `/docs`, unwritable SQLite path, production JWT secret shorter than 32 characters or equal to the generated-app development placeholder |
 
 Network checks use a short timeout so CI cannot hang. Doctor does not start
 Postgres/Redis containers; an invalid driver, broken `config.Load()`, or an
 unwritable SQLite path is enough to flag a deliberately-broken config.
 
-Appendix C JWT secret, cookie `Secure`, and CORS+credentials checks wait for
-the typed auth fields (M5). Production trusted-proxy and Redis
-`TLSInsecure` rejections already live in `config.Validate()` and show up on
-the `config` row.
+Appendix C rejects a production JWT secret shorter than 32 characters, and
+the generated-app development placeholder, on the `config` row
+(`config.Load`) and the `insecure` row when config is stubbed past Load. Cookie `Secure` and CORS+credentials checks wait for
+M5-3. Production trusted-proxy and Redis `TLSInsecure` rejections already
+live in `config.Validate()` and show up on the `config` row.
 
 ## `gombit config show`
 
@@ -385,9 +386,9 @@ gombit config show
 ```
 
 Prints the typed `config.Load()` result as aligned `key<TAB>value` lines.
-Database DSN userinfo/passwords and `Cache.Redis.Password` are replaced with
-`*****` and must never appear in the output. JWT/cookie/CORS fields are
-omitted until those typed config fields exist.
+Database DSN userinfo/passwords, `Cache.Redis.Password`, and
+`Auth.JWTSecret` are replaced with `*****` and must never appear in the
+output.
 
 See [config.md](config.md).
 

@@ -68,6 +68,27 @@ func assertFrontendInvariants(t *testing.T, files fileMap) {
 			t.Errorf("formErrors.ts missing %q", want)
 		}
 	}
+	session := string(files["frontend/src/auth/session.ts"])
+	if session == "" {
+		t.Fatal("missing frontend/src/auth/session.ts")
+	}
+	if !strings.Contains(session, "getAccessToken") || !strings.Contains(session, "clearSession") {
+		t.Error("session.ts missing in-memory token helpers")
+	}
+	login := string(files["frontend/src/pages/LoginPage.tsx"])
+	if login == "" {
+		t.Fatal("missing frontend/src/pages/LoginPage.tsx")
+	}
+	if !strings.Contains(login, "/api/v1/auth/login") {
+		t.Error("LoginPage.tsx missing login path")
+	}
+	client := string(files["frontend/src/api/client.ts"])
+	if client == "" {
+		t.Fatal("missing frontend/src/api/client.ts")
+	}
+	if !strings.Contains(client, "refreshInFlight") {
+		t.Error("client.ts missing shared refresh promise")
+	}
 }
 
 func moduleRoot(t *testing.T) string {
@@ -99,6 +120,9 @@ func snapshotTree(t *testing.T, root string) fileMap {
 			if _, skip := skipSnapshotDirs[d.Name()]; skip {
 				return fs.SkipDir
 			}
+			return nil
+		}
+		if d.Name() == ".env" {
 			return nil
 		}
 		data, err := fs.ReadFile(fsys, path)

@@ -46,6 +46,7 @@ func TestRunConfigShowRedactsSecrets(t *testing.T) {
 	cfg.Database.Driver = config.DatabaseDriverPostgres
 	cfg.Database.DSN = "postgres://gombit:db-super-secret@127.0.0.1:5432/gombit?sslmode=disable" // #nosec G101 -- fake local test DSN.
 	cfg.Cache.Redis.Password = "redis-super-secret"
+	cfg.Auth.JWTSecret = "jwt-super-secret"
 	stubConfig(t, cfg)
 
 	stdout := new(bytes.Buffer)
@@ -54,7 +55,7 @@ func TestRunConfigShowRedactsSecrets(t *testing.T) {
 		t.Fatalf("run(config show) error = %v", err)
 	}
 	got := stdout.String()
-	if strings.Contains(got, "db-super-secret") || strings.Contains(got, "redis-super-secret") {
+	if strings.Contains(got, "db-super-secret") || strings.Contains(got, "redis-super-secret") || strings.Contains(got, "jwt-super-secret") {
 		t.Fatalf("config show leaked secrets:\n%s", got)
 	}
 	if !strings.Contains(got, config.RedactedSecret) {
@@ -65,6 +66,9 @@ func TestRunConfigShowRedactsSecrets(t *testing.T) {
 	}
 	if !strings.Contains(got, "Cache.Redis.Password") {
 		t.Fatalf("config show = %q, want Cache.Redis.Password", got)
+	}
+	if !strings.Contains(got, "Auth.JWTSecret") {
+		t.Fatalf("config show = %q, want Auth.JWTSecret", got)
 	}
 }
 
@@ -179,6 +183,48 @@ func TestRunDoctorFlagsUnwritableSQLitePath(t *testing.T) {
 	}
 	if !strings.Contains(got, "insecure") && !strings.Contains(got, "database") {
 		t.Fatalf("doctor output = %q, want named insecure or database failure", got)
+	}
+}
+
+func TestRunDoctorFlagsPlaceholderJWTSecretInProduction(t *testing.T) {
+	cfg := config.DefaultFor(config.EnvironmentProduction)
+	cfg.HTTP.Addr = "127.0.0.1:0"
+	cfg.Auth.JWTSecret = "change-me-in-development-use-a-long-random-value"
+	cfg.Database.DSN = "file::memory:?cache=shared&_fk=1"
+	stubConfig(t, cfg)
+
+	stdout := new(bytes.Buffer)
+	err := run(context.Background(), []string{"doctor"}, stdout, ioDiscard{})
+	if err == nil {
+		t.Fatal("run(doctor) error = nil, want failure for placeholder production JWT secret")
+	}
+	got := stdout.String()
+	if !strings.Contains(got, "FAIL") {
+		t.Fatalf("doctor output = %q, want FAIL", got)
+	}
+	if !strings.Contains(got, "insecure") || !strings.Contains(strings.ToLower(got), "placeholder") {
+		t.Fatalf("doctor output = %q, want insecure JWT placeholder check", got)
+	}
+}
+
+func TestRunDoctorFlagsShortJWTSecretInProduction(t *testing.T) {
+	cfg := config.DefaultFor(config.EnvironmentProduction)
+	cfg.HTTP.Addr = "127.0.0.1:0"
+	cfg.Auth.JWTSecret = "short"
+	cfg.Database.DSN = "file::memory:?cache=shared&_fk=1"
+	stubConfig(t, cfg)
+
+	stdout := new(bytes.Buffer)
+	err := run(context.Background(), []string{"doctor"}, stdout, ioDiscard{})
+	if err == nil {
+		t.Fatal("run(doctor) error = nil, want failure for short production JWT secret")
+	}
+	got := stdout.String()
+	if !strings.Contains(got, "FAIL") {
+		t.Fatalf("doctor output = %q, want FAIL", got)
+	}
+	if !strings.Contains(got, "insecure") || !strings.Contains(strings.ToLower(got), "jwt") {
+		t.Fatalf("doctor output = %q, want insecure JWT check", got)
 	}
 }
 
