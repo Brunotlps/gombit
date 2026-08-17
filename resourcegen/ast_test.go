@@ -8,6 +8,8 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+
+	"github.com/LAA-Software-Engineering/gombit/migrations"
 )
 
 const fixtureMain = `package main
@@ -176,6 +178,76 @@ func TestAddImportAndRegisterNestedIfInitRun(t *testing.T) {
 	if registerIdx < 0 || runIdx < 0 || registerIdx > runIdx {
 		t.Fatalf("Register should appear before nested framework.Run:\n%s", src)
 	}
+}
+
+func TestCollectAutoMigrateModelsIncludesExistingAndNew(t *testing.T) {
+	t.Parallel()
+
+	onlyProduct, err := CollectAutoMigrateModels([]byte(fixturePlatform))
+	if err != nil {
+		t.Fatalf("CollectAutoMigrateModels() error = %v", err)
+	}
+	if !hasCollectedModel(onlyProduct, "github.com/example/demo/internal/product", "Product") {
+		t.Fatalf("models = %#v, want product.Product", onlyProduct)
+	}
+	if hasCollectedModel(onlyProduct, "github.com/example/demo/internal/book", "Book") {
+		t.Fatalf("models = %#v, did not want book.Book before AddAutoMigrateModel", onlyProduct)
+	}
+
+	updated, err := AddAutoMigrateModel([]byte(fixturePlatform), "github.com/example/demo/internal/book", "book", "Book")
+	if err != nil {
+		t.Fatalf("AddAutoMigrateModel() error = %v", err)
+	}
+	got, err := CollectAutoMigrateModels(updated)
+	if err != nil {
+		t.Fatalf("CollectAutoMigrateModels(updated) error = %v", err)
+	}
+	if !hasCollectedModel(got, "github.com/example/demo/internal/product", "Product") {
+		t.Fatalf("models = %#v, want product.Product", got)
+	}
+	if !hasCollectedModel(got, "github.com/example/demo/internal/book", "Book") {
+		t.Fatalf("models = %#v, want book.Book", got)
+	}
+	if len(got) != 2 {
+		t.Fatalf("models = %#v, want exactly product + book", got)
+	}
+}
+
+func TestCollectAutoMigrateModelsNamedImport(t *testing.T) {
+	t.Parallel()
+
+	src := []byte(`package platform
+
+import (
+	"github.com/LAA-Software-Engineering/gombit/database"
+
+	productmodel "github.com/example/demo/internal/product"
+	"github.com/example/demo/internal/book"
+)
+
+func AutoMigrate(db *database.DB) error {
+	return db.AutoMigrate(&productmodel.Product{}, &book.Book{})
+}
+`)
+	got, err := CollectAutoMigrateModels(src)
+	if err != nil {
+		t.Fatalf("CollectAutoMigrateModels() error = %v", err)
+	}
+	if !hasCollectedModel(got, "github.com/example/demo/internal/product", "Product") {
+		t.Fatalf("models = %#v, want aliased product.Product", got)
+	}
+	if !hasCollectedModel(got, "github.com/example/demo/internal/book", "Book") {
+		t.Fatalf("models = %#v, want book.Book", got)
+	}
+}
+
+func hasCollectedModel(models []migrations.Model, importPath, typeName string) bool {
+	for _, model := range models {
+		if model.ImportPath == importPath && model.TypeName == typeName {
+			return true
+		}
+	}
+	return false
 }
 
 func TestAddAutoMigrateModelIdempotent(t *testing.T) {

@@ -449,7 +449,6 @@ func renderFormTS(ctx renderContext) string {
 	for _, field := range ctx.Fields {
 		ident := jsIdent(field.JSONName)
 		tsType := "string"
-		cast := "HTMLInputElement"
 		readExpr := "(" + ident + "Input as HTMLInputElement).value"
 		switch field.Type {
 		case FieldBool:
@@ -459,10 +458,8 @@ func renderFormTS(ctx renderContext) string {
 			tsType = "number"
 			readExpr = "Number((" + ident + "Input as HTMLInputElement).value)"
 		case FieldText:
-			cast = "HTMLTextAreaElement"
 			readExpr = "(" + ident + "Input as HTMLTextAreaElement).value"
 		}
-		_ = cast
 		b.WriteString("  function read" + field.GoName + "(): " + tsType + " {\n")
 		b.WriteString("    return " + readExpr + ";\n")
 		b.WriteString("  }\n")

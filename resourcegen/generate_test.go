@@ -237,6 +237,12 @@ func TestGenerateMissingAtlasPrintsHint(t *testing.T) {
 	if !strings.Contains(stdout.String(), "atlas not on PATH") {
 		t.Fatalf("stdout = %q, want atlas not on PATH hint", stdout.String())
 	}
+	if !strings.Contains(stdout.String(), "--model ") || !strings.Contains(stdout.String(), "/internal/product.Product") {
+		t.Fatalf("stdout = %q, want existing product model in makemigrations hint", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "/internal/book.Book") {
+		t.Fatalf("stdout = %q, want new book model in makemigrations hint", stdout.String())
+	}
 }
 
 func TestGenerateSurfacesMakeMigrationsError(t *testing.T) {
@@ -275,6 +281,50 @@ func TestGenerateSurfacesMakeMigrationsError(t *testing.T) {
 	}
 	if strings.Contains(stdout.String(), "note:") {
 		t.Fatalf("stdout = %q, did not want swallowed atlas note", stdout.String())
+	}
+}
+
+func TestGeneratePassesAllAutoMigrateModels(t *testing.T) {
+	workDir := t.TempDir()
+	if err := scaffold.Generate(context.Background(), scaffold.Options{
+		Name:     "demo",
+		Database: "sqlite",
+		WorkDir:  workDir,
+		Stdout:   ioDiscard{},
+	}); err != nil {
+		t.Fatalf("scaffold: %v", err)
+	}
+
+	previousLook := lookPath
+	lookPath = func(string) (string, error) { return "/usr/bin/atlas", nil }
+	t.Cleanup(func() { lookPath = previousLook })
+
+	var got []migrations.Model
+	previousMake := makeMigrations
+	makeMigrations = func(_ context.Context, opts migrations.Options) error {
+		got = append([]migrations.Model(nil), opts.Models...)
+		return nil
+	}
+	t.Cleanup(func() { makeMigrations = previousMake })
+
+	err := Generate(context.Background(), Options{
+		WorkDir: filepath.Join(workDir, "demo"),
+		Name:    "Book",
+		Fields:  []string{"title:string:required"},
+		Stdout:  ioDiscard{},
+	})
+	if err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+	mod := readModulePathMust(t, filepath.Join(workDir, "demo"))
+	if !hasCollectedModel(got, mod+"/internal/product", "Product") {
+		t.Fatalf("MakeMigrations models = %#v, want scaffold product", got)
+	}
+	if !hasCollectedModel(got, mod+"/internal/book", "Book") {
+		t.Fatalf("MakeMigrations models = %#v, want generated book", got)
+	}
+	if len(got) != 2 {
+		t.Fatalf("MakeMigrations models = %#v, want exactly product + book", got)
 	}
 }
 

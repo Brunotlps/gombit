@@ -85,6 +85,11 @@ func Generate(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
+	models, err := CollectAutoMigrateModels(newPlatform)
+	if err != nil {
+		return err
+	}
+	models = ensureModel(models, migrations.Model{ImportPath: ctxData.ImportPath, TypeName: name.TypeName})
 	files = append(files,
 		fileSpec{relPath: serverMainRel, content: newMain, owned: true},
 		fileSpec{relPath: platformDBRel, content: newPlatform, owned: true},
@@ -121,7 +126,7 @@ func Generate(ctx context.Context, opts Options) error {
 	if _, err := fmt.Fprintf(opts.Stdout, "GORM model is Atlas-loader ready: %s\n", ctxData.ModelSpec); err != nil {
 		return err
 	}
-	return maybeMakeMigrations(ctx, opts, ctxData)
+	return maybeMakeMigrations(ctx, opts, ctxData, models)
 }
 
 type plannedFile struct {
@@ -334,13 +339,13 @@ func renderResourcesTS(resources []ResourceName, apiPrefix string) []byte {
 	return []byte(b.String())
 }
 
-func maybeMakeMigrations(ctx context.Context, opts Options, spec renderContext) error {
+func maybeMakeMigrations(ctx context.Context, opts Options, spec renderContext, models []migrations.Model) error {
 	if opts.skipAtlas {
-		return printMakemigrationsHint(opts, spec, "skipped in tests")
+		return printMakemigrationsHint(opts, spec, models, "skipped in tests")
 	}
 	atlasPath, lookErr := lookPath(opts.AtlasBin)
 	if lookErr != nil || atlasPath == "" {
-		return printMakemigrationsHint(opts, spec, "atlas not on PATH")
+		return printMakemigrationsHint(opts, spec, models, "atlas not on PATH")
 	}
 
 	driver := readDatabaseDriver(opts.WorkDir)
@@ -350,11 +355,9 @@ func maybeMakeMigrations(ctx context.Context, opts Options, spec renderContext) 
 		Driver:       driver,
 		MigrationDir: "database/migrations",
 		AtlasBinary:  opts.AtlasBin,
-		Models: []migrations.Model{
-			{ImportPath: spec.ImportPath, TypeName: spec.Resource.TypeName},
-		},
-		Stdout: opts.Stdout,
-		Stderr: opts.Stderr,
+		Models:       models,
+		Stdout:       opts.Stdout,
+		Stderr:       opts.Stderr,
 	})
 	if err != nil {
 		return fmt.Errorf("resourcegen: makemigrations: %w", err)
@@ -362,15 +365,35 @@ func maybeMakeMigrations(ctx context.Context, opts Options, spec renderContext) 
 	return nil
 }
 
-func printMakemigrationsHint(opts Options, spec renderContext, reason string) error {
+func printMakemigrationsHint(opts Options, spec renderContext, models []migrations.Model, reason string) error {
 	_, err := fmt.Fprintf(
 		opts.Stdout,
-		"note: %s; run: gombit db makemigrations create_%s --model %s\n",
+		"note: %s; run: gombit db makemigrations create_%s%s\n",
 		reason,
 		spec.Resource.PluralSnake,
-		spec.ModelSpec,
+		modelFlagArgs(models),
 	)
 	return err
+}
+
+func modelFlagArgs(models []migrations.Model) string {
+	var b strings.Builder
+	for _, model := range models {
+		b.WriteString(" --model ")
+		b.WriteString(model.ImportPath)
+		b.WriteString(".")
+		b.WriteString(model.TypeName)
+	}
+	return b.String()
+}
+
+func ensureModel(models []migrations.Model, extra migrations.Model) []migrations.Model {
+	for _, model := range models {
+		if model.ImportPath == extra.ImportPath && model.TypeName == extra.TypeName {
+			return models
+		}
+	}
+	return append(models, extra)
 }
 
 func readDatabaseDriver(workDir string) config.DatabaseDriver {

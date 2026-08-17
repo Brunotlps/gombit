@@ -9,6 +9,8 @@ import (
 	"go/token"
 	"strconv"
 	"strings"
+
+	"github.com/LAA-Software-Engineering/gombit/migrations"
 )
 
 // AddImportAndRegister adds `importPath` and `<pkg>.Register(app)` next to an
@@ -237,11 +239,7 @@ func exprContainsSelectorCall(expr ast.Expr, pkgName, selName string) bool {
 
 func insertAutoMigrateArg(file *ast.File, pkgName, typeName string) error {
 	found := false
-	var visitErr error
 	ast.Inspect(file, func(n ast.Node) bool {
-		if visitErr != nil {
-			return false
-		}
 		call, ok := n.(*ast.CallExpr)
 		if !ok {
 			return true
@@ -265,34 +263,117 @@ func insertAutoMigrateArg(file *ast.File, pkgName, typeName string) error {
 		})
 		return false
 	})
-	if visitErr != nil {
-		return visitErr
-	}
 	if !found {
 		return fmt.Errorf("resourcegen: no AutoMigrate call in %s", platformDBRel)
 	}
 	return nil
 }
 
+// CollectAutoMigrateModels returns every `&pkg.Type{}` argument of AutoMigrate
+// calls in src, resolved to import path + type name via the file's imports.
+// Atlas migrate diff treats that slice as the entire desired schema, so callers
+// must pass every registered model — not only the resource being generated.
+func CollectAutoMigrateModels(src []byte) ([]migrations.Model, error) {
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, platformDBRel, src, parser.ParseComments)
+	if err != nil {
+		return nil, fmt.Errorf("resourcegen: parse %s: %w", platformDBRel, err)
+	}
+	pkgToImport := importPathByName(file)
+	var models []migrations.Model
+	seen := map[string]struct{}{}
+	found := false
+	var resolveErr error
+	ast.Inspect(file, func(n ast.Node) bool {
+		if resolveErr != nil {
+			return false
+		}
+		call, ok := n.(*ast.CallExpr)
+		if !ok {
+			return true
+		}
+		sel, ok := call.Fun.(*ast.SelectorExpr)
+		if !ok || sel.Sel == nil || sel.Sel.Name != "AutoMigrate" {
+			return true
+		}
+		found = true
+		for _, arg := range call.Args {
+			pkgName, typeName, ok := parseAutoMigrateArg(arg)
+			if !ok {
+				continue
+			}
+			importPath, ok := pkgToImport[pkgName]
+			if !ok {
+				resolveErr = fmt.Errorf("resourcegen: AutoMigrate argument &%s.%s{} has no matching import", pkgName, typeName)
+				return false
+			}
+			key := importPath + "." + typeName
+			if _, dup := seen[key]; dup {
+				continue
+			}
+			seen[key] = struct{}{}
+			models = append(models, migrations.Model{ImportPath: importPath, TypeName: typeName})
+		}
+		return true
+	})
+	if resolveErr != nil {
+		return nil, resolveErr
+	}
+	if !found {
+		return nil, fmt.Errorf("resourcegen: no AutoMigrate call in %s", platformDBRel)
+	}
+	return models, nil
+}
+
+func importPathByName(file *ast.File) map[string]string {
+	out := make(map[string]string, len(file.Imports))
+	for _, imp := range file.Imports {
+		if imp.Path == nil {
+			continue
+		}
+		path, err := strconv.Unquote(imp.Path.Value)
+		if err != nil {
+			continue
+		}
+		name := ""
+		if imp.Name != nil {
+			name = imp.Name.Name
+			if name == "_" || name == "." {
+				continue
+			}
+		} else {
+			slash := strings.LastIndex(path, "/")
+			name = path[slash+1:]
+		}
+		out[name] = path
+	}
+	return out
+}
+
+func parseAutoMigrateArg(arg ast.Expr) (pkgName, typeName string, ok bool) {
+	unary, ok := arg.(*ast.UnaryExpr)
+	if !ok || unary.Op != token.AND {
+		return "", "", false
+	}
+	lit, ok := unary.X.(*ast.CompositeLit)
+	if !ok {
+		return "", "", false
+	}
+	sel, ok := lit.Type.(*ast.SelectorExpr)
+	if !ok || sel.Sel == nil {
+		return "", "", false
+	}
+	ident, ok := sel.X.(*ast.Ident)
+	if !ok {
+		return "", "", false
+	}
+	return ident.Name, sel.Sel.Name, true
+}
+
 func hasAutoMigrateModel(call *ast.CallExpr, pkgName, typeName string) bool {
 	for _, arg := range call.Args {
-		unary, ok := arg.(*ast.UnaryExpr)
-		if !ok || unary.Op != token.AND {
-			continue
-		}
-		lit, ok := unary.X.(*ast.CompositeLit)
-		if !ok {
-			continue
-		}
-		sel, ok := lit.Type.(*ast.SelectorExpr)
-		if !ok {
-			continue
-		}
-		ident, ok := sel.X.(*ast.Ident)
-		if !ok {
-			continue
-		}
-		if ident.Name == pkgName && sel.Sel.Name == typeName {
+		pkg, typ, ok := parseAutoMigrateArg(arg)
+		if ok && pkg == pkgName && typ == typeName {
 			return true
 		}
 	}

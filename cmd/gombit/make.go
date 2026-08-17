@@ -60,8 +60,9 @@ Re-running refuses to clobber user edits unless --force is set.
 
 Frontend pages import types from frontend/src/api/generated. Run
 gombit client generate or gombit dev after the API is up so those types
-exist. Atlas SQL is generated when the atlas binary is on PATH; otherwise
-the GORM model is still loader-ready for gombit db makemigrations.`,
+exist. Atlas SQL is generated when the atlas binary is on PATH, using every
+AutoMigrate model in internal/platform (not only the new resource).
+Otherwise the GORM model is still loader-ready for gombit db makemigrations.`,
 		Args: cobra.MinimumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			err := resourcegen.Generate(cmd.Context(), resourcegen.Options{

@@ -222,11 +222,16 @@ that file are not preserved.
 
 Gombit does not invent a migration DSL. The generated GORM model is
 Atlas-loader ready. If the `atlas` binary is on `PATH`, `make resource`
-attempts `migrations.MakeMigrations` and returns any Atlas/loader error.
-If Atlas is missing from `PATH`, SQL is skipped and the command prints:
+attempts `migrations.MakeMigrations` with every `&pkg.Type{}` already
+registered in `internal/platform` AutoMigrate plus the new model — Atlas
+migrate diff treats that slice as the entire desired schema, so omitting
+existing tables would emit DROP. If Atlas is missing from `PATH`, SQL is
+skipped and the command prints:
 
 ```sh
-gombit db makemigrations create_books --model github.com/example/demo/internal/book.Book
+gombit db makemigrations create_books \
+  --model github.com/example/demo/internal/product.Product \
+  --model github.com/example/demo/internal/book.Book
 ```
 
 See [migrations.md](migrations.md).
