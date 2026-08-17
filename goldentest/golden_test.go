@@ -1,0 +1,252 @@
+package goldentest
+
+import (
+	"bytes"
+	"context"
+	"flag"
+	"io"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"testing"
+
+	"github.com/LAA-Software-Engineering/gombit/client"
+	"github.com/LAA-Software-Engineering/gombit/contract"
+	"github.com/LAA-Software-Engineering/gombit/resourcegen"
+	"github.com/LAA-Software-Engineering/gombit/scaffold"
+)
+
+var update = flag.Bool("update", false, "regenerate testdata/golden trees")
+
+func TestNewGolden(t *testing.T) {
+	appDir := scaffoldDemo(t)
+	got := snapshotTree(t, appDir)
+	assertNoReplace(t, got)
+	assertGoFormatted(t, got)
+	checkOrUpdateGolden(t, "new", got)
+
+	t.Run("compile", func(t *testing.T) {
+		compileBackend(t, appDir)
+	})
+	t.Run("typecheck", func(t *testing.T) {
+		typecheckFrontend(t, appDir, false)
+	})
+	t.Run("idempotent", func(t *testing.T) {
+		if err := scaffold.Generate(context.Background(), scaffold.Options{
+			Name:     fixtureName,
+			Module:   fixtureModule,
+			Database: "sqlite",
+			Cache:    "memory",
+			Auth:     "jwt",
+			UI:       "minimal",
+			WorkDir:  filepath.Dir(appDir),
+			Force:    true,
+			Stdout:   io.Discard,
+			IsTTY:    func() bool { return false },
+		}); err != nil {
+			t.Fatalf("idempotent gombit new --force: %v", err)
+		}
+		second := snapshotTree(t, appDir)
+		if !treesEqual(got, second) {
+			t.Fatalf("gombit new --force changed files:\n%s", treeDiffSummary(second, got))
+		}
+	})
+}
+
+func TestMakeResourceGolden(t *testing.T) {
+	appDir := scaffoldDemo(t)
+	stdout := new(bytes.Buffer)
+	if err := resourcegen.Generate(context.Background(), resourcegen.Options{
+		WorkDir:  appDir,
+		Name:     fixtureBook,
+		Fields:   []string{fixtureFields},
+		AtlasBin: missingAtlas,
+		Stdout:   stdout,
+		Stderr:   io.Discard,
+	}); err != nil {
+		t.Fatalf("gombit make resource: %v\nstdout=%s", err, stdout.String())
+	}
+
+	got := snapshotTree(t, appDir)
+	assertNoReplace(t, got)
+	assertGoFormatted(t, got)
+	checkOrUpdateGolden(t, "make-resource", got)
+
+	mainSrc := got["cmd/server/main.go"]
+	count, err := resourcegen.CountRegisterCalls(mainSrc, "book")
+	if err != nil {
+		t.Fatalf("CountRegisterCalls: %v", err)
+	}
+	if count != 1 {
+		t.Fatalf("book.Register count = %d, want 1\n%s", count, mainSrc)
+	}
+
+	t.Run("compile", func(t *testing.T) {
+		compileBackend(t, appDir)
+	})
+	t.Run("typecheck", func(t *testing.T) {
+		typecheckFrontend(t, appDir, true)
+	})
+	t.Run("idempotent", func(t *testing.T) {
+		if err := resourcegen.Generate(context.Background(), resourcegen.Options{
+			WorkDir:  appDir,
+			Name:     fixtureBook,
+			Fields:   []string{fixtureFields},
+			AtlasBin: missingAtlas,
+			Stdout:   io.Discard,
+			Stderr:   io.Discard,
+		}); err != nil {
+			t.Fatalf("idempotent make resource: %v", err)
+		}
+		second := snapshotTree(t, appDir)
+		if !treesEqual(got, second) {
+			t.Fatalf("second make resource changed files:\n%s", treeDiffSummary(second, got))
+		}
+		count, err := resourcegen.CountRegisterCalls(second["cmd/server/main.go"], "book")
+		if err != nil {
+			t.Fatalf("CountRegisterCalls after re-run: %v", err)
+		}
+		if count != 1 {
+			t.Fatalf("re-run duplicated book.Register: count = %d", count)
+		}
+	})
+}
+
+func TestClientGenerateGolden(t *testing.T) {
+	requireNode(t)
+
+	workDir := t.TempDir()
+	specPath := writeSampleSpec(t, workDir)
+	outDir := filepath.Join(workDir, "frontend", "src", "api", "generated")
+	if err := client.Generate(context.Background(), client.Options{
+		WorkDir:  workDir,
+		SpecPath: specPath,
+		OutDir:   outDir,
+		Stdout:   io.Discard,
+		Stderr:   io.Discard,
+	}); err != nil {
+		t.Fatalf("gombit client generate: %v", err)
+	}
+
+	got := snapshotTree(t, outDir)
+	checkOrUpdateGolden(t, "client", got)
+
+	t.Run("typecheck", func(t *testing.T) {
+		typecheckClient(t, workDir, outDir)
+	})
+	t.Run("idempotent", func(t *testing.T) {
+		if err := client.Generate(context.Background(), client.Options{
+			WorkDir:  workDir,
+			SpecPath: specPath,
+			OutDir:   outDir,
+			Stdout:   io.Discard,
+			Stderr:   io.Discard,
+		}); err != nil {
+			t.Fatalf("idempotent client generate: %v", err)
+		}
+		second := snapshotTree(t, outDir)
+		if !treesEqual(got, second) {
+			t.Fatalf("second client generate changed files:\n%s", treeDiffSummary(second, got))
+		}
+	})
+}
+
+func checkOrUpdateGolden(t *testing.T, name string, got fileMap) {
+	t.Helper()
+	if *update {
+		writeGolden(t, name, got)
+		t.Logf("updated golden %s (%d files)", name, len(got))
+		return
+	}
+	want := loadGolden(t, name)
+	compareTrees(t, got, want)
+}
+
+func scaffoldDemo(t *testing.T) string {
+	t.Helper()
+	workDir := t.TempDir()
+	err := scaffold.Generate(context.Background(), scaffold.Options{
+		Name:     fixtureName,
+		Module:   fixtureModule,
+		Database: "sqlite",
+		Cache:    "memory",
+		Auth:     "jwt",
+		UI:       "minimal",
+		WorkDir:  workDir,
+		Stdout:   io.Discard,
+		Stderr:   io.Discard,
+		IsTTY:    func() bool { return false },
+	})
+	if err != nil {
+		t.Fatalf("gombit new: %v", err)
+	}
+	return filepath.Join(workDir, fixtureName)
+}
+
+func writeSampleSpec(t *testing.T, workDir string) string {
+	t.Helper()
+	app, err := client.SampleApp()
+	if err != nil {
+		t.Fatalf("SampleApp() error = %v", err)
+	}
+	path := filepath.Join(workDir, "openapi.json")
+	if err := contract.WriteOpenAPI(path, app.API()); err != nil {
+		t.Fatalf("WriteOpenAPI: %v", err)
+	}
+	return path
+}
+
+func typecheckClient(t *testing.T, workDir, outDir string) {
+	t.Helper()
+	relOut, err := filepath.Rel(workDir, outDir)
+	if err != nil {
+		t.Fatalf("rel: %v", err)
+	}
+	relOut = filepath.ToSlash(relOut)
+	writeFile(t, filepath.Join(workDir, "package.json"), `{
+  "name": "gombit-golden-client",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "openapi-fetch": "0.17.0"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}
+`)
+	writeFile(t, filepath.Join(workDir, "tsconfig.json"), `{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ES2022",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["`+relOut+`/**/*.ts"]
+}
+`)
+	install := exec.Command("npm", "install", "--no-fund", "--no-audit", "--ignore-scripts")
+	install.Dir = workDir
+	install.Env = append(os.Environ(), "npm_config_update_notifier=false")
+	if out, err := install.CombinedOutput(); err != nil {
+		t.Fatalf("npm install: %v\n%s", err, out)
+	}
+	//nolint:gosec // workDir is t.TempDir; tsc args are fixed
+	tsc := exec.Command("npx", "--no-install", "tsc", "--noEmit", "-p", workDir)
+	tsc.Dir = workDir
+	if out, err := tsc.CombinedOutput(); err != nil {
+		t.Fatalf("npx tsc --noEmit: %v\n%s", err, out)
+	}
+}
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatalf("mkdir %s: %v", path, err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}

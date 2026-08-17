@@ -24,7 +24,25 @@ go run ./cmd/gombit --help
 | `gombit config show` | Print typed config with secrets redacted | M4-4 |
 
 Not in this milestone: `createsuperuser` (M4-6), `make command` (M4-7).
-Golden tests for generators are M4-5; these commands still have unit tests.
+
+## Generator golden tests
+
+`goldentest` runs each generator against a fixed, non-interactive fixture,
+diffs the output tree against `goldentest/testdata/golden`, compiles the
+generated backend (`go build` with a local `replace` in a temp copy — never
+committed), typechecks the frontend with `npx tsc --noEmit` when Node is
+on `PATH` (`t.Skip` otherwise), and checks that a second run is idempotent
+(`gombit new --force`, `make resource` without `--force`, `client generate`
+without `--force`). Atlas is not invoked, so migration filenames stay out
+of the trees.
+
+```sh
+go test ./goldentest
+go test ./goldentest -update   # regenerate committed goldens
+```
+
+CI picks this up via `go test ./...`. Do not commit `replace` directives or
+machine-specific paths in the goldens.
 
 ## `gombit new`
 
