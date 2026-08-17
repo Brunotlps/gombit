@@ -132,6 +132,13 @@ func TestDocsServesSwaggerUI(t *testing.T) {
 	if !strings.Contains(body, "/openapi") {
 		t.Fatalf("GET /docs missing OpenAPI URL for try-it-out; body: %s", body)
 	}
+	csp := rec.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, "unpkg.com/swagger-ui-dist") {
+		t.Fatalf("GET /docs CSP = %q, want Swagger UI script source so try-it-out can load", csp)
+	}
+	if !strings.Contains(csp, "connect-src") || !strings.Contains(csp, "'self'") {
+		t.Fatalf("GET /docs CSP = %q, want connect-src 'self' for try-it-out", csp)
+	}
 	if !strings.Contains(body, "Try it out") && !strings.Contains(strings.ToLower(body), "swagger") {
 		t.Fatalf("GET /docs missing try-it-out UI markers; body: %s", body)
 	}

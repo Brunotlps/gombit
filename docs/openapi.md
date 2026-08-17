@@ -20,7 +20,10 @@ curl -sS http://127.0.0.1:8080/openapi.json
 ```
 
 Try-it-out requests hit the running app, so D10 validation and category errors
-appear as they would for any client.
+appear as they would for any client. The docs page uses Huma's Swagger UI
+renderer and loads the UI assets from `unpkg.com`; Huma sets a page-specific
+CSP (`connect-src 'self'`) so try-it-out can call the same origin. Other
+routes keep the runtime `default-src 'self'` policy.
 
 Raw `app.Router()` routes (webhooks, SSE, probes, metrics) stay out of the
 OpenAPI document and therefore out of `/docs`.

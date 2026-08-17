@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -79,7 +80,7 @@ func fetchOpenAPI(ctx context.Context, rawURL string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("gombit openapi generate: fetch %s: %w", parsed.String(), err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
 		return nil, fmt.Errorf("gombit openapi generate: read response: %w", err)
@@ -91,6 +92,18 @@ func fetchOpenAPI(ctx context.Context, rawURL string) ([]byte, error) {
 }
 
 func validateOpenAPIDocument(data []byte) error {
+	var probe map[string]any
+	if err := json.Unmarshal(data, &probe); err != nil {
+		return fmt.Errorf("parse OpenAPI document: %w", err)
+	}
+	version, _ := probe["openapi"].(string)
+	if !strings.HasPrefix(version, "3.1.") && version != "3.1" {
+		if version == "" {
+			return errors.New("parse OpenAPI document: missing openapi 3.1 version")
+		}
+		return fmt.Errorf("parse OpenAPI document: openapi version %q is not 3.1", version)
+	}
+
 	document, err := libopenapi.NewDocument(data)
 	if err != nil {
 		return fmt.Errorf("parse OpenAPI document: %w", err)

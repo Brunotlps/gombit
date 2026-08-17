@@ -128,6 +128,10 @@ func TestAPIDocsServesSwaggerUIAndOmitsRawRoutes(t *testing.T) {
 	if !strings.Contains(docs.Body.String(), "/openapi") {
 		t.Fatalf("GET /docs missing OpenAPI URL for try-it-out; body: %s", docs.Body.String())
 	}
+	csp := docs.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, "unpkg.com/swagger-ui-dist") || !strings.Contains(csp, "connect-src") {
+		t.Fatalf("GET /docs CSP = %q, want Swagger UI + connect-src so try-it-out works", csp)
+	}
 
 	specRec := httptest.NewRecorder()
 	app.Router().ServeHTTP(specRec, httptest.NewRequest(http.MethodGet, "/openapi.json", nil))
