@@ -35,6 +35,23 @@ const (
 	envRedisTLSInsecure        = "GOMBIT_REDIS_TLS_INSECURE"
 	envLogLevel                = "GOMBIT_LOG_LEVEL"
 	envLogSink                 = "GOMBIT_LOG_SINK"
+	envJWTSecret               = "GOMBIT_JWT_SECRET" // #nosec G101 -- environment variable name, not a credential.
+	envJWTAccessTTL            = "GOMBIT_JWT_ACCESS_TTL"
+	envJWTRefreshTTL           = "GOMBIT_JWT_REFRESH_TTL"
+)
+
+const (
+	// MinProductionJWTSecretLength is the Appendix C floor for production
+	// HMAC secrets. Development and test may use a shorter or empty secret
+	// (empty disables Bearer auth).
+	MinProductionJWTSecretLength = 32
+
+	// DefaultAccessTokenTTL is the signed access-token lifetime.
+	DefaultAccessTokenTTL = 15 * time.Minute
+
+	// DefaultRefreshTokenTTL is the refresh-token lifetime. Refresh tokens
+	// rotate on each successful refresh.
+	DefaultRefreshTokenTTL = 7 * 24 * time.Hour
 )
 
 // Environment is the runtime environment name.
@@ -58,6 +75,7 @@ type Config struct {
 	Database    DatabaseConfig
 	Cache       CacheConfig
 	Logging     LoggingConfig
+	Auth        AuthConfig
 }
 
 // HTTPConfig contains HTTP server configuration.
@@ -163,6 +181,25 @@ type LoggingConfig struct {
 	Sink  LogSink
 }
 
+// AuthConfig contains Bearer JWT configuration. Cookie/session mode is M5-3.
+type AuthConfig struct {
+	// JWTSecret is the HMAC key for access tokens. It is never a VITE_* value.
+	// Empty disables framework-owned auth routes outside production.
+	JWTSecret string
+	// AccessTokenTTL is the signed access-token lifetime.
+	AccessTokenTTL time.Duration
+	// RefreshTokenTTL is the refresh-token lifetime.
+	RefreshTokenTTL time.Duration
+	// BcryptCost is the bcrypt cost for password hashes. Zero means
+	// bcrypt.DefaultCost. Tests may set a lower cost.
+	BcryptCost int
+}
+
+// Enabled reports whether Bearer auth should be mounted (JWT secret is set).
+func (c AuthConfig) Enabled() bool {
+	return strings.TrimSpace(c.JWTSecret) != ""
+}
+
 // EnvLookup reads an environment variable by name.
 type EnvLookup func(key string) (value string, ok bool)
 
@@ -209,6 +246,14 @@ func DefaultFor(env Environment) Config {
 			Level: LogLevelInfo,
 			Sink:  LogSinkStderr,
 		},
+		Auth: defaultAuthConfig(),
+	}
+}
+
+func defaultAuthConfig() AuthConfig {
+	return AuthConfig{
+		AccessTokenTTL:  DefaultAccessTokenTTL,
+		RefreshTokenTTL: DefaultRefreshTokenTTL,
 	}
 }
 
@@ -282,6 +327,9 @@ func LoadFromEnv(lookup EnvLookup) (Config, error) {
 	}
 	applyLogLevel(lookup, envLogLevel, &cfg.Logging.Level)
 	applyLogSink(lookup, envLogSink, &cfg.Logging.Sink)
+	applyString(lookup, envJWTSecret, &cfg.Auth.JWTSecret)
+	applyDuration(lookup, envJWTAccessTTL, "Auth.AccessTokenTTL", &cfg.Auth.AccessTokenTTL, &errs)
+	applyDuration(lookup, envJWTRefreshTTL, "Auth.RefreshTokenTTL", &cfg.Auth.RefreshTokenTTL, &errs)
 	if docsEnabledSet {
 		applyBool(lookup, envDocsEnabled, "API.DocsEnabled", &cfg.API.DocsEnabled, &errs)
 	} else {
@@ -375,6 +423,7 @@ func (c Config) Validate() error {
 	validateDatabaseConfig(&errs, c.Database)
 	validateCacheConfig(&errs, c.Environment, c.Cache)
 	validateLoggingConfig(&errs, c.Logging)
+	validateAuthConfig(&errs, c.Environment, c.Auth)
 
 	if len(errs) > 0 {
 		return errs
@@ -436,6 +485,59 @@ func DefaultCacheNamespace(appName string, env Environment) string {
 		normalized = "gombit"
 	}
 	return normalized + ":" + string(env)
+}
+
+func validateAuthConfig(errs *FieldErrors, env Environment, cfg AuthConfig) {
+	if cfg.AccessTokenTTL < 0 {
+		*errs = append(*errs, FieldError{
+			Field:   "Auth.AccessTokenTTL",
+			Env:     envJWTAccessTTL,
+			Value:   cfg.AccessTokenTTL.String(),
+			Message: "must be greater than or equal to zero",
+		})
+	}
+	if cfg.RefreshTokenTTL < 0 {
+		*errs = append(*errs, FieldError{
+			Field:   "Auth.RefreshTokenTTL",
+			Env:     envJWTRefreshTTL,
+			Value:   cfg.RefreshTokenTTL.String(),
+			Message: "must be greater than or equal to zero",
+		})
+	}
+	if cfg.BcryptCost < 0 {
+		*errs = append(*errs, FieldError{
+			Field:   "Auth.BcryptCost",
+			Message: "must be greater than or equal to zero",
+		})
+	}
+	if env == EnvironmentProduction && cfg.JWTSecret != "" && len(cfg.JWTSecret) < MinProductionJWTSecretLength {
+		*errs = append(*errs, FieldError{
+			Field: "Auth.JWTSecret",
+			Env:   envJWTSecret,
+			Message: fmt.Sprintf(
+				"must be at least %d characters in production",
+				MinProductionJWTSecretLength,
+			),
+		})
+	}
+	if cfg.Enabled() {
+		if cfg.AccessTokenTTL <= 0 {
+			*errs = append(*errs, FieldError{
+				Field:   "Auth.AccessTokenTTL",
+				Env:     envJWTAccessTTL,
+				Value:   cfg.AccessTokenTTL.String(),
+				Message: "must be greater than zero when a JWT secret is set",
+			})
+		}
+		if cfg.RefreshTokenTTL <= 0 {
+			*errs = append(*errs, FieldError{
+				Field:   "Auth.RefreshTokenTTL",
+				Env:     envJWTRefreshTTL,
+				Value:   cfg.RefreshTokenTTL.String(),
+				Message: "must be greater than zero when a JWT secret is set",
+			})
+		}
+	}
 }
 
 func validateLoggingConfig(errs *FieldErrors, cfg LoggingConfig) {

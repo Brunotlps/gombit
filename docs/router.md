@@ -3,10 +3,11 @@
 M1-3 de-domains the router introduced in M1-2: `framework.New` builds a
 `*gin.Engine` with zero knowledge of any application domain and mounts only
 its own endpoints. Today that means `/livez`, `/readyz`, `/metrics`, the Huma
-OpenAPI routes (`/openapi.json` and siblings), and `/docs` when
-`API.DocsEnabled` is true. Public API handlers
-register on `app.API()` (see [`docs/contract.md`](contract.md)); raw Gin routes
-continue to use `app.Router()`.
+OpenAPI routes (`/openapi.json` and siblings), `/docs` when
+`API.DocsEnabled` is true, and — when `GOMBIT_JWT_SECRET` is set and a
+database is attached — the Bearer auth routes (`/api/v1/auth/*`, `/api/v1/me`).
+Public API handlers register on `app.API()` (see [`docs/contract.md`](contract.md));
+raw Gin routes continue to use `app.Router()`.
 
 Applications register their own routes against the appropriate surface:
 
@@ -55,6 +56,7 @@ Recovery
   -> security headers
   -> XSS HTML-tag sanitization (request input)
   -> request timeout
+  -> Bearer JWT middleware on protected Huma operations (`GET /me`)
   -> feature group middleware (if any)
     -> feature handler
 ```

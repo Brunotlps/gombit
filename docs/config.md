@@ -57,6 +57,9 @@ configuration. The M1-1 boundary recognizes:
 | `GOMBIT_REDIS_TLS_INSECURE` | `Config.Cache.Redis.TLSInsecure` | `false` |
 | `GOMBIT_LOG_LEVEL` | `Config.Logging.Level` | `info` |
 | `GOMBIT_LOG_SINK` | `Config.Logging.Sink` | `stderr` |
+| `GOMBIT_JWT_SECRET` | `Config.Auth.JWTSecret` | empty (auth unmounted) |
+| `GOMBIT_JWT_ACCESS_TTL` | `Config.Auth.AccessTokenTTL` | `15m` |
+| `GOMBIT_JWT_REFRESH_TTL` | `Config.Auth.RefreshTokenTTL` | `168h` |
 
 `GOMBIT_ENV` accepts the exact lowercase values `development`, `test`, and
 `production`.
@@ -85,17 +88,16 @@ Validation returns `config.FieldErrors`, which names the typed field, the
 environment variable, the invalid value, and the validation message.
 
 `gombit config show` prints this typed result as aligned key/value lines.
-DSN userinfo/passwords and the Redis password are redacted (`*****`);
-`Config.Redacted()` / `RedactDSN` are the helpers. Do not log raw DSNs.
+DSN userinfo/passwords, the Redis password, and the JWT secret are redacted
+(`*****`); `Config.Redacted()` / `RedactDSN` are the helpers. Do not log raw
+DSNs or JWT secrets.
 
-Appendix C production checks, such as JWT secret strength, secure cookies,
-CORS credentials, debug Gin mode, and Redis settings land with the features
-that introduce those typed fields. JWT/cookie/CORS typed fields do not exist
-yet (M5); `gombit doctor` still flags **existing** insecure or broken cases
-(invalid config, production + `/docs`, unwritable SQLite DSN path, Redis
-selected but unreachable, pending migrations). Future secret-bearing fields
-must not copy secret values into `FieldError.Value`; `Config.Database.DSN`
-validation does not echo the DSN value.
+Appendix C production checks fail loudly for a **non-empty** JWT secret
+shorter than 32 characters (`config.Load` / `Validate` and `gombit doctor`).
+The secret is never copied into `FieldError.Value` and is redacted by
+`Config.Redacted()`. Cookie, CORS, and remaining Appendix C cases land with
+the features that introduce those fields. Do not put JWT material in `VITE_*`.
+See [auth.md](auth.md).
 
 Runtime extraction work should accept `config.Config` values instead of calling
 `os.Getenv` or `os.LookupEnv` directly. The CLI (`gombit doctor`,

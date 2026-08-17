@@ -140,8 +140,10 @@ jobs:
 
       - name: Run Postgres database tests
         run: >-
-          go test -tags integration ./database
+          go test -tags integration ./database ./auth
           -database.postgres-dsn
+          'postgres://gombit:gombit@127.0.0.1:5432/gombit?sslmode=disable'
+          -auth.postgres-dsn
           'postgres://gombit:gombit@127.0.0.1:5432/gombit?sslmode=disable'
 
   database-mysql:
@@ -175,8 +177,10 @@ jobs:
 
       - name: Run MySQL database tests
         run: >-
-          go test -tags integration ./database
+          go test -tags integration ./database ./auth
           -database.mysql-dsn
+          'gombit:gombit@tcp(127.0.0.1:3306)/gombit?parseTime=true'
+          -auth.mysql-dsn
           'gombit:gombit@tcp(127.0.0.1:3306)/gombit?parseTime=true'
 
   migrations-sqlite:

@@ -34,8 +34,8 @@ gombit dev
 Backend reload uses `air` or `watchexec` when installed; otherwise it falls
 back to `go run ./cmd/server`. The frontend uses `pnpm` when available,
 otherwise `npm`. Node.js is required for Vite HMR. The frontend is a Vite +
-React + TypeScript skeleton (router, generated client, React Hook Form).
-Bearer login is M5-2; the MUI preset is M5-4.
+React + TypeScript skeleton (router, generated client, React Hook Form,
+Bearer login). The MUI preset is M5-4.
 
 This module requires [`github.com/LAA-Software-Engineering/gombit`](https://github.com/LAA-Software-Engineering/gombit).
 After scaffolding, pin a released version:

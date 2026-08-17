@@ -68,6 +68,20 @@ func assertFrontendInvariants(t *testing.T, files fileMap) {
 			t.Errorf("formErrors.ts missing %q", want)
 		}
 	}
+	session := string(files["frontend/src/auth/session.ts"])
+	if session == "" {
+		t.Fatal("missing frontend/src/auth/session.ts")
+	}
+	if !strings.Contains(session, "getAccessToken") || !strings.Contains(session, "clearSession") {
+		t.Error("session.ts missing in-memory token helpers")
+	}
+	login := string(files["frontend/src/pages/LoginPage.tsx"])
+	if login == "" {
+		t.Fatal("missing frontend/src/pages/LoginPage.tsx")
+	}
+	if !strings.Contains(login, "/api/v1/auth/login") {
+		t.Error("LoginPage.tsx missing login path")
+	}
 }
 
 func moduleRoot(t *testing.T) string {

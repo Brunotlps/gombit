@@ -50,6 +50,15 @@ func TestDefault(t *testing.T) {
 	if got.Logging.Sink != LogSinkStderr {
 		t.Fatalf("Logging.Sink = %q, want %q", got.Logging.Sink, LogSinkStderr)
 	}
+	if got.Auth.JWTSecret != "" {
+		t.Fatalf("Auth.JWTSecret = %q, want empty development default", got.Auth.JWTSecret)
+	}
+	if got.Auth.AccessTokenTTL != DefaultAccessTokenTTL {
+		t.Fatalf("Auth.AccessTokenTTL = %v, want %v", got.Auth.AccessTokenTTL, DefaultAccessTokenTTL)
+	}
+	if got.Auth.RefreshTokenTTL != DefaultRefreshTokenTTL {
+		t.Fatalf("Auth.RefreshTokenTTL = %v, want %v", got.Auth.RefreshTokenTTL, DefaultRefreshTokenTTL)
+	}
 	if err := got.Validate(); err != nil {
 		t.Fatalf("Validate() error = %v, want nil", err)
 	}
@@ -81,6 +90,9 @@ func TestLoadFromEnv(t *testing.T) {
 		envRedisTLSInsecure:        " yes ",
 		envLogLevel:                " debug ",
 		envLogSink:                 " stdout ",
+		envJWTSecret:               "  test-jwt-secret-from-env  ", // #nosec G101 -- fake test secret.
+		envJWTAccessTTL:            " 10m ",
+		envJWTRefreshTTL:           " 48h ",
 	}
 
 	got, err := LoadFromEnv(mapLookup(env))
@@ -125,6 +137,11 @@ func TestLoadFromEnv(t *testing.T) {
 		Logging: LoggingConfig{
 			Level: LogLevelDebug,
 			Sink:  LogSinkStdout,
+		},
+		Auth: AuthConfig{
+			JWTSecret:       "test-jwt-secret-from-env",
+			AccessTokenTTL:  10 * time.Minute,
+			RefreshTokenTTL: 48 * time.Hour,
 		},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -237,6 +254,7 @@ func TestLoadUsesProcessEnvironment(t *testing.T) {
 	t.Setenv(envDatabaseDSN, "gombit@tcp(localhost:3306)/app?parseTime=true")
 	t.Setenv(envLogLevel, string(LogLevelError))
 	t.Setenv(envLogSink, string(LogSinkMongo))
+	t.Setenv(envJWTSecret, "production-jwt-secret-32-bytes-min")
 
 	got, err := Load()
 	if err != nil {
@@ -266,6 +284,11 @@ func TestLoadUsesProcessEnvironment(t *testing.T) {
 		Logging: LoggingConfig{
 			Level: LogLevelError,
 			Sink:  LogSinkMongo,
+		},
+		Auth: AuthConfig{
+			JWTSecret:       "production-jwt-secret-32-bytes-min",
+			AccessTokenTTL:  DefaultAccessTokenTTL,
+			RefreshTokenTTL: DefaultRefreshTokenTTL,
 		},
 	}
 	if !reflect.DeepEqual(got, want) {
@@ -450,6 +473,7 @@ func TestValidateReportsExplicitFieldErrors(t *testing.T) {
 func TestValidateRejectsUnsafeTrustedProxyInProduction(t *testing.T) {
 	cfg := Default()
 	cfg.Environment = EnvironmentProduction
+	cfg.Auth.JWTSecret = "production-jwt-secret-32-bytes-min"
 	cfg.HTTP.TrustedProxies = []string{"0.0.0.0/0"}
 
 	err := cfg.Validate()
@@ -475,9 +499,103 @@ func TestValidateRejectsUnsafeTrustedProxyInProduction(t *testing.T) {
 	}
 }
 
+func TestValidateRejectsShortJWTSecretInProduction(t *testing.T) {
+	cfg := DefaultFor(EnvironmentProduction)
+	cfg.Auth.JWTSecret = "short"
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate() error = nil, want short JWT secret error")
+	}
+
+	var fieldErrors FieldErrors
+	if !errors.As(err, &fieldErrors) {
+		t.Fatalf("Validate() error type = %T, want FieldErrors", err)
+	}
+
+	found := false
+	for _, got := range fieldErrors {
+		if got.Field != "Auth.JWTSecret" {
+			continue
+		}
+		found = true
+		if got.Env != envJWTSecret {
+			t.Fatalf("Auth.JWTSecret env = %q, want %s", got.Env, envJWTSecret)
+		}
+		if got.Value != "" {
+			t.Fatalf("Auth.JWTSecret FieldError.Value = %q, want empty (do not echo secrets)", got.Value)
+		}
+		if !strings.Contains(got.Message, "32") {
+			t.Fatalf("Auth.JWTSecret message = %q, want length floor", got.Message)
+		}
+	}
+	if !found {
+		t.Fatalf("Validate() field errors = %#v, want Auth.JWTSecret", []FieldError(fieldErrors))
+	}
+}
+
+func TestValidateAllowsEmptyJWTSecretInProduction(t *testing.T) {
+	cfg := DefaultFor(EnvironmentProduction)
+	if cfg.Auth.Enabled() {
+		t.Fatal("precondition: empty JWT secret should disable auth")
+	}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v, want nil when production JWT secret is unset", err)
+	}
+}
+
+func TestValidateAcceptsLongJWTSecretInProduction(t *testing.T) {
+	cfg := DefaultFor(EnvironmentProduction)
+	cfg.Auth.JWTSecret = "production-jwt-secret-32-bytes-min"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v, want nil", err)
+	}
+}
+
+func TestLoadFromEnvRejectsShortJWTSecretInProduction(t *testing.T) {
+	_, err := LoadFromEnv(mapLookup(map[string]string{
+		envEnv:       string(EnvironmentProduction),
+		envJWTSecret: "too-short",
+	}))
+	if err == nil {
+		t.Fatal("LoadFromEnv() error = nil, want short JWT secret error")
+	}
+	var fieldErrors FieldErrors
+	if !errors.As(err, &fieldErrors) {
+		t.Fatalf("LoadFromEnv() error type = %T, want FieldErrors", err)
+	}
+	if strings.Contains(err.Error(), "too-short") {
+		t.Fatalf("LoadFromEnv() error leaked JWT secret: %v", err)
+	}
+	found := false
+	for _, got := range fieldErrors {
+		if got.Field == "Auth.JWTSecret" {
+			found = true
+			if got.Value != "" {
+				t.Fatalf("Auth.JWTSecret FieldError.Value = %q, want empty", got.Value)
+			}
+		}
+	}
+	if !found {
+		t.Fatalf("LoadFromEnv() field errors = %#v, want Auth.JWTSecret", []FieldError(fieldErrors))
+	}
+}
+
+func TestAuthEnabled(t *testing.T) {
+	if Default().Auth.Enabled() {
+		t.Fatal("Default() Auth.Enabled() = true, want false")
+	}
+	cfg := Default()
+	cfg.Auth.JWTSecret = "dev-secret"
+	if !cfg.Auth.Enabled() {
+		t.Fatal("Auth.Enabled() = false, want true when JWT secret is set")
+	}
+}
+
 func TestValidateRejectsRedisTLSInsecureInProduction(t *testing.T) {
 	cfg := Default()
 	cfg.Environment = EnvironmentProduction
+	cfg.Auth.JWTSecret = "production-jwt-secret-32-bytes-min"
 	cfg.Cache.Driver = CacheDriverRedis
 	cfg.Cache.Redis.TLS = true
 	cfg.Cache.Redis.TLSInsecure = true

@@ -34,12 +34,11 @@ func newConfigShowCommand(stdout io.Writer) *cobra.Command {
 		Use:   "show",
 		Short: "Print the typed configuration with secrets redacted",
 		Long: `Print the configuration returned by config.Load() as aligned
-key=value lines. Database DSN userinfo/passwords and the Redis password
-are replaced with ***** and never printed.
+key=value lines. Database DSN userinfo/passwords, the Redis password, and
+the JWT secret are replaced with ***** and never printed.
 
-JWT secret, cookie, and CORS fields are not shown until those typed
-config fields exist (M5 auth). Appendix C checks for those settings
-land with the features that introduce them.`,
+Appendix C rejects a production JWT secret shorter than 32 characters at
+config.Load / gombit doctor. Cookie and CORS fields land with M5-3.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := LoadConfig()
@@ -78,6 +77,10 @@ func writeConfigShow(w io.Writer, cfg config.Config) error {
 		{"Cache.Redis.TLSInsecure", strconv.FormatBool(cfg.Cache.Redis.TLSInsecure)},
 		{"Logging.Level", string(cfg.Logging.Level)},
 		{"Logging.Sink", string(cfg.Logging.Sink)},
+		{"Auth.JWTSecret", cfg.Auth.JWTSecret},
+		{"Auth.AccessTokenTTL", cfg.Auth.AccessTokenTTL.String()},
+		{"Auth.RefreshTokenTTL", cfg.Auth.RefreshTokenTTL.String()},
+		{"Auth.BcryptCost", strconv.Itoa(cfg.Auth.BcryptCost)},
 	}
 
 	tw := tabwriter.NewWriter(w, 0, 4, 2, ' ', 0)

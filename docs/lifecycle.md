@@ -51,7 +51,7 @@ steps that need their own runtime surfaces.
 | 3. database connection | Owned in M1-4 through `database.Open`; applications open/close the handle and attach it with `framework.WithDatabase`. |
 | 4. migration state checks | Deferred to M2. |
 | 5. optional Redis/cache connection | Owned in M1-5 through `cache.Open`, the default memory cache, and `app.Redis()` for the Redis escape hatch. |
-| 6. auth infrastructure | Deferred to M5. |
+| 6. auth infrastructure | Owned in M5-2 through `auth` + `framework.New` when `GOMBIT_JWT_SECRET` is set. Cookie/session is M5-3. |
 | 7. tracing and metrics | Basic trace-ID propagation and HTTP request metrics are owned in M1-7; full OpenTelemetry exporter wiring is future runtime work. |
 | 8. HTTP server construction | Owned in M1-2 through `framework.Run` and `RunContext`. |
 | 9. middleware installation | Recovery is owned in M1-2. Route-registration composition (independently-registered route groups, each with optional group-scoped middleware) is owned in M1-3 — see [`docs/router.md`](router.md). Request ID, trace context, metrics, security headers, request timeout, and trusted-proxy configuration are owned in M1-7. XSS HTML-tag sanitization of request input is owned in M1-8 (fundamental first-party default on the runtime stack; not covered by security headers alone). CORS, rate limiting, and auth remain separate issues. |

@@ -1,6 +1,7 @@
 package platform
 
 import (
+	"github.com/LAA-Software-Engineering/gombit/auth"
 	"github.com/LAA-Software-Engineering/gombit/config"
 	"github.com/LAA-Software-Engineering/gombit/database"
 
@@ -12,8 +13,11 @@ func OpenDatabase(cfg config.DatabaseConfig) (*database.DB, error) {
 	return database.Open(cfg)
 }
 
-// AutoMigrate runs GORM AutoMigrate for feature-package models so the
-// example product API can serve before Atlas migrations exist.
+// AutoMigrate runs GORM AutoMigrate for feature-package models and the
+// runtime auth tables so the example API can serve before Atlas migrations.
 func AutoMigrate(db *database.DB) error {
+	if err := auth.Migrate(db.DB); err != nil {
+		return err
+	}
 	return db.AutoMigrate(&product.Product{})
 }
