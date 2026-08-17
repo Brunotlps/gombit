@@ -19,10 +19,12 @@ go run ./cmd/gombit --help
 | `gombit db …` | Atlas-backed migrations | M2, migrated onto Cobra in M4-1 |
 | `gombit openapi generate` | Write the live OpenAPI 3.1 document | M3-3 |
 | `gombit client generate` / `check` | TypeScript client + drift | M3-4, M3-5 |
+| `gombit routes` | Print HTTP routes | M4-4 |
+| `gombit doctor` | Environment and config checks | M4-4 |
+| `gombit config show` | Print typed config with secrets redacted | M4-4 |
 
-Not in this milestone: `routes` / `doctor` / `config show` (M4-4),
-`createsuperuser` (M4-6), `make command` (M4-7). Golden tests for generators
-are M4-5; this command still has unit tests.
+Not in this milestone: `createsuperuser` (M4-6), `make command` (M4-7).
+Golden tests for generators are M4-5; these commands still have unit tests.
 
 ## `gombit new`
 
@@ -250,6 +252,64 @@ gombit db reset [--force]
 ```
 
 See [migrations.md](migrations.md) for Atlas behavior.
+
+## `gombit routes`
+
+Print a table of HTTP method and path:
+
+```sh
+gombit routes
+gombit routes --url http://127.0.0.1:8080
+```
+
+Default listing constructs an in-process `framework.App` (memory cache, docs
+on) and prints framework-owned routes: `/livez`, `/readyz`, `/metrics`,
+`/openapi.json` (and Huma siblings), and `/docs`. Application feature routes
+are registered by the app; they are not discovered by reflection. Against a
+running server, `--url` fetches `/openapi.json` and lists the live contract
+paths (probes and other raw Gin routes stay out of that spec).
+
+## `gombit doctor`
+
+```sh
+gombit doctor
+gombit doctor --dir database/migrations
+```
+
+Prints a status table. A `FAIL` row exits non-zero.
+
+| Check | Role |
+| --- | --- |
+| `go` | `go version` on `PATH` |
+| `node` | `node --version`; **warn** if missing (`gombit dev` needs it) |
+| `config` | `config.Load()` / `FieldErrors` |
+| `database` | `database.Open` + ping when a driver/DSN is set (timeout-bounded) |
+| `redis` | ping when `GOMBIT_CACHE_DRIVER=redis` (timeout-bounded) |
+| `migrations` | pending Atlas SQL in `--dir` (**warn**); skip if the directory is absent |
+| `http` | `GOMBIT_HTTP_ADDR` parses; **warn** if the port is in use |
+| `insecure` | existing production issues: `/docs` on in production, SQLite DSN path not writable |
+
+Network checks use a short timeout so CI cannot hang. Doctor does not start
+Postgres/Redis containers; an invalid driver, broken `config.Load()`, or an
+unwritable SQLite path is enough to flag a deliberately-broken config.
+
+Appendix C JWT secret, cookie `Secure`, and CORS+credentials checks wait for
+the typed auth fields (M5). Production trusted-proxy and Redis
+`TLSInsecure` rejections already live in `config.Validate()` and show up on
+the `config` row.
+
+## `gombit config show`
+
+```sh
+gombit config show
+```
+
+Prints the typed `config.Load()` result as aligned `key<TAB>value` lines.
+Database DSN userinfo/passwords and `Cache.Redis.Password` are replaced with
+`*****` and must never appear in the output. JWT/cookie/CORS fields are
+omitted until those typed config fields exist.
+
+See [config.md](config.md).
 
 ## `gombit openapi` and `gombit client`
 

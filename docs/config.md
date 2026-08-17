@@ -84,11 +84,19 @@ external module hook, not a runtime dependency.
 Validation returns `config.FieldErrors`, which names the typed field, the
 environment variable, the invalid value, and the validation message.
 
+`gombit config show` prints this typed result as aligned key/value lines.
+DSN userinfo/passwords and the Redis password are redacted (`*****`);
+`Config.Redacted()` / `RedactDSN` are the helpers. Do not log raw DSNs.
+
 Appendix C production checks, such as JWT secret strength, secure cookies,
 CORS credentials, debug Gin mode, and Redis settings land with the features
-that introduce those typed fields. Future secret-bearing fields must not copy
-secret values into `FieldError.Value`; `Config.Database.DSN` validation does
-not echo the DSN value.
+that introduce those typed fields. JWT/cookie/CORS typed fields do not exist
+yet (M5); `gombit doctor` still flags **existing** insecure or broken cases
+(invalid config, production + `/docs`, unwritable SQLite DSN path, Redis
+selected but unreachable, pending migrations). Future secret-bearing fields
+must not copy secret values into `FieldError.Value`; `Config.Database.DSN`
+validation does not echo the DSN value.
 
 Runtime extraction work should accept `config.Config` values instead of calling
-`os.Getenv` or `os.LookupEnv` directly.
+`os.Getenv` or `os.LookupEnv` directly. The CLI (`gombit doctor`,
+`gombit config show`) may call `config.Load()`.
