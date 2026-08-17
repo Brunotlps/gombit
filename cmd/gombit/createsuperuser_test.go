@@ -165,3 +165,35 @@ func TestRunCreateSuperuserNotATTYWithoutFlags(t *testing.T) {
 		t.Fatalf("run() error = %v, want --email is required", err)
 	}
 }
+
+func TestRunCreateSuperuserProductionRequiresMigratedSchema(t *testing.T) {
+	dbPath := filepath.Join(t.TempDir(), "app.db")
+	cfg := testCreateSuperuserConfig(t, dbPath)
+	cfg.Environment = config.EnvironmentProduction
+	stubConfig(t, cfg)
+
+	err := run(context.Background(), []string{
+		"createsuperuser",
+		"--no-input",
+		"--email", "admin@example.com",
+		"--password", "correct-horse",
+	}, new(bytes.Buffer), new(bytes.Buffer))
+	if err == nil {
+		t.Fatal("run() error = nil, want missing-schema refusal in production")
+	}
+	if !strings.Contains(err.Error(), "gombit db migrate") {
+		t.Fatalf("run() error = %v, want migrate-first message", err)
+	}
+
+	db, err := database.Open(config.DatabaseConfig{
+		Driver: config.DatabaseDriverSQLite,
+		DSN:    cfg.Database.DSN,
+	})
+	if err != nil {
+		t.Fatalf("database.Open: %v", err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	if db.Migrator().HasTable(&auth.User{}) {
+		t.Fatal("production createsuperuser AutoMigrated the users table, want no schema change")
+	}
+}

@@ -406,11 +406,14 @@ using the same `auth.Service` bcrypt hasher — there is no second hash path.
 Requires `GOMBIT_JWT_SECRET` to be set (`cfg.Auth.Enabled()`): without it
 Bearer auth is unmounted by `framework.New`, so a superuser could never log
 in. It loads config with `config.Load`, opens the database with
-`database.Open`, runs `auth.Migrate` so the command also works against a
-fresh database with no prior migrations, then calls
-`auth.Service.CreateSuperuser`, which sets `User.IsSuperuser` and shares
-`Register`'s unique-email path — duplicate emails are refused with the same
-error as `/auth/register`.
+`database.Open`, then calls `auth.Service.CreateSuperuser`.
+
+In development and test, the command runs `auth.Migrate` (GORM AutoMigrate)
+so a fresh local DB works before Atlas migrations exist. In production it
+never AutoMigrates: schema changes belong to `gombit db migrate`. If the
+users table is missing, the command fails and tells you to migrate first.
+`CreateSuperuser` shares `Register`'s unique-email path — duplicate emails
+are refused with the same error as `/auth/register`.
 
 ### Flags
 

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/LAA-Software-Engineering/gombit/auth"
+	"github.com/LAA-Software-Engineering/gombit/config"
 	"github.com/LAA-Software-Engineering/gombit/database"
 	"github.com/spf13/cobra"
 	"golang.org/x/term"
@@ -16,7 +17,7 @@ import (
 
 // newCreateSuperuserCommand builds `gombit createsuperuser` (M4-6), the CLI
 // admin seed path over the auth core: config.Load, database.Open,
-// auth.Migrate, then auth.Service.CreateSuperuser (same hasher and unique
+// prepareAuthSchema, then auth.Service.CreateSuperuser (same hasher and unique
 // email path as /auth/register).
 func newCreateSuperuserCommand(stdout io.Writer) *cobra.Command {
 	var (
@@ -37,7 +38,10 @@ in scripts and tests).
 
 The password is hashed with the same bcrypt hasher as /auth/register
 (auth.Service), and duplicate emails are refused with the same unique
-constraint.`,
+constraint.
+
+Development and test AutoMigrate the auth tables so a fresh local DB
+works. Production never AutoMigrates: run gombit db migrate first.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			cfg, err := LoadConfig()
@@ -61,8 +65,8 @@ constraint.`,
 			}
 			defer func() { _ = db.Close() }()
 
-			if err := auth.Migrate(db.DB); err != nil {
-				return fmt.Errorf("gombit createsuperuser: migrate auth tables: %w", err)
+			if err := prepareAuthSchema(cfg.Environment, db); err != nil {
+				return fmt.Errorf("gombit createsuperuser: %w", err)
 			}
 
 			svc, err := auth.NewService(db.DB, cfg)
@@ -73,7 +77,7 @@ constraint.`,
 			user, err := svc.CreateSuperuser(cmd.Context(), resolvedEmail, resolvedPassword)
 			if err != nil {
 				if errors.Is(err, auth.ErrEmailTaken) {
-					return fmt.Errorf("gombit createsuperuser: a user with email %q already exists", resolvedEmail)
+					return fmt.Errorf("gombit createsuperuser: a user with email %q already exists", strings.ToLower(strings.TrimSpace(resolvedEmail)))
 				}
 				return fmt.Errorf("gombit createsuperuser: %w", err)
 			}
@@ -86,6 +90,19 @@ constraint.`,
 	cmd.Flags().StringVar(&password, "password", "", "superuser account password (prefer the interactive prompt; --password is visible in shell history and process listings)")
 	cmd.Flags().BoolVar(&noInput, "no-input", false, "never prompt; require --email and --password")
 	return cmd
+}
+
+func prepareAuthSchema(env config.Environment, db *database.DB) error {
+	if env == config.EnvironmentProduction {
+		if db.Migrator().HasTable(&auth.User{}) {
+			return nil
+		}
+		return errors.New("users table is missing; run gombit db migrate first (production never AutoMigrates)")
+	}
+	if err := auth.Migrate(db.DB); err != nil {
+		return fmt.Errorf("migrate auth tables: %w", err)
+	}
+	return nil
 }
 
 func resolveSuperuserCredentials(cmd *cobra.Command, email, password string, noInput bool) (string, string, error) {
