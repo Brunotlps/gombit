@@ -106,10 +106,63 @@ func TestRegisterRejectsUnknownFieldType(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	app := newCookieApp(t)
 	err := admin.Register(app, Widget{}, widgetOptions(func(o *admin.Options) {
-		o.Fields = append(o.Fields, admin.Field{Name: "name", Type: "nope"})
+		o.Fields = append(o.Fields, admin.Field{Name: "mystery", Type: "nope"})
 	}))
-	if err == nil {
-		t.Fatal("Register() error = nil, want unknown type or duplicate")
+	if err == nil || !strings.Contains(err.Error(), "unknown type") {
+		t.Fatalf("Register() error = %v, want unknown type", err)
+	}
+}
+
+func TestRegisterRejectsDuplicateFieldName(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	app := newCookieApp(t)
+	err := admin.Register(app, Widget{}, widgetOptions(func(o *admin.Options) {
+		o.Fields = append(o.Fields, admin.Field{Name: "name", Type: admin.TypeString})
+	}))
+	if err == nil || !strings.Contains(err.Error(), "duplicate field") {
+		t.Fatalf("Register() error = %v, want duplicate field", err)
+	}
+}
+
+func TestRegisterRejectsHasManyInQueryOptions(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	type Category struct {
+		ID   uint   `gorm:"primaryKey" json:"id"`
+		Name string `json:"name"`
+	}
+	hasMany := admin.Field{
+		Name: "widgets",
+		Type: admin.TypeRelation,
+		Related: &admin.Relation{
+			Slug:       "widgets",
+			Kind:       admin.RelHasMany,
+			LabelField: "name",
+		},
+	}
+	fields := []admin.Field{
+		{Name: "id", Type: admin.TypeInteger, ReadOnly: true},
+		{Name: "name", Type: admin.TypeString, Required: true},
+		hasMany,
+	}
+	cases := []struct {
+		kind string
+		opts admin.Options
+	}{
+		{"search", admin.Options{Slug: "categories", Fields: fields, Search: []string{"widgets"}}},
+		{"filter", admin.Options{Slug: "cat-filter", Fields: fields, Filter: []string{"widgets"}}},
+		{"ordering", admin.Options{Slug: "cat-order", Fields: fields, Ordering: []string{"widgets"}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.kind, func(t *testing.T) {
+			app := newCookieApp(t)
+			if err := app.DB().AutoMigrate(&Category{}); err != nil {
+				t.Fatalf("AutoMigrate: %v", err)
+			}
+			err := admin.Register(app, Category{}, tc.opts)
+			if err == nil || !strings.Contains(err.Error(), tc.kind) || !strings.Contains(err.Error(), "has_many") {
+				t.Fatalf("Register() error = %v, want %s has_many", err, tc.kind)
+			}
+		})
 	}
 }
 

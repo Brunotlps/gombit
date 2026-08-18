@@ -6,6 +6,7 @@ import (
 	"go/parser"
 	"go/token"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -228,6 +229,63 @@ func TestResourceListPaginationSearchOrderFilter(t *testing.T) {
 	assertError(t, badOrder, http.StatusUnprocessableEntity, contract.CodeValidationError)
 }
 
+func TestResourceListIncludesImplicitCreatedAt(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	app := newCookieApp(t)
+	registerWidgets(t, app, func(o *admin.Options) {
+		o.List = []string{"name", "created_at"}
+	})
+	jar := loginSuperuser(t, app)
+
+	create := doRequest(app, jar, http.MethodPost, "/api/v1/admin/resources/widgets", `{"name":"Dated"}`)
+	if create.Code != http.StatusOK {
+		t.Fatalf("create status = %d; body: %s", create.Code, create.Body.String())
+	}
+	var created rowEnvelope
+	if err := json.Unmarshal(create.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode create: %v", err)
+	}
+	assertCreatedAtPresent(t, created.Data)
+
+	list := doRequest(app, jar, http.MethodGet, "/api/v1/admin/resources/widgets", "")
+	if list.Code != http.StatusOK {
+		t.Fatalf("list status = %d; body: %s", list.Code, list.Body.String())
+	}
+	var listed listEnvelope
+	if err := json.Unmarshal(list.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if len(listed.Data) != 1 {
+		t.Fatalf("list len = %d, want 1; body: %s", len(listed.Data), list.Body.String())
+	}
+	assertCreatedAtPresent(t, listed.Data[0])
+
+	id := fmt.Sprint(asInt(created.Data["id"]))
+	detail := doRequest(app, jar, http.MethodGet, "/api/v1/admin/resources/widgets/"+id, "")
+	if detail.Code != http.StatusOK {
+		t.Fatalf("detail status = %d; body: %s", detail.Code, detail.Body.String())
+	}
+	var got rowEnvelope
+	if err := json.Unmarshal(detail.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode detail: %v", err)
+	}
+	assertCreatedAtPresent(t, got.Data)
+}
+
+func TestResourceCreateWithoutCSRFForbidden(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	app := newCookieApp(t)
+	registerWidgets(t, app)
+	jar := loginSuperuser(t, app)
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/admin/resources/widgets", strings.NewReader(`{"name":"X"}`))
+	req.Header.Set("Content-Type", "application/json")
+	jar.attach(req)
+	app.Router().ServeHTTP(rec, req)
+	assertError(t, rec, http.StatusForbidden, "authorization")
+}
+
 func TestResourceBelongsToStoresFK(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	type Category struct {
@@ -335,5 +393,17 @@ func asInt(v any) int64 {
 		return n
 	default:
 		return 0
+	}
+}
+
+func assertCreatedAtPresent(t *testing.T, row map[string]any) {
+	t.Helper()
+	v, ok := row["created_at"]
+	if !ok || v == nil {
+		t.Fatalf("row missing created_at: %#v", row)
+	}
+	s := fmt.Sprint(v)
+	if s == "" || strings.HasPrefix(s, "0001-01-01") {
+		t.Fatalf("created_at is empty/zero: %#v", v)
 	}
 }

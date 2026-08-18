@@ -95,8 +95,9 @@ arbitrary Go types.
   **only at registration time**. Do not call it from request handlers.
 - **`created_at` / `updated_at`** are implicit GORM timestamp columns.
   They may appear in `List` and `Ordering` even when omitted from
-  `Fields`. Search and filter still require an explicit field. If the
-  model has no such GORM column, `Register` errors.
+  `Fields`. When the model has those columns, list and detail row JSON
+  include the values. Search and filter still require an explicit field.
+  If the model has no such GORM column, `Register` errors.
 - Zero `Actions` defaults to all enabled. Empty `Permissions` default to
   `admin.{slug}.{view,create,update,delete}` and are echoed in meta only
   (ADMIN-3 enforces them).
@@ -107,7 +108,8 @@ Closed field types: `string`, `text`, `integer`, `float`, `decimal`,
 Relation `kind` is `belongs_to` or `has_many`. **`belongs_to`** is stored as
 the foreign key on create/update. **`has_many` is meta-only** in ADMIN-1:
 the data plane does not nest related collections and treats the field as
-read-only.
+read-only. `Register` rejects `has_many` (and any field with no SQL column)
+in Search, Filter, or Ordering.
 
 `Register` does not AutoMigrate. The application still owns schema
 (Atlas / `AutoMigrate` in examples).
@@ -140,9 +142,11 @@ List query parameters:
 - `ordering` (a field from `Options.Ordering`; prefix `-` for DESC)
 - one query key per `Options.Filter` field
 
-Row JSON is keyed by registered field names. Create/update accept only
-writable (non-readonly) fields. Unknown keys, readonly keys, and type
-failures render D10 `validation_error` with `fields`.
+Row JSON is keyed by registered field names, plus implicit `created_at` /
+`updated_at` when the GORM model has them and they were omitted from
+`Fields`. Create/update accept only writable (non-readonly) fields.
+Unknown keys, readonly keys, and type failures render D10
+`validation_error` with `fields`.
 
 The application's public CRUD API stays the feature's own typed Huma
 routes. Admin does not replace them.

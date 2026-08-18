@@ -149,17 +149,27 @@ func matchSchemaField(sch *schema.Schema, f Field) *schema.Field {
 	return nil
 }
 
-func implicitTimestampColumns(sch *schema.Schema) map[string]string {
-	out := map[string]string{}
+func implicitTimestampColumns(sch *schema.Schema) map[string]implicitColumn {
+	out := map[string]implicitColumn{}
 	for _, sf := range sch.Fields {
 		if sf == nil {
 			continue
 		}
+		var name string
 		switch {
 		case sf.AutoCreateTime > 0 || sf.DBName == ImplicitCreatedAt:
-			out[ImplicitCreatedAt] = sf.DBName
+			name = ImplicitCreatedAt
 		case sf.AutoUpdateTime > 0 || sf.DBName == ImplicitUpdatedAt:
-			out[ImplicitUpdatedAt] = sf.DBName
+			name = ImplicitUpdatedAt
+		default:
+			continue
+		}
+		if sf.DBName == "" {
+			continue
+		}
+		out[name] = implicitColumn{
+			column: sf.DBName,
+			get:    makeGetter(sf.StructField.Index, TypeDateTime),
 		}
 	}
 	return out

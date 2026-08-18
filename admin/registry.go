@@ -62,7 +62,7 @@ type registered struct {
 	forEach     func(slicePtr any, fn func(any))
 	fields      []resolvedField
 	fieldByName map[string]*resolvedField
-	implicit    map[string]string // name -> column (created_at / updated_at)
+	implicit    map[string]implicitColumn // created_at / updated_at when omitted from Fields
 }
 
 type resolvedField struct {
@@ -72,6 +72,12 @@ type resolvedField struct {
 	set    func(inst any, raw any) error
 }
 
+// implicitColumn is a GORM timestamp allowed in List/Ordering without a Field.
+type implicitColumn struct {
+	column string
+	get    func(inst any) any
+}
+
 func (m *registered) field(name string) (*resolvedField, bool) {
 	f, ok := m.fieldByName[name]
 	return f, ok
@@ -79,19 +85,31 @@ func (m *registered) field(name string) (*resolvedField, bool) {
 
 func (m *registered) columnFor(name string) (string, bool) {
 	if f, ok := m.fieldByName[name]; ok {
+		if f.column == "" {
+			return "", false
+		}
 		return f.column, true
 	}
-	if col, ok := m.implicit[name]; ok {
-		return col, true
+	if col, ok := m.implicit[name]; ok && col.column != "" {
+		return col.column, true
 	}
 	return "", false
 }
 
 func (m *registered) toRow(inst any) map[string]any {
-	out := make(map[string]any, len(m.fields))
+	out := make(map[string]any, len(m.fields)+len(m.implicit))
 	for i := range m.fields {
 		f := &m.fields[i]
 		out[f.Name] = f.get(inst)
+	}
+	for name, col := range m.implicit {
+		if _, exists := out[name]; exists {
+			continue
+		}
+		if col.get == nil {
+			continue
+		}
+		out[name] = col.get(inst)
 	}
 	return out
 }

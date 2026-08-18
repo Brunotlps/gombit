@@ -308,7 +308,7 @@ func applyFilters(ctx context.Context, q *gorm.DB, m *registered, values interfa
 			continue
 		}
 		f, ok := m.field(name)
-		if !ok {
+		if !ok || f.column == "" {
 			continue
 		}
 		val, err := coerceFilter(raw, f.Type)

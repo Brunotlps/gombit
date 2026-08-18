@@ -102,6 +102,9 @@ func registerModel(host Host, model any, opts Options) error {
 	if err != nil {
 		return err
 	}
+	if err := validateQueryableColumns(opts, resolved); err != nil {
+		return err
+	}
 
 	m := &registered{
 		meta:        modelMetaFrom(opts, pkName),
@@ -152,7 +155,7 @@ func fieldByName(fields []Field, name string) *Field {
 	return nil
 }
 
-func validateFieldRefs(opts Options, implicit map[string]string) error {
+func validateFieldRefs(opts Options, implicit map[string]implicitColumn) error {
 	known := map[string]bool{}
 	for _, f := range opts.Fields {
 		if f.Name == "" || !validIdent(f.Name) {
@@ -202,6 +205,39 @@ func validateFieldRefs(opts Options, implicit map[string]string) error {
 		return err
 	}
 	if err := check("ordering", opts.Ordering, true); err != nil {
+		return err
+	}
+	return nil
+}
+
+func validateQueryableColumns(opts Options, resolved []resolvedField) error {
+	byName := make(map[string]*resolvedField, len(resolved))
+	for i := range resolved {
+		byName[resolved[i].Name] = &resolved[i]
+	}
+	check := func(kind string, names []string) error {
+		for _, name := range names {
+			f, ok := byName[name]
+			if !ok {
+				continue
+			}
+			if f.column != "" {
+				continue
+			}
+			if f.Type == TypeRelation && f.Related != nil && f.Related.Kind == RelHasMany {
+				return fmt.Errorf("admin: %s %q is has_many and has no SQL column", kind, name)
+			}
+			return fmt.Errorf("admin: %s %q has no SQL column", kind, name)
+		}
+		return nil
+	}
+	if err := check("search", opts.Search); err != nil {
+		return err
+	}
+	if err := check("filter", opts.Filter); err != nil {
+		return err
+	}
+	if err := check("ordering", opts.Ordering); err != nil {
 		return err
 	}
 	return nil
