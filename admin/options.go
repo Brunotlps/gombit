@@ -58,8 +58,8 @@ type Options struct {
 	// Actions enables list / detail / create / update / delete. The zero
 	// value (all false) defaults to all enabled.
 	Actions Actions
-	// Permissions are string keys echoed in meta for ADMIN-3. ADMIN-1 does
-	// not enforce them. Empty values default to admin.{slug}.{action}.
+	// Permissions are authorization keys enforced by the admin handlers.
+	// Empty values default to admin.{slug}.{action}.
 	Permissions Permissions
 }
 
@@ -97,7 +97,7 @@ type Actions struct {
 	Delete bool `json:"delete"`
 }
 
-// Permissions holds ADMIN-3 permission keys. ADMIN-1 stores and echoes them.
+// Permissions holds the keys enforced for each admin operation.
 type Permissions struct {
 	View   string `json:"view"`
 	Create string `json:"create"`

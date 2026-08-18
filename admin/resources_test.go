@@ -1,6 +1,7 @@
 package admin_test
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"go/parser"
@@ -13,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/LAA-Software-Engineering/gombit/admin"
+	"github.com/LAA-Software-Engineering/gombit/auth"
 	"github.com/LAA-Software-Engineering/gombit/contract"
 	"github.com/gin-gonic/gin"
 )
@@ -97,6 +99,83 @@ func TestResourceNonSuperuserForbidden(t *testing.T) {
 	jar := loginUser(t, app, "staff@example.com", testPassword)
 	rec := doRequest(app, jar, http.MethodGet, "/api/v1/admin/resources/widgets", "")
 	assertError(t, rec, http.StatusForbidden, "authorization")
+}
+
+func TestResourceViewOnlyPermission(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	app := newCookieApp(t)
+	registerWidgets(t, app)
+	widget := Widget{Name: "Read only", SKU: "ro-1"}
+	if err := app.DB().Create(&widget).Error; err != nil {
+		t.Fatalf("create fixture: %v", err)
+	}
+	email := "resource-viewer@example.com"
+	jar := loginUser(t, app, email, testPassword)
+	grantGroupPermission(t, app, email, "admin.widgets.view")
+
+	list := doRequest(app, jar, http.MethodGet, "/api/v1/admin/resources/widgets", "")
+	if list.Code != http.StatusOK {
+		t.Fatalf("view-only list status = %d; body: %s", list.Code, list.Body.String())
+	}
+	detail := doRequest(app, jar, http.MethodGet, fmt.Sprintf("/api/v1/admin/resources/widgets/%d", widget.ID), "")
+	if detail.Code != http.StatusOK {
+		t.Fatalf("view-only detail status = %d; body: %s", detail.Code, detail.Body.String())
+	}
+
+	create := doRequest(app, jar, http.MethodPost, "/api/v1/admin/resources/widgets", `{"name":"Denied"}`)
+	assertError(t, create, http.StatusForbidden, "authorization")
+	update := doRequest(
+		app,
+		jar,
+		http.MethodPatch,
+		fmt.Sprintf("/api/v1/admin/resources/widgets/%d", widget.ID),
+		`{"name":"Denied"}`,
+	)
+	assertError(t, update, http.StatusForbidden, "authorization")
+	del := doRequest(app, jar, http.MethodDelete, fmt.Sprintf("/api/v1/admin/resources/widgets/%d", widget.ID), "")
+	assertError(t, del, http.StatusForbidden, "authorization")
+}
+
+func TestResourceCustomPermissionKeyIsEnforced(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	app := newCookieApp(t)
+	const customView = "inventory.widgets.read"
+	registerWidgets(t, app, func(opts *admin.Options) {
+		opts.Permissions.View = customView
+	})
+	email := "custom-viewer@example.com"
+	jar := loginUser(t, app, email, testPassword)
+
+	defaultGrant, err := auth.EnsurePermission(
+		context.Background(),
+		app.DB(),
+		"admin.widgets.view",
+		"",
+	)
+	if err != nil {
+		t.Fatalf("EnsurePermission(default): %v", err)
+	}
+	var user auth.User
+	if err := app.DB().Where("email = ?", email).First(&user).Error; err != nil {
+		t.Fatalf("load user: %v", err)
+	}
+	if err := auth.GrantPermissionToUser(context.Background(), app.DB(), &user, &defaultGrant); err != nil {
+		t.Fatalf("GrantPermissionToUser(default): %v", err)
+	}
+	denied := doRequest(app, jar, http.MethodGet, "/api/v1/admin/resources/widgets", "")
+	assertError(t, denied, http.StatusForbidden, "authorization")
+
+	customGrant, err := auth.EnsurePermission(context.Background(), app.DB(), customView, "")
+	if err != nil {
+		t.Fatalf("EnsurePermission(custom): %v", err)
+	}
+	if err := auth.GrantPermissionToUser(context.Background(), app.DB(), &user, &customGrant); err != nil {
+		t.Fatalf("GrantPermissionToUser(custom): %v", err)
+	}
+	allowed := doRequest(app, jar, http.MethodGet, "/api/v1/admin/resources/widgets", "")
+	if allowed.Code != http.StatusOK {
+		t.Fatalf("custom permission list status = %d; body: %s", allowed.Code, allowed.Body.String())
+	}
 }
 
 func TestResourceUnknownSlugNotFound(t *testing.T) {

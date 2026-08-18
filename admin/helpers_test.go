@@ -235,6 +235,29 @@ func loginUser(t *testing.T, app *framework.App, email, password string) *cookie
 	return jar
 }
 
+func grantGroupPermission(t *testing.T, app *framework.App, email, key string) {
+	t.Helper()
+	ctx := context.Background()
+	var user auth.User
+	if err := app.DB().WithContext(ctx).Where("email = ?", email).First(&user).Error; err != nil {
+		t.Fatalf("load user %s: %v", email, err)
+	}
+	permission, err := auth.EnsurePermission(ctx, app.DB(), key, "")
+	if err != nil {
+		t.Fatalf("EnsurePermission(%s): %v", key, err)
+	}
+	group, err := auth.EnsureGroup(ctx, app.DB(), "group-"+strings.ReplaceAll(t.Name(), "/", "-"))
+	if err != nil {
+		t.Fatalf("EnsureGroup: %v", err)
+	}
+	if err := auth.GrantPermissionToGroup(ctx, app.DB(), &group, &permission); err != nil {
+		t.Fatalf("GrantPermissionToGroup: %v", err)
+	}
+	if err := auth.AddUserToGroup(ctx, app.DB(), &user, &group); err != nil {
+		t.Fatalf("AddUserToGroup: %v", err)
+	}
+}
+
 func decodeError(t *testing.T, rec *httptest.ResponseRecorder) contract.ErrorBody {
 	t.Helper()
 	var env contract.ErrorEnvelope
