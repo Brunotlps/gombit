@@ -30,14 +30,14 @@ func WithEmbeddedFrontend(fsys fs.FS) Option {
 	}
 }
 
-func mountEmbeddedFrontend(router *gin.Engine, fsys fs.FS) {
+func mountEmbeddedFrontend(router *gin.Engine, fsys fs.FS, apiPrefix string) {
 	if router == nil || fsys == nil {
 		return
 	}
 	if !hasIndexHTML(fsys) {
 		return
 	}
-	router.NoRoute(embeddedFrontendHandler(fsys))
+	router.NoRoute(embeddedFrontendHandler(fsys, apiPrefix))
 }
 
 func hasIndexHTML(fsys fs.FS) bool {
@@ -45,7 +45,7 @@ func hasIndexHTML(fsys fs.FS) bool {
 	return err == nil && info != nil && !info.IsDir()
 }
 
-func embeddedFrontendHandler(fsys fs.FS) gin.HandlerFunc {
+func embeddedFrontendHandler(fsys fs.FS, apiPrefix string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
 			c.AbortWithStatus(http.StatusNotFound)
@@ -53,7 +53,7 @@ func embeddedFrontendHandler(fsys fs.FS) gin.HandlerFunc {
 		}
 
 		urlPath := path.Clean("/" + c.Request.URL.Path)
-		if isReservedFrontendPath(urlPath) {
+		if isReservedFrontendPath(urlPath, apiPrefix) {
 			c.AbortWithStatus(http.StatusNotFound)
 			return
 		}
@@ -73,7 +73,7 @@ func embeddedFrontendHandler(fsys fs.FS) gin.HandlerFunc {
 	}
 }
 
-func isReservedFrontendPath(urlPath string) bool {
+func isReservedFrontendPath(urlPath, apiPrefix string) bool {
 	switch urlPath {
 	case "/livez", "/readyz", "/metrics",
 		"/openapi.json", "/openapi.yaml",
@@ -87,6 +87,12 @@ func isReservedFrontendPath(urlPath string) bool {
 	if strings.HasPrefix(urlPath, "/docs/") {
 		return true
 	}
+	prefix := path.Clean("/" + strings.TrimSpace(apiPrefix))
+	if prefix != "/" && prefix != "." && prefix != "/api" {
+		if urlPath == prefix || strings.HasPrefix(urlPath, prefix+"/") {
+			return true
+		}
+	}
 	return false
 }
 
@@ -95,7 +101,7 @@ func serveEmbeddedFile(c *gin.Context, fsys fs.FS, name string) bool {
 	if err != nil {
 		return false
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 
 	info, err := f.Stat()
 	if err != nil || info.IsDir() {

@@ -76,8 +76,9 @@ func copyFile(src, dst string) error {
 	if err != nil {
 		return fmt.Errorf("build: open %s: %w", src, err)
 	}
-	defer in.Close()
+	defer func() { _ = in.Close() }()
 
+	// #nosec G304 -- dst is under internal/web/static in the application work dir
 	out, err := os.OpenFile(dst, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
 		return fmt.Errorf("build: write %s: %w", dst, err)

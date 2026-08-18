@@ -137,7 +137,7 @@ func New(options ...Option) (*App, error) {
 			return nil, err
 		}
 	}
-	mountEmbeddedFrontend(app.router, app.embeddedFrontend)
+	mountEmbeddedFrontend(app.router, app.embeddedFrontend, app.cfg.API.Prefix)
 
 	return app, nil
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/example/demo/internal/book"
 	"github.com/example/demo/internal/platform"
 	"github.com/example/demo/internal/product"
+	"github.com/example/demo/internal/web"
 )
 
 func main() {
@@ -26,6 +27,7 @@ func main() {
 	app, err := framework.New(
 		framework.WithConfig(cfg),
 		framework.WithDatabase(db),
+		framework.WithEmbeddedFrontend(web.FS()),
 	)
 	if err != nil {
 		_ = db.Close()

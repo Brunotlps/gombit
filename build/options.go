@@ -72,7 +72,7 @@ func (opts Options) validate() error {
 		return errors.New("build: --out must not be empty")
 	}
 	if strings.Contains(opts.Out, "..") {
-		return errors.New("build: --out must not contain ..")
+		return errors.New("build: --out must not contain path traversal")
 	}
 	return nil
 }

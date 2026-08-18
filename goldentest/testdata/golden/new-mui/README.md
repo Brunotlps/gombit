@@ -41,6 +41,17 @@ React + TypeScript skeleton (router, generated client, React Hook Form,
 Bearer login, MUI CRUD preset — see
 [`docs/frontend-mui.md`](https://github.com/LAA-Software-Engineering/gombit/blob/main/docs/frontend-mui.md)).
 
+Split deploy is the default. For a single binary that serves API + static +
+SPA fallback:
+
+```sh
+gombit build --embed
+./bin/server
+```
+
+`go run ./cmd/server` still works without a Vite `dist`. See
+[`docs/build.md`](https://github.com/LAA-Software-Engineering/gombit/blob/main/docs/build.md).
+
 This module requires [`github.com/LAA-Software-Engineering/gombit`](https://github.com/LAA-Software-Engineering/gombit).
 After scaffolding, pin a released version:
 
@@ -65,10 +76,11 @@ Runtime still reads `GOMBIT_*` environment variables, not `gombit.yaml`.
 
 ## Layout
 
-- `cmd/server` — `config.Load`, `framework.New`, explicit `product.Register`
+- `cmd/server` — `config.Load`, `framework.New`, explicit `product.Register`, optional embed via `internal/web`
 - `cmd/gombit` — framework Cobra tree plus `product.RegisterCommands(root)`
 - `internal/product` — model, Huma handlers, routes (no `service.go` / `repo.go`); `RegisterCommands` for CLI hooks
 - `internal/platform` — database open + AutoMigrate for the example product
+- `internal/web` — `go:embed` hook (`static/.keep` placeholder; `gombit build --embed` collectstatics here)
 - `database/migrations`, `database/seeds` — Atlas SQL (see `gombit db`)
 - `frontend/` — Vite + React + TypeScript MUI preset (`gombit dev`)
 

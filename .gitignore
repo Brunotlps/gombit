@@ -8,6 +8,8 @@
 *.out
 /bin/
 /dist/
+# Do not ignore /build/: the `gombit build --embed` implementation lives in
+# package build at the module root. Generated apps write binaries to bin/.
 
 # Go workspace / module tooling
 vendor/

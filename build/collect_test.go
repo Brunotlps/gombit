@@ -122,7 +122,7 @@ func writeFile(t *testing.T, path, contents string) {
 
 func readFile(t *testing.T, path string) string {
 	t.Helper()
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- test fixture path
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
 	}

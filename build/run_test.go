@@ -136,8 +136,7 @@ func TestRunEmbedCopiesAndCompilesWithStubs(t *testing.T) {
 			case strings.Contains(joined, "run build"):
 				return exec.Command("sh", "-c", "mkdir -p dist/assets && printf '<html>built</html>' > dist/index.html && printf 'js' > dist/assets/app.js")
 			case len(args) >= 3 && args[0] == "build" && args[1] == "-o":
-				out := args[2]
-				return exec.Command("sh", "-c", "mkdir -p \"$(dirname "+shellQuote(out)+")\" && printf fake-binary > "+shellQuote(out))
+				return exec.Command("sh", "-c", "mkdir -p bin && printf fake-binary > bin/server")
 			default:
 				return exec.Command("sh", "-c", "exit 1")
 			}
@@ -229,8 +228,4 @@ func writeBuildApp(t *testing.T) string {
 		t.Fatalf("mkdir cmd/server: %v", err)
 	}
 	return workDir
-}
-
-func shellQuote(s string) string {
-	return "'" + strings.ReplaceAll(s, "'", `'"'"'`) + "'"
 }
