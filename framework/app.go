@@ -13,6 +13,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/LAA-Software-Engineering/gombit/admin"
 	"github.com/LAA-Software-Engineering/gombit/auth"
 	"github.com/LAA-Software-Engineering/gombit/cache"
 	"github.com/LAA-Software-Engineering/gombit/config"
@@ -135,6 +136,13 @@ func New(options ...Option) (*App, error) {
 		}
 		if err := auth.Mount(app.api, app.db.DB, app.cfg); err != nil {
 			return nil, err
+		}
+		// Admin introspection + data plane mount only in cookie mode
+		// (ADR-013). JWT-only apps do not grow admin routes.
+		if app.cfg.Auth.EffectiveMode() == config.AuthModeCookie {
+			if err := admin.Mount(app); err != nil {
+				return nil, err
+			}
 		}
 	}
 	mountEmbeddedFrontend(app.router, app.embeddedFrontend, app.cfg.API.Prefix)
