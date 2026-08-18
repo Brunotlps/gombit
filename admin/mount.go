@@ -17,7 +17,7 @@ const cookieSecurityName = "cookieAuth"
 type queryValuesKey struct{}
 
 type handlers struct {
-	reg  *Registry
+	reg  *registry
 	host Host
 }
 
@@ -50,7 +50,7 @@ func Mount(host Host) error {
 	return nil
 }
 
-func mountRoutes(host Host, reg *Registry, svc *auth.Service) {
+func mountRoutes(host Host, reg *registry, svc *auth.Service) {
 	prefix := strings.TrimSuffix(host.Config().API.Prefix, "/")
 	if prefix == "" {
 		prefix = "/api/v1"

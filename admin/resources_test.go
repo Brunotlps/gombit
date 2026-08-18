@@ -228,6 +228,51 @@ func TestResourceListPaginationSearchOrderFilter(t *testing.T) {
 	assertError(t, badOrder, http.StatusUnprocessableEntity, contract.CodeValidationError)
 }
 
+func TestResourceBelongsToStoresFK(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	type Category struct {
+		ID   uint   `gorm:"primaryKey" json:"id"`
+		Name string `json:"name"`
+	}
+	type Item struct {
+		ID         uint   `gorm:"primaryKey" json:"id"`
+		Name       string `json:"name"`
+		CategoryID uint   `json:"category_id"`
+	}
+	app := newCookieApp(t)
+	if err := app.DB().AutoMigrate(&Category{}, &Item{}); err != nil {
+		t.Fatalf("AutoMigrate: %v", err)
+	}
+	if err := admin.Register(app, Item{}, admin.Options{
+		Slug: "items",
+		Fields: []admin.Field{
+			{Name: "id", Type: admin.TypeInteger, ReadOnly: true},
+			{Name: "name", Type: admin.TypeString, Required: true},
+			{
+				Name:    "category_id",
+				Type:    admin.TypeRelation,
+				Related: &admin.Relation{Slug: "categories", Kind: admin.RelBelongsTo, LabelField: "name"},
+			},
+		},
+		List:   []string{"name", "category_id"},
+		Filter: []string{"category_id"},
+	}); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	jar := loginSuperuser(t, app)
+	rec := doRequest(app, jar, http.MethodPost, "/api/v1/admin/resources/items", `{"name":"Nail","category_id":7}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("create status = %d; body: %s", rec.Code, rec.Body.String())
+	}
+	var created rowEnvelope
+	if err := json.Unmarshal(rec.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if asInt(created.Data["category_id"]) != 7 {
+		t.Fatalf("category_id = %#v, want 7", created.Data["category_id"])
+	}
+}
+
 func TestJWTModeDoesNotMountAdmin(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	app := newJWTApp(t)

@@ -95,6 +95,9 @@ func asInt64(raw any) (int64, error) {
 	case int64:
 		return v, nil
 	case uint:
+		if uint64(v) > math.MaxInt64 {
+			return 0, fmt.Errorf("must be an integer")
+		}
 		return int64(v), nil
 	case uint8:
 		return int64(v), nil

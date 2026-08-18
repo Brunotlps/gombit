@@ -21,7 +21,7 @@ import (
 )
 
 const (
-	testJWTSecret = "admin-test-jwt-secret-32-bytes-ok"
+	testJWTSecret = "admin-test-jwt-secret-32-bytes-ok" // #nosec G101 -- fake test secret.
 	testPassword  = "correct-horse"
 )
 

@@ -16,17 +16,17 @@ type Host interface {
 	Config() config.Config
 }
 
-type Registry struct {
+type registry struct {
 	mu     sync.RWMutex
 	models []*registered
 	bySlug map[string]*registered
 }
 
-func newRegistry() *Registry {
-	return &Registry{bySlug: map[string]*registered{}}
+func newRegistry() *registry {
+	return &registry{bySlug: map[string]*registered{}}
 }
 
-func (r *Registry) add(m *registered) error {
+func (r *registry) add(m *registered) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	if _, ok := r.bySlug[m.meta.Slug]; ok {
@@ -37,14 +37,14 @@ func (r *Registry) add(m *registered) error {
 	return nil
 }
 
-func (r *Registry) get(slug string) (*registered, bool) {
+func (r *registry) get(slug string) (*registered, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	m, ok := r.bySlug[slug]
 	return m, ok
 }
 
-func (r *Registry) all() []*registered {
+func (r *registry) all() []*registered {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 	out := make([]*registered, len(r.models))
@@ -96,9 +96,9 @@ func (m *registered) toRow(inst any) map[string]any {
 	return out
 }
 
-var registries sync.Map // huma.API -> *Registry
+var registries sync.Map // huma.API -> *registry
 
-func registryFor(api huma.API) (*Registry, bool) {
+func registryFor(api huma.API) (*registry, bool) {
 	if api == nil {
 		return nil, false
 	}
@@ -106,11 +106,11 @@ func registryFor(api huma.API) (*Registry, bool) {
 	if !ok {
 		return nil, false
 	}
-	reg, ok := v.(*Registry)
+	reg, ok := v.(*registry)
 	return reg, ok
 }
 
-func storeRegistry(api huma.API, reg *Registry) bool {
+func storeRegistry(api huma.API, reg *registry) bool {
 	_, loaded := registries.LoadOrStore(api, reg)
 	return !loaded
 }

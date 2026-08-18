@@ -245,6 +245,10 @@ func applyWrite(ctx context.Context, m *registered, inst any, body map[string]an
 			fields[name] = []string{"field is read-only"}
 			continue
 		}
+		if raw == nil && f.Required {
+			fields[name] = []string{"is required"}
+			continue
+		}
 		if err := f.set(inst, raw); err != nil {
 			fields[name] = []string{err.Error()}
 			continue
@@ -348,7 +352,7 @@ func applyOrdering(q *gorm.DB, m *registered, ordering string) (*gorm.DB, error)
 
 func quoteIdent(db *gorm.DB, name string) string {
 	var b strings.Builder
-	db.Dialector.QuoteTo(&b, name)
+	db.QuoteTo(&b, name)
 	return b.String()
 }
 
