@@ -71,7 +71,7 @@ func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
 			t.Fatalf("missing %s: %v", rel, err)
 		}
 	}
-	for _, rel := range []string{"internal/product/service.go", "internal/product/repo.go"} {
+	for _, rel := range []string{"internal/product/service.go", "internal/product/repo.go", "frontend/src/theme.ts"} {
 		path := filepath.Join(dest, filepath.FromSlash(rel))
 		if _, err := os.Stat(path); !os.IsNotExist(err) {
 			t.Fatalf("unexpected generated file %s", rel)
@@ -375,6 +375,121 @@ func TestGenerateRecordsAuthAndUIChoices(t *testing.T) {
 	}
 	if !strings.Contains(envExample, "USER:PASSWORD") {
 		t.Fatalf(".env.example missing DSN placeholders:\n%s", envExample)
+	}
+
+	pkg := readFile(t, filepath.Join(workDir, "shop", "frontend", "package.json"))
+	if !strings.Contains(pkg, `"@mui/material"`) {
+		t.Fatal("cookie + mui package.json missing @mui/material")
+	}
+	providers := readFile(t, filepath.Join(workDir, "shop", "frontend", "src", "app", "providers.tsx"))
+	if !strings.Contains(providers, "ThemeProvider") || !strings.Contains(providers, "CssBaseline") {
+		t.Fatal("cookie + mui providers.tsx missing ThemeProvider/CssBaseline")
+	}
+	layout := readFile(t, filepath.Join(workDir, "shop", "frontend", "src", "layouts", "AppLayout.tsx"))
+	if !strings.Contains(layout, "AppBar") {
+		t.Fatal("cookie + mui AppLayout.tsx missing AppBar")
+	}
+	login := readFile(t, filepath.Join(workDir, "shop", "frontend", "src", "pages", "LoginPage.tsx"))
+	if !strings.Contains(login, "TextField") || !strings.Contains(login, "Paper") {
+		t.Fatal("cookie + mui LoginPage.tsx missing MUI Paper/TextField")
+	}
+	if !strings.Contains(login, "bootstrapCSRF") {
+		t.Fatal("cookie + mui LoginPage.tsx missing bootstrapCSRF")
+	}
+	if strings.Contains(strings.ToLower(login), "localstorage") {
+		t.Fatal("cookie + mui LoginPage.tsx uses localStorage")
+	}
+	client := readFile(t, filepath.Join(workDir, "shop", "frontend", "src", "api", "client.ts"))
+	if !strings.Contains(client, "X-CSRF-Token") {
+		t.Fatal("cookie + mui client.ts missing X-CSRF-Token")
+	}
+	list := readFile(t, filepath.Join(workDir, "shop", "frontend", "src", "pages", "ProductListPage.tsx"))
+	if !strings.Contains(list, "Table") || !strings.Contains(list, "@mui/material") {
+		t.Fatal("cookie + mui ProductListPage.tsx missing MUI Table")
+	}
+}
+
+func TestGenerateMUIPreset(t *testing.T) {
+	workDir := t.TempDir()
+	err := Generate(context.Background(), Options{
+		Name:     "demo",
+		Database: "sqlite",
+		UI:       "mui",
+		WorkDir:  workDir,
+	})
+	if err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+	dest := filepath.Join(workDir, "demo")
+
+	theme := readFile(t, filepath.Join(dest, "frontend", "src", "theme.ts"))
+	for _, want := range []string{"createTheme", "#1976d2", "#dc004e", "textTransform"} {
+		if !strings.Contains(theme, want) {
+			t.Fatalf("theme.ts missing %q:\n%s", want, theme)
+		}
+	}
+
+	pkg := readFile(t, filepath.Join(dest, "frontend", "package.json"))
+	for _, want := range []string{`"@mui/material"`, `"@mui/icons-material"`, `"@emotion/react"`, `"@emotion/styled"`} {
+		if !strings.Contains(pkg, want) {
+			t.Fatalf("MUI package.json missing %s:\n%s", want, pkg)
+		}
+	}
+	if strings.Contains(pkg, "axios") || strings.Contains(pkg, "react-router-dom") {
+		t.Fatal("MUI package.json must not add axios or react-router-dom")
+	}
+
+	providers := readFile(t, filepath.Join(dest, "frontend", "src", "app", "providers.tsx"))
+	if !strings.Contains(providers, "ThemeProvider") || !strings.Contains(providers, "CssBaseline") {
+		t.Fatal("MUI providers.tsx missing ThemeProvider/CssBaseline")
+	}
+	if !strings.Contains(providers, `from "../theme"`) {
+		t.Fatal("MUI providers.tsx missing theme import")
+	}
+
+	layout := readFile(t, filepath.Join(dest, "frontend", "src", "layouts", "AppLayout.tsx"))
+	if !strings.Contains(layout, "AppBar") || !strings.Contains(layout, "Toolbar") {
+		t.Fatal("MUI AppLayout.tsx missing AppBar/Toolbar")
+	}
+	if strings.Contains(layout, "ThemeToggle") || strings.Contains(strings.ToLower(layout), "localstorage") {
+		t.Fatal("MUI AppLayout.tsx must not port ThemeToggle or localStorage")
+	}
+
+	login := readFile(t, filepath.Join(dest, "frontend", "src", "pages", "LoginPage.tsx"))
+	for _, want := range []string{"Paper", "TextField", "Alert", "CircularProgress", "applyTokenPair"} {
+		if !strings.Contains(login, want) {
+			t.Fatalf("MUI LoginPage.tsx missing %q", want)
+		}
+	}
+	if strings.Contains(strings.ToLower(login), "localstorage") {
+		t.Fatal("MUI LoginPage.tsx uses localStorage")
+	}
+
+	list := readFile(t, filepath.Join(dest, "frontend", "src", "pages", "ProductListPage.tsx"))
+	for _, want := range []string{"TableContainer", "TableHead", "CircularProgress", "Paper"} {
+		if !strings.Contains(list, want) {
+			t.Fatalf("MUI ProductListPage.tsx missing %q", want)
+		}
+	}
+	if strings.Contains(list, "date-fns") || strings.Contains(list, "onDelete") {
+		t.Fatal("MUI ProductListPage.tsx must not add date-fns or delete actions")
+	}
+
+	form := readFile(t, filepath.Join(dest, "frontend", "src", "pages", "ProductFormPage.tsx"))
+	for _, want := range []string{"Paper", "TextField", "applyContractErrors", "setError"} {
+		if !strings.Contains(form, want) {
+			t.Fatalf("MUI ProductFormPage.tsx missing %q", want)
+		}
+	}
+
+	index := readFile(t, filepath.Join(dest, "frontend", "index.html"))
+	if !strings.Contains(index, "fonts.googleapis.com") || !strings.Contains(index, "Roboto") {
+		t.Fatal("MUI index.html missing Roboto Google Fonts link")
+	}
+
+	yaml := readFile(t, filepath.Join(dest, "gombit.yaml"))
+	if !strings.Contains(yaml, "ui: mui") {
+		t.Fatalf("gombit.yaml missing ui: mui:\n%s", yaml)
 	}
 }
 

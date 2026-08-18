@@ -43,7 +43,8 @@ func Generate(ctx context.Context, opts Options) error {
 		return err
 	}
 	apiPrefix := readAPIPrefix(opts.WorkDir)
-	ctxData := newRenderContext(module, name, fields, apiPrefix, opts.Service, opts.Repo)
+	ui := readUI(opts.WorkDir)
+	ctxData := newRenderContext(module, name, fields, apiPrefix, ui, opts.Service, opts.Repo)
 
 	files, err := renderFeatureFiles(ctxData)
 	if err != nil {
@@ -230,6 +231,28 @@ func readAPIPrefix(workDir string) string {
 		return value
 	}
 	return defaultAPIPrefix
+}
+
+func readUI(workDir string) string {
+	path := filepath.Join(workDir, "gombit.yaml")
+	// #nosec G304 -- optional project file
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return defaultUI
+	}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "ui:") {
+			continue
+		}
+		value := strings.TrimSpace(strings.TrimPrefix(line, "ui:"))
+		value = strings.Trim(value, `"'`)
+		if value == "mui" {
+			return "mui"
+		}
+		return defaultUI
+	}
+	return defaultUI
 }
 
 func collectFrontendResources(workDir string, current ResourceName) []ResourceName {

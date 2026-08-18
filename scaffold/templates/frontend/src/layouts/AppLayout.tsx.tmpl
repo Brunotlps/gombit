@@ -1,5 +1,7 @@
 import { Link, Outlet, useNavigate } from "react-router";
-
+{{if eq .UI "mui"}}
+import { AppBar, Box, Button, Toolbar, Typography } from "@mui/material";
+{{end}}
 import { useApiClient } from "../api/client";
 {{if eq .Auth "cookie"}}import { clearSession } from "../auth/session";
 {{else}}import { clearSession, getRefreshToken } from "../auth/session";
@@ -22,7 +24,35 @@ export function AppLayout() {
     }
   }
 
-  return (
+{{if eq .UI "mui"}}  return (
+    <Box>
+      <AppBar position="static">
+        <Toolbar>
+          <Typography variant="h6" component="div" sx={{"{{"}} flexGrow: 1 }}>
+            {{.Name}}
+          </Typography>
+          <Button color="inherit" component={Link} to="/">
+            Products
+          </Button>
+          <Button color="inherit" component={Link} to="/products/new">
+            New product
+          </Button>
+          {generatedResources.map((resource) => (
+            <Button key={resource.slug} color="inherit" component={Link} to={resource.listPath}>
+              {resource.title}
+            </Button>
+          ))}
+          <Button color="inherit" onClick={() => void onLogout()}>
+            Log out
+          </Button>
+        </Toolbar>
+      </AppBar>
+      <Box component="main" sx={{"{{"}} p: 3 }}>
+        <Outlet />
+      </Box>
+    </Box>
+  );
+{{else}}  return (
     <div>
       <header>
         <nav>
@@ -46,4 +76,4 @@ export function AppLayout() {
       </main>
     </div>
   );
-}
+{{end}}}

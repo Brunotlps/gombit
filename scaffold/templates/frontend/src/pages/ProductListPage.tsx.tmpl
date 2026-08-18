@@ -1,6 +1,22 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-
+{{if eq .UI "mui"}}
+import AddIcon from "@mui/icons-material/Add";
+import {
+  Alert,
+  Box,
+  Button,
+  CircularProgress,
+  Paper,
+  Table,
+  TableBody,
+  TableCell,
+  TableContainer,
+  TableHead,
+  TableRow,
+  Typography,
+} from "@mui/material";
+{{end}}
 import { useApiClient } from "../api/client";
 import { unwrap } from "../api/generated/client";
 import type { paths } from "../api/generated/schema";
@@ -12,7 +28,8 @@ type ProductRow = NonNullable<ListResponse["data"]>[number];
 export function ProductListPage() {
   const client = useApiClient();
   const [rows, setRows] = useState<ProductRow[]>([]);
-  const [status, setStatus] = useState("Loading products…");
+{{if eq .UI "mui"}}  const [loading, setLoading] = useState(true);
+{{end}}  const [status, setStatus] = useState({{if eq .UI "mui"}}""{{else}}"Loading products…"{{end}});
 
   useEffect(() => {
     let cancelled = false;
@@ -30,14 +47,69 @@ export function ProductListPage() {
           return;
         }
         setStatus(err instanceof Error ? err.message : "request failed");
-      }
+      }{{if eq .UI "mui"}} finally {
+        if (!cancelled) {
+          setLoading(false);
+        }
+      }{{end}}
     })();
     return () => {
       cancelled = true;
     };
   }, [client]);
 
-  return (
+{{if eq .UI "mui"}}  return (
+    <Box>
+      <Box sx={{"{{"}} display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
+        <Typography variant="h4" component="h1">
+          Products
+        </Typography>
+        <Button variant="contained" component={Link} to="/products/new" startIcon={<AddIcon />}>
+          New product
+        </Button>
+      </Box>
+      {loading ? (
+        <Box sx={{"{{"}} display: "flex", justifyContent: "center", py: 6 }}>
+          <CircularProgress />
+        </Box>
+      ) : (
+        <TableContainer component={Paper}>
+          <Table>
+            <TableHead>
+              <TableRow>
+                <TableCell>id</TableCell>
+                <TableCell>name</TableCell>
+                <TableCell>price</TableCell>
+              </TableRow>
+            </TableHead>
+            <TableBody>
+              {rows.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={3} align="center">
+                    {status || "No products yet."}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                rows.map((row) => (
+                  <TableRow key={String(row.id)}>
+                    <TableCell>{String(row.id)}</TableCell>
+                    <TableCell>{String(row.name)}</TableCell>
+                    <TableCell>{String(row.price)}</TableCell>
+                  </TableRow>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </TableContainer>
+      )}
+      {!loading && status && rows.length > 0 ? (
+        <Alert severity="error" sx={{"{{"}} mt: 2 }}>
+          {status}
+        </Alert>
+      ) : null}
+    </Box>
+  );
+{{else}}  return (
     <section>
       <h1>Products</h1>
       <p>
@@ -64,4 +136,4 @@ export function ProductListPage() {
       {status ? <p>{status}</p> : null}
     </section>
   );
-}
+{{end}}}

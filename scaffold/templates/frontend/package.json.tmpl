@@ -9,7 +9,11 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
-    "openapi-fetch": "0.17.0",
+{{if eq .UI "mui"}}    "@emotion/react": "^11.14.0",
+    "@emotion/styled": "^11.14.1",
+    "@mui/icons-material": "^6.4.4",
+    "@mui/material": "^6.4.4",
+{{end}}    "openapi-fetch": "0.17.0",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "react-hook-form": "^7.56.4",

@@ -3,9 +3,11 @@
 This directory is the split-deploy frontend root (build plan C5 / §3.2).
 `gombit new` writes a **Vite + React + TypeScript** minimal/headless
 skeleton: React Router, an API-client provider, and React Hook Form with
-D10 `error.fields` mapping. `--ui mui` is recorded in `gombit.yaml` only
-(M5-4). Bearer login/refresh is documented in the framework [`docs/auth.md`](https://github.com/LAA-Software-Engineering/gombit/blob/main/docs/auth.md).
-The MUI preset is M5-4.
+D10 `error.fields` mapping. `--ui mui` scaffolds the MUI CRUD preset
+(ThemeProvider, AppBar, Table, TextField) — see
+[`docs/frontend-mui.md`](https://github.com/LAA-Software-Engineering/gombit/blob/main/docs/frontend-mui.md).
+Bearer login/refresh is documented in the framework [`docs/auth.md`](https://github.com/LAA-Software-Engineering/gombit/blob/main/docs/auth.md).
+Cookie/CSRF mode (`--auth cookie`) is independent of the UI preset.
 
 ```sh
 gombit dev
@@ -37,5 +39,6 @@ and `gombit dev` overwrite those files (they carry the generated banner).
 
 `gombit make resource` writes React list/form pages under `src/<feature>/`
 and refreshes `src/resources.tsx`. Those pages import types from
-`src/api/generated` (no hand-written API DTOs). Re-run client generate
-after adding routes.
+`src/api/generated` (no hand-written API DTOs). When `gombit.yaml` has
+`ui: mui`, the pages use MUI Table/TextField instead of raw HTML.
+Re-run client generate after adding routes.

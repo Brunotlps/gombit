@@ -143,6 +143,39 @@ func assertCookieFrontendInvariants(t *testing.T, files fileMap) {
 	}
 }
 
+func assertMUIFrontendInvariants(t *testing.T, files fileMap) {
+	t.Helper()
+	pkg := string(files["frontend/package.json"])
+	if pkg == "" {
+		t.Fatal("missing frontend/package.json")
+	}
+	if !strings.Contains(pkg, `"@mui/material"`) {
+		t.Error("MUI package.json missing @mui/material")
+	}
+	if _, ok := files["frontend/src/theme.ts"]; !ok {
+		t.Error("MUI tree missing frontend/src/theme.ts")
+	}
+	providers := string(files["frontend/src/app/providers.tsx"])
+	if !strings.Contains(providers, "ThemeProvider") || !strings.Contains(providers, "CssBaseline") {
+		t.Error("MUI providers.tsx missing ThemeProvider/CssBaseline")
+	}
+	layout := string(files["frontend/src/layouts/AppLayout.tsx"])
+	login := string(files["frontend/src/pages/LoginPage.tsx"])
+	list := string(files["frontend/src/pages/ProductListPage.tsx"])
+	if !strings.Contains(layout, "AppBar") && !strings.Contains(list, "Table") {
+		t.Error("MUI screens missing AppBar and Table")
+	}
+	if !strings.Contains(layout, "AppBar") {
+		t.Error("MUI AppLayout.tsx missing AppBar")
+	}
+	if !strings.Contains(list, "Table") {
+		t.Error("MUI ProductListPage.tsx missing Table")
+	}
+	if !strings.Contains(login, "TextField") && !strings.Contains(login, "Paper") {
+		t.Error("MUI LoginPage.tsx missing Paper/TextField")
+	}
+}
+
 func moduleRoot(t *testing.T) string {
 	t.Helper()
 	_, file, _, ok := runtime.Caller(0)

@@ -103,6 +103,9 @@ func TestGenerateBookFeaturePackage(t *testing.T) {
 	if strings.Contains(strings.ToLower(listTS), "localstorage") {
 		t.Fatal("list.tsx uses localStorage")
 	}
+	if strings.Contains(listTS, "@mui/material") {
+		t.Fatal("default make resource must stay headless")
+	}
 	formTS := readFile(t, filepath.Join(appDir, "frontend", "src", "book", "form.tsx"))
 	if !strings.Contains(formTS, "applyContractErrors") || !strings.Contains(formTS, "setError") {
 		t.Fatal("form.tsx does not map D10 field errors through applyContractErrors")
@@ -342,6 +345,48 @@ func TestGeneratePassesAllAutoMigrateModels(t *testing.T) {
 	}
 	if len(got) != 4 {
 		t.Fatalf("MakeMigrations models = %#v, want auth user+refresh plus product + book", got)
+	}
+}
+
+func TestGenerateMUIResourcePages(t *testing.T) {
+	workDir := t.TempDir()
+	if err := scaffold.Generate(context.Background(), scaffold.Options{
+		Name:     "demo",
+		Database: "sqlite",
+		UI:       "mui",
+		WorkDir:  workDir,
+		Stdout:   ioDiscard{},
+	}); err != nil {
+		t.Fatalf("scaffold: %v", err)
+	}
+	appDir := filepath.Join(workDir, "demo")
+
+	err := Generate(context.Background(), Options{
+		WorkDir:   appDir,
+		Name:      "Book",
+		Fields:    []string{"title:string:required"},
+		Stdout:    ioDiscard{},
+		skipAtlas: true,
+	})
+	if err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+
+	listTS := readFile(t, filepath.Join(appDir, "frontend", "src", "book", "list.tsx"))
+	for _, want := range []string{`from "@mui/material"`, "TableContainer", "TableHead", `from "../api/generated/schema"`, `from "../api/generated/client"`} {
+		if !strings.Contains(listTS, want) {
+			t.Fatalf("MUI list.tsx missing %q", want)
+		}
+	}
+	if strings.Contains(strings.ToLower(listTS), "localstorage") {
+		t.Fatal("MUI list.tsx uses localStorage")
+	}
+
+	formTS := readFile(t, filepath.Join(appDir, "frontend", "src", "book", "form.tsx"))
+	for _, want := range []string{`from "@mui/material"`, "TextField", "applyContractErrors", "setError"} {
+		if !strings.Contains(formTS, want) {
+			t.Fatalf("MUI form.tsx missing %q", want)
+		}
 	}
 }
 

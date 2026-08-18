@@ -98,4 +98,5 @@ regenerated fails the job. Spec comparison in `CheckDrift` is semantic
 ## React skeleton
 
 `gombit new` wires this client into a Vite + React app (router, providers,
-React Hook Form). See [frontend.md](frontend.md). Bearer login is M5-2.
+React Hook Form). See [frontend.md](frontend.md). `--ui mui` is documented
+in [frontend-mui.md](frontend-mui.md). Bearer login is M5-2.

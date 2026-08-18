@@ -1,13 +1,15 @@
 # Frontend (minimal React skeleton)
 
 `gombit new` writes a Vite + React + TypeScript app under `frontend/`.
-The default UI is **minimal/headless** (C4). `--ui mui` is recorded in
-`gombit.yaml` only; the MUI CRUD preset is [M5-4]. Bearer login, refresh
-rotation, and protected routes are documented in [auth.md](auth.md); this
-page describes that (default) `--auth jwt` wiring. `--auth cookie` swaps
-`auth/session.ts`, `api/client.ts`, `auth/RequireAuth.tsx`, and
-`pages/LoginPage.tsx` for the cookie/CSRF variants documented in
-[auth-cookie.md](auth-cookie.md).
+The default UI is **minimal/headless** (C4). `--ui mui` scaffolds the
+opt-in MUI CRUD preset documented in [frontend-mui.md](frontend-mui.md).
+Bearer login, refresh rotation, and protected routes are documented in
+[auth.md](auth.md); this page describes that (default) `--auth jwt`
+wiring. `--auth cookie` swaps `auth/session.ts`, `api/client.ts`,
+`auth/RequireAuth.tsx`, and `pages/LoginPage.tsx` for the cookie/CSRF
+variants documented in [auth-cookie.md](auth-cookie.md). Auth behavior is
+independent of the UI preset: `--auth cookie --ui mui` still has CSRF
+double-submit **and** MUI screens.
 
 See also [cli.md](cli.md) (`gombit new`, `gombit dev`) and
 [client.md](client.md) (TypeScript client generation).
@@ -29,7 +31,7 @@ Node 22). `gombit dev` prefers pnpm when it is available.
 frontend/src/
 ├── main.tsx
 ├── app/
-│   ├── providers.tsx   # API client context
+│   ├── providers.tsx   # API client context (ThemeProvider when --ui mui)
 │   └── router.tsx      # /login, RequireAuth, /, /products/new
 ├── api/
 │   ├── client.ts       # createAppClient + 401 refresh + useApiClient
@@ -44,6 +46,7 @@ frontend/src/
 │   ├── LoginPage.tsx
 │   ├── ProductListPage.tsx
 │   └── ProductFormPage.tsx
+├── theme.ts            # only with --ui mui
 └── resources.tsx       # rewritten by gombit make resource
 ```
 
@@ -106,7 +109,9 @@ gombit client generate --spec openapi.json
 gombit dev
 ```
 
+`gombit make resource` honors `ui:` in `gombit.yaml`. Default (`minimal`
+or missing) stays headless; `ui: mui` emits MUI Table/TextField pages.
+
 ## What is not here yet
 
-- MUI CRUD preset (`--ui mui`): M5-4
 - `go:embed` single-binary SPA: M5-5

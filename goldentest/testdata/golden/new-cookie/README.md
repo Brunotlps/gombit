@@ -40,7 +40,7 @@ otherwise `npm`. Node.js is required for Vite HMR. The frontend is a Vite +
 React + TypeScript skeleton (router, generated client, React Hook Form,
 HttpOnly cookie session + CSRF login — see
 [`docs/auth-cookie.md`](https://github.com/LAA-Software-Engineering/gombit/blob/main/docs/auth-cookie.md)
-for the threat model). The MUI preset is M5-4.
+for the threat model).
 
 This module requires [`github.com/LAA-Software-Engineering/gombit`](https://github.com/LAA-Software-Engineering/gombit).
 After scaffolding, pin a released version:
@@ -60,7 +60,7 @@ The default module path is `github.com/example/demo` (override with
 | database | `sqlite` | sqlite, postgres, or mysql |
 | cache | `memory` | memory, redis, or noop |
 | auth | `cookie` | Bearer JWT (v0.1 default) or `cookie` (HttpOnly session + CSRF, see `docs/auth-cookie.md`) |
-| ui | `minimal` | minimal/headless default; MUI CRUD preset is M5-4 |
+| ui | `minimal` | minimal/headless default; `--ui mui` scaffolds the MUI CRUD preset (AppBar, Table, TextField) |
 
 Runtime still reads `GOMBIT_*` environment variables, not `gombit.yaml`.
 

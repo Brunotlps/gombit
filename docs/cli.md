@@ -91,10 +91,11 @@ replace github.com/LAA-Software-Engineering/gombit => /path/to/gombit
 
 `--auth cookie` wires HttpOnly session cookies + CSRF end to end (backend
 routes, middleware, and the generated frontend); see
-[auth-cookie.md](auth-cookie.md) for the threat model. `--ui mui` is
-recorded in `gombit.yaml` only; the MUI CRUD preset is M5-4. The generated
-`frontend/` directory is a Vite + React + TypeScript skeleton (router,
-generated client, React Hook Form). Bearer login is documented in
+[auth-cookie.md](auth-cookie.md) for the threat model. `--ui mui` scaffolds
+the opt-in MUI CRUD preset (ThemeProvider, AppBar, Table, TextField);
+the default UI stays minimal/headless. See [frontend-mui.md](frontend-mui.md).
+The generated `frontend/` directory is a Vite + React + TypeScript skeleton
+(router, generated client, React Hook Form). Bearer login is documented in
 [auth.md](auth.md). See [frontend.md](frontend.md).
 
 If the project name is omitted and stdin is a TTY, `gombit new` prompts for
@@ -190,7 +191,9 @@ group so air/npm grandchildren exit. On Windows, teardown uses
 `taskkill /T /F /PID` for the same process tree.
 
 The scaffold is a Vite + React + TypeScript skeleton. See
-[frontend.md](frontend.md). Bearer login is documented in [auth.md](auth.md).
+[frontend.md](frontend.md). `--ui mui` is documented in
+[frontend-mui.md](frontend-mui.md). Bearer login is documented in
+[auth.md](auth.md).
 
 ## `gombit make resource`
 
@@ -228,7 +231,8 @@ under `frontend/src/<feature>/`. They import types from
 `frontend/src/api/generated` — no hand-written API DTOs — and map D10
 `error.fields` through `frontend/src/api/formErrors.ts`. A generated
 `frontend/src/resources.tsx` registry is the React Router registration
-point (not regex-patched `main.tsx`).
+point (not regex-patched `main.tsx`). When `gombit.yaml` has `ui: mui`,
+list/form pages use MUI Table and TextField instead of raw HTML.
 
 After generating routes, run `gombit client generate` or `gombit dev` so
 `frontend/src/api/generated` includes the new paths.
