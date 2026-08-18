@@ -30,7 +30,7 @@ type Group struct {
 // Permission is a stable authorization key, such as admin.widgets.view.
 type Permission struct {
 	gorm.Model
-	Key         string `gorm:"uniqueIndex;not null;size:120"`
+	Key         string `gorm:"column:permission_key;uniqueIndex;not null;size:120"` // not "key": reserved in MySQL
 	Description string `gorm:"size:255"`
 }
 

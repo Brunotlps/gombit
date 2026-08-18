@@ -82,7 +82,7 @@ func EnsurePermission(ctx context.Context, db *gorm.DB, key, description string)
 	}
 	permission := Permission{Key: key}
 	err := db.WithContext(ctx).
-		Where("key = ?", key).
+		Where(&Permission{Key: key}).
 		Attrs(Permission{Description: strings.TrimSpace(description)}).
 		FirstOrCreate(&permission).Error
 	return permission, err

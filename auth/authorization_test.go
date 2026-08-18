@@ -2,9 +2,12 @@ package auth_test
 
 import (
 	"context"
+	"strings"
+	"sync"
 	"testing"
 
 	"github.com/LAA-Software-Engineering/gombit/auth"
+	"gorm.io/gorm/schema"
 )
 
 func TestHasPermission(t *testing.T) {
@@ -109,5 +112,19 @@ func TestPermissionAssociationsPersist(t *testing.T) {
 	}
 	if len(loaded.Groups) != 1 || len(loaded.Groups[0].Permissions) != 1 {
 		t.Fatalf("persisted associations = %+v, want one group permission", loaded.Groups)
+	}
+}
+
+func TestPermissionKeyColumnAvoidsMySQLReservedWord(t *testing.T) {
+	parsed, err := schema.Parse(&auth.Permission{}, &sync.Map{}, schema.NamingStrategy{})
+	if err != nil {
+		t.Fatalf("schema.Parse() error = %v", err)
+	}
+	field := parsed.LookUpField("Key")
+	if field == nil {
+		t.Fatal("Permission.Key field missing")
+	}
+	if strings.EqualFold(field.DBName, "key") {
+		t.Fatalf("Permission.Key column %q is a reserved MySQL identifier", field.DBName)
 	}
 }
