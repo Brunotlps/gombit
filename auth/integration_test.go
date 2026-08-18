@@ -82,4 +82,62 @@ func runPermissionPersistence(t *testing.T, db *database.DB) {
 	if !granted {
 		t.Fatal("group permission was not persisted")
 	}
+
+	recreatedPermission, err := auth.EnsurePermission(
+		ctx,
+		db.DB,
+		"admin.widgets.recreate",
+		"Recreate widgets",
+	)
+	if err != nil {
+		t.Fatalf("EnsurePermission(recreate initial): %v", err)
+	}
+	recreatedGroup, err := auth.EnsureGroup(ctx, db.DB, "integration-recreated-viewers")
+	if err != nil {
+		t.Fatalf("EnsureGroup(recreate initial): %v", err)
+	}
+	if err := db.WithContext(ctx).Delete(&recreatedPermission).Error; err != nil {
+		t.Fatalf("delete permission for recreation: %v", err)
+	}
+	if err := db.WithContext(ctx).Delete(&recreatedGroup).Error; err != nil {
+		t.Fatalf("delete group for recreation: %v", err)
+	}
+	recreatedPermission, err = auth.EnsurePermission(
+		ctx,
+		db.DB,
+		recreatedPermission.Key,
+		recreatedPermission.Description,
+	)
+	if err != nil {
+		t.Fatalf("EnsurePermission(recreate): %v", err)
+	}
+	recreatedGroup, err = auth.EnsureGroup(ctx, db.DB, recreatedGroup.Name)
+	if err != nil {
+		t.Fatalf("EnsureGroup(recreate): %v", err)
+	}
+	if recreatedPermission.ID == 0 || recreatedGroup.ID == 0 {
+		t.Fatalf(
+			"recreated identities must be persisted: permission ID = %d, group ID = %d",
+			recreatedPermission.ID,
+			recreatedGroup.ID,
+		)
+	}
+	if err := auth.GrantPermissionToGroup(
+		ctx,
+		db.DB,
+		&recreatedGroup,
+		&recreatedPermission,
+	); err != nil {
+		t.Fatalf("GrantPermissionToGroup(recreated): %v", err)
+	}
+	if err := auth.AddUserToGroup(ctx, db.DB, &user, &recreatedGroup); err != nil {
+		t.Fatalf("AddUserToGroup(recreated): %v", err)
+	}
+	granted, err = auth.HasPermission(ctx, db.DB, user, recreatedPermission.Key)
+	if err != nil {
+		t.Fatalf("HasPermission(recreated): %v", err)
+	}
+	if !granted {
+		t.Fatal("recreated group permission was not persisted")
+	}
 }

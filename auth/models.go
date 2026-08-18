@@ -22,16 +22,20 @@ type User struct {
 
 // Group collects permissions that can be assigned to users.
 type Group struct {
-	gorm.Model
+	ID          uint         `gorm:"primaryKey"`
 	Name        string       `gorm:"uniqueIndex;not null;size:100"`
 	Permissions []Permission `gorm:"many2many:auth_group_permissions;"`
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // Permission is a stable authorization key, such as admin.widgets.view.
 type Permission struct {
-	gorm.Model
+	ID          uint   `gorm:"primaryKey"`
 	Key         string `gorm:"column:permission_key;uniqueIndex;not null;size:120"` // not "key": reserved in MySQL
 	Description string `gorm:"size:255"`
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 // RefreshToken is a hashed, rotating refresh credential.
