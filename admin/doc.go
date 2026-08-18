@@ -4,10 +4,10 @@
 //
 //	admin.Register(app, Product{}, admin.Options{Slug: "products", ...})
 //
-// framework.New mounts the Huma introspection and data-plane routes only when
-// cookie session auth is on (cfg.Auth.Mode == cookie). JWT-only apps do not
-// get admin routes. Until ADMIN-3, every admin request also requires
-// auth.User.IsSuperuser.
+// framework.New mounts the Huma introspection and data-plane routes, and
+// the /admin/ SPA, only when cookie session auth is on (cfg.Auth.Mode ==
+// cookie). JWT-only apps do not get admin routes. Until ADMIN-3, every
+// admin API request also requires auth.User.IsSuperuser.
 //
 // Options is the source of truth. After Register returns, handlers read
 // stored values and GORM constructors — they do not reflect over arbitrary

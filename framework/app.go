@@ -19,6 +19,7 @@ import (
 	"github.com/LAA-Software-Engineering/gombit/config"
 	"github.com/LAA-Software-Engineering/gombit/contract"
 	"github.com/LAA-Software-Engineering/gombit/database"
+	"github.com/LAA-Software-Engineering/gombit/internal/adminui"
 	"github.com/LAA-Software-Engineering/gombit/logging"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humagin"
@@ -143,6 +144,9 @@ func New(options ...Option) (*App, error) {
 			if err := admin.Mount(app); err != nil {
 				return nil, err
 			}
+			// Framework-owned admin SPA (ADMIN-2 / ADR-013). Explicit Gin
+			// routes so /admin wins over Huma and over the app NoRoute SPA.
+			mountAdminSPA(app.router, adminui.FS(), app.cfg.API.Prefix)
 		}
 	}
 	mountEmbeddedFrontend(app.router, app.embeddedFrontend, app.cfg.API.Prefix)

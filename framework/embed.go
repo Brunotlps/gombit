@@ -84,6 +84,9 @@ func isReservedFrontendPath(urlPath, apiPrefix string) bool {
 	if urlPath == "/api" || strings.HasPrefix(urlPath, "/api/") {
 		return true
 	}
+	if urlPath == "/admin" || strings.HasPrefix(urlPath, "/admin/") {
+		return true
+	}
 	if strings.HasPrefix(urlPath, "/docs/") {
 		return true
 	}

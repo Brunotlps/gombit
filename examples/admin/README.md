@@ -1,10 +1,10 @@
-# Admin registry + introspection example (ADMIN-1)
+# Admin example (ADMIN-1 + ADMIN-2)
 
 Minimal `framework.App` with `Config.Auth.Mode = config.AuthModeCookie`,
 SQLite, and an explicit `admin.Register` of a small `widget.Widget` model.
-`framework.New` mounts empty admin routes in cookie mode; this example
-registers one model from the feature package. JWT-only apps do not get
-these routes.
+`framework.New` mounts empty admin Huma routes and the framework-owned
+SPA under `/admin/` in cookie mode; this example registers one model from
+the feature package. JWT-only apps do not get these routes.
 
 See [`docs/admin.md`](../../docs/admin.md) and
 [ADR-013](../../docs/adr/013-runtime-generic-admin.md).
@@ -15,11 +15,16 @@ See [`docs/admin.md`](../../docs/admin.md) and
 go run ./examples/admin
 ```
 
+Admin UI: [http://127.0.0.1:8082/admin/](http://127.0.0.1:8082/admin/).
+Sign in with the seeded superuser
+`admin@example.com` / `correct-horse-battery-staple`. The widgets screen
+appears because `widget.RegisterAdmin` called `admin.Register` — there is
+no per-model React file.
+
 Interactive docs: [http://127.0.0.1:8082/docs](http://127.0.0.1:8082/docs).
 
-The example seeds `admin@example.com` / `correct-horse-battery-staple` as a
-superuser on start (same `auth.Service.CreateSuperuser` path as
-`gombit createsuperuser`). `/auth/register` never sets `IsSuperuser`.
+`/auth/register` never sets `IsSuperuser`. When the example is pointed at
+a file-backed SQLite DSN, use `gombit createsuperuser` (see below).
 
 ## E2E (meta + one CRUD cycle)
 

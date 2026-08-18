@@ -59,9 +59,9 @@ Optional `go:embed` production is documented in [`docs/build.md`](docs/build.md)
 Bearer JWT login is documented in [`docs/auth.md`](docs/auth.md); cookie/session
 auth (`--auth cookie`) and its CSRF threat model are documented in
 [`docs/auth-cookie.md`](docs/auth-cookie.md).
-The admin registry and introspection API (ADMIN-1) are documented in
+The admin registry, introspection API, and framework-owned SPA under
+`/admin/` (ADMIN-1 + ADMIN-2) are documented in
 [`docs/admin.md`](docs/admin.md) ([ADR-013](docs/adr/013-runtime-generic-admin.md)).
-The framework-owned admin SPA (ADMIN-2) is not here yet.
 Database runtime support is documented in [`docs/database.md`](docs/database.md).
 Cache runtime support is documented in [`docs/cache.md`](docs/cache.md).
 Runtime logging is documented in [`docs/logging.md`](docs/logging.md).
