@@ -79,6 +79,10 @@ jobs:
             echo "Tag push: $next"
           else
             BUMP="${INPUT_BUMP:-patch}"
+            # actions/checkout does not configure a git identity, and an
+            # annotated tag (git tag -a below) requires one to exist.
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
             git fetch --tags --force
 
             latest=""
