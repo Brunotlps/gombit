@@ -165,7 +165,8 @@ func mapServiceError(ctx context.Context, err error) error {
 
 type userContextKey struct{}
 
-// UserFromContext returns the authenticated user stored by requireBearer.
+// UserFromContext returns the authenticated user stored by requireBearer or
+// RequireCookieSession.
 func UserFromContext(ctx context.Context) (User, bool) {
 	if ctx == nil {
 		return User{}, false

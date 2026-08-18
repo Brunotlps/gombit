@@ -1,0 +1,121 @@
+package admin
+
+import (
+	"context"
+
+	"github.com/LAA-Software-Engineering/gombit/contract"
+)
+
+// Catalog is the GET /admin/meta success data object.
+type Catalog struct {
+	Models []ModelMeta `json:"models"`
+}
+
+// CatalogAux is optional envelope meta on the catalog.
+type CatalogAux struct {
+	Auth *AuthMeta `json:"auth,omitempty"`
+}
+
+// AuthMeta tells the SPA which bootstrap rule is in force until ADMIN-3.
+type AuthMeta struct {
+	Mode      string `json:"mode"`
+	Bootstrap string `json:"bootstrap"`
+}
+
+// ModelMeta is one registered model in the introspection API.
+type ModelMeta struct {
+	Slug        string      `json:"slug"`
+	Singular    string      `json:"singular"`
+	Plural      string      `json:"plural"`
+	PK          string      `json:"pk"`
+	Fields      []FieldMeta `json:"fields"`
+	List        []string    `json:"list"`
+	Search      []string    `json:"search"`
+	Filter      []string    `json:"filter"`
+	Ordering    []string    `json:"ordering"`
+	Actions     Actions     `json:"actions"`
+	Permissions Permissions `json:"permissions"`
+}
+
+// FieldMeta is the introspection shape of a field (no Column).
+type FieldMeta struct {
+	Name     string    `json:"name"`
+	Type     FieldType `json:"type"`
+	Required bool      `json:"required"`
+	ReadOnly bool      `json:"readonly"`
+	Related  *Relation `json:"related,omitempty"`
+}
+
+type catalogOutput struct {
+	Body contract.DataMeta[Catalog, CatalogAux]
+}
+
+type modelOutput struct {
+	Body contract.Data[ModelMeta]
+}
+
+type slugInput struct {
+	Slug string `path:"slug" doc:"Registered model slug"`
+}
+
+func modelMetaFrom(opts Options, pk string) ModelMeta {
+	fields := make([]FieldMeta, 0, len(opts.Fields))
+	for _, f := range opts.Fields {
+		var rel *Relation
+		if f.Related != nil {
+			copyRel := *f.Related
+			rel = &copyRel
+		}
+		fields = append(fields, FieldMeta{
+			Name:     f.Name,
+			Type:     f.Type,
+			Required: f.Required,
+			ReadOnly: f.ReadOnly || (f.Type == TypeRelation && f.Related != nil && f.Related.Kind == RelHasMany),
+			Related:  rel,
+		})
+	}
+	return ModelMeta{
+		Slug:        opts.Slug,
+		Singular:    opts.Singular,
+		Plural:      opts.Plural,
+		PK:          pk,
+		Fields:      fields,
+		List:        cloneStrings(opts.List),
+		Search:      cloneStrings(opts.Search),
+		Filter:      cloneStrings(opts.Filter),
+		Ordering:    cloneStrings(opts.Ordering),
+		Actions:     opts.Actions,
+		Permissions: opts.Permissions,
+	}
+}
+
+func cloneStrings(in []string) []string {
+	if in == nil {
+		return []string{}
+	}
+	out := make([]string, len(in))
+	copy(out, in)
+	return out
+}
+
+func (h *handlers) listMeta(ctx context.Context, _ *struct{}) (*catalogOutput, error) {
+	models := h.reg.all()
+	catalog := Catalog{Models: make([]ModelMeta, 0, len(models))}
+	for _, m := range models {
+		catalog.Models = append(catalog.Models, m.meta)
+	}
+	return &catalogOutput{
+		Body: contract.DataMeta[Catalog, CatalogAux]{
+			Data: catalog,
+			Meta: &CatalogAux{Auth: &AuthMeta{Mode: "cookie", Bootstrap: "is_superuser"}},
+		},
+	}, nil
+}
+
+func (h *handlers) getMeta(ctx context.Context, input *slugInput) (*modelOutput, error) {
+	m, ok := h.reg.get(input.Slug)
+	if !ok {
+		return nil, contract.WithContext(ctx, contract.NotFound("unknown model"))
+	}
+	return &modelOutput{Body: contract.Data[ModelMeta]{Data: m.meta}}, nil
+}

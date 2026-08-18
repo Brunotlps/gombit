@@ -6,17 +6,18 @@ a generated React+TypeScript frontend, Atlas-backed migrations. Module path
 
 ## Current state
 
-This repo has completed M0–M5. It has typed
+This repo has completed M0–M5 and **ADMIN-1**. It has typed
 `config.Config`, `framework.App` lifecycle and routing, Huma contract/OpenAPI/
 TypeScript client generation, Atlas-backed migrations, a Cobra `gombit`
 command tree (`new`, `dev`, `build --embed`, `make resource`, `make command`,
 `db`, `openapi`, `client`), and a Vite + React + TypeScript minimal skeleton
 (router, generated client, React Hook Form). Bearer login (M5-2), cookie/CSRF
 (M5-3), the MUI preset (M5-4, `--ui mui`), and optional `gombit build --embed`
-(M5-5) are in. **ADMIN-0 (ADR-013) is accepted**: the admin is a
-framework-owned React app driven by a Huma introspection API, not `--admin`
-scaffolded pages. ADMIN-1+ (registry, generic SPA, groups/permissions) are
-not implemented. Other M6 batteries are not here yet.
+(M5-5) are in. **ADMIN-0 (ADR-013) is accepted** and **ADMIN-1 is in**:
+`admin.Register`, `GET /api/v1/admin/meta`, and the generic
+`/api/v1/admin/resources/{slug}` data plane mount on cookie-auth apps.
+**ADMIN-2 (framework-owned SPA under `/admin/`) is not here.** ADMIN-3
+(groups/permissions) and other M6 batteries are not here yet.
 Don't assume generated apps are committed in-tree; `gombit new` writes them
 on demand. Check `git log` / `ls` before describing "how the code works."
 

@@ -482,8 +482,8 @@ tests, pipes), the missing flags are a hard error instead of a hang.
 `--no-input` skips TTY detection entirely.
 
 `IsSuperuser` is the only identity flag `auth.User` gains for this issue.
-Groups/permissions are a product surface for the post-v0.1 admin milestone
-(ADMIN-3), not part of M4-6.
+ADMIN-1 gates the admin introspection and data plane on that flag until
+ADMIN-3 adds groups/permissions. See [admin.md](admin.md).
 
 ## `gombit openapi` and `gombit client`
 

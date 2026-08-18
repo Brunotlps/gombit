@@ -95,10 +95,18 @@ func (s *Service) expiredSessionCookies() []http.Cookie {
 	}
 }
 
+// RequireCookieSession is the exported cookie-session gate used by runtime
+// packages such as admin. It authenticates the gombit_access cookie and
+// stores the User on the request context for UserFromContext. It does not
+// itself enforce CSRF; CSRFMiddleware (csrf.go) is wired as global Gin
+// middleware ahead of it for state-changing requests.
+func (s *Service) RequireCookieSession() func(ctx huma.Context, next func(huma.Context)) {
+	return s.requireCookieSession()
+}
+
 // requireCookieSession is the cookie-mode analogue of requireBearer: it reads
 // the access token from the gombit_access cookie instead of the Authorization
-// header. It does not itself enforce CSRF; CSRFMiddleware (csrf.go) is wired
-// as global Gin middleware ahead of it for state-changing requests.
+// header.
 func (s *Service) requireCookieSession() func(ctx huma.Context, next func(huma.Context)) {
 	return func(ctx huma.Context, next func(huma.Context)) {
 		cookie, err := huma.ReadCookie(ctx, AccessCookieName)

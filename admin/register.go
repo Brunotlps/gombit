@@ -1,0 +1,251 @@
+package admin
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/LAA-Software-Engineering/gombit/config"
+	"gorm.io/gorm/schema"
+)
+
+// Register adds model T to the host's admin registry.
+//
+// host is typically *framework.App. Missing or duplicate Slug is an error.
+// Cookie auth must already be on (framework.New mounts the empty admin
+// routes in that mode). After Register returns, the registry holds concrete
+// Options values plus constructors for T; request handlers do not walk
+// arbitrary Go types.
+func Register[T any](host Host, model T, opts Options) error {
+	return registerModel(host, model, opts)
+}
+
+func registerModel(host Host, model any, opts Options) error {
+	if host == nil {
+		return fmt.Errorf("admin: nil host")
+	}
+	cfg := host.Config()
+	if !cfg.Auth.Enabled() || cfg.Auth.EffectiveMode() != config.AuthModeCookie {
+		return fmt.Errorf("admin: Register requires cookie auth (Auth.Mode=%s)", config.AuthModeCookie)
+	}
+	reg, ok := registryFor(host.API())
+	if !ok {
+		return fmt.Errorf("admin: routes are not mounted; Register requires cookie auth")
+	}
+
+	opts.Slug = strings.TrimSpace(opts.Slug)
+	if opts.Slug == "" {
+		return errMissingSlug()
+	}
+	if !validSlug(opts.Slug) {
+		return errInvalidSlug(opts.Slug)
+	}
+
+	elem, err := elemTypeOf(model)
+	if err != nil {
+		return err
+	}
+	sch, err := parseSchema(model)
+	if err != nil {
+		return err
+	}
+
+	if len(opts.Fields) == 0 {
+		derived, err := FieldsFrom(model)
+		if err != nil {
+			return err
+		}
+		opts.Fields = derived
+	}
+
+	if opts.Actions.zero() {
+		opts.Actions = defaultActions()
+	}
+	if opts.Singular == "" {
+		if name := elem.Name(); name != "" {
+			opts.Singular = name
+		} else {
+			opts.Singular = titleFromSlug(strings.TrimSuffix(opts.Slug, "s"))
+		}
+	}
+	if opts.Plural == "" {
+		if titled := titleFromSlug(opts.Slug); titled != "" {
+			opts.Plural = titled
+		} else {
+			opts.Plural = opts.Singular + "s"
+		}
+	}
+	opts.Permissions = defaultPermissions(opts.Slug, opts.Permissions)
+
+	pkName, pkColumn, pkType, err := derivePK(sch)
+	if err != nil {
+		return err
+	}
+	if opts.PK != "" {
+		pkName = opts.PK
+		if f := fieldByName(opts.Fields, opts.PK); f != nil && f.Column != "" {
+			pkColumn = f.Column
+		} else if sf := matchSchemaField(sch, Field{Name: opts.PK}); sf != nil {
+			pkColumn = sf.DBName
+			pkType = inferFieldType(sf)
+		}
+	}
+	if fieldByName(opts.Fields, pkName) == nil {
+		return fmt.Errorf("admin: pk %q is not in Fields", pkName)
+	}
+
+	implicit := implicitTimestampColumns(sch)
+	if err := validateFieldRefs(opts, implicit); err != nil {
+		return err
+	}
+
+	resolved, err := resolveFields(opts.Fields, sch)
+	if err != nil {
+		return err
+	}
+
+	m := &registered{
+		meta:        modelMetaFrom(opts, pkName),
+		actions:     opts.Actions,
+		pkColumn:    pkColumn,
+		pkType:      pkType,
+		newInstance: makeNewInstance(elem),
+		newSlice:    makeNewSlice(elem),
+		forEach:     makeForEach(elem),
+		fields:      resolved,
+		fieldByName: map[string]*resolvedField{},
+		implicit:    implicit,
+	}
+	for i := range m.fields {
+		m.fieldByName[m.fields[i].Name] = &m.fields[i]
+	}
+	if pk, ok := m.fieldByName[pkName]; ok && pk.Type != "" {
+		m.pkType = pk.Type
+		if pk.column != "" {
+			m.pkColumn = pk.column
+		}
+	}
+	return reg.add(m)
+}
+
+func defaultPermissions(slug string, p Permissions) Permissions {
+	if p.View == "" {
+		p.View = "admin." + slug + ".view"
+	}
+	if p.Create == "" {
+		p.Create = "admin." + slug + ".create"
+	}
+	if p.Update == "" {
+		p.Update = "admin." + slug + ".update"
+	}
+	if p.Delete == "" {
+		p.Delete = "admin." + slug + ".delete"
+	}
+	return p
+}
+
+func fieldByName(fields []Field, name string) *Field {
+	for i := range fields {
+		if fields[i].Name == name {
+			return &fields[i]
+		}
+	}
+	return nil
+}
+
+func validateFieldRefs(opts Options, implicit map[string]string) error {
+	known := map[string]bool{}
+	for _, f := range opts.Fields {
+		if f.Name == "" || !validIdent(f.Name) {
+			return fmt.Errorf("admin: invalid field name %q", f.Name)
+		}
+		if f.Column != "" && !validIdent(f.Column) {
+			return fmt.Errorf("admin: invalid column %q on field %q", f.Column, f.Name)
+		}
+		if !validFieldType(f.Type) {
+			return fmt.Errorf("admin: field %q has unknown type %q", f.Name, f.Type)
+		}
+		if f.Type == TypeRelation {
+			if f.Related == nil {
+				return fmt.Errorf("admin: field %q is a relation without related", f.Name)
+			}
+			if f.Related.Kind != RelBelongsTo && f.Related.Kind != RelHasMany {
+				return fmt.Errorf("admin: field %q has unknown relation kind %q", f.Name, f.Related.Kind)
+			}
+			if strings.TrimSpace(f.Related.Slug) == "" {
+				return fmt.Errorf("admin: field %q relation is missing slug", f.Name)
+			}
+		}
+		known[f.Name] = true
+	}
+	check := func(kind string, names []string, allowImplicit bool) error {
+		for _, name := range names {
+			if known[name] {
+				continue
+			}
+			if allowImplicit && implicitTimestamp(name) {
+				if _, ok := implicit[name]; !ok {
+					return fmt.Errorf("admin: %s %q is not a GORM timestamp on this model", kind, name)
+				}
+				continue
+			}
+			return fmt.Errorf("admin: %s %q is not a registered field", kind, name)
+		}
+		return nil
+	}
+	if err := check("list", opts.List, true); err != nil {
+		return err
+	}
+	if err := check("search", opts.Search, false); err != nil {
+		return err
+	}
+	if err := check("filter", opts.Filter, false); err != nil {
+		return err
+	}
+	if err := check("ordering", opts.Ordering, true); err != nil {
+		return err
+	}
+	return nil
+}
+
+func resolveFields(fields []Field, sch *schema.Schema) ([]resolvedField, error) {
+	out := make([]resolvedField, 0, len(fields))
+	seen := map[string]struct{}{}
+	for _, f := range fields {
+		if _, ok := seen[f.Name]; ok {
+			return nil, fmt.Errorf("admin: duplicate field %q", f.Name)
+		}
+		seen[f.Name] = struct{}{}
+		if f.Type == TypeRelation && f.Related != nil && f.Related.Kind == RelHasMany {
+			f.ReadOnly = true
+		}
+		copyRel := f
+		if f.Related != nil {
+			rel := *f.Related
+			copyRel.Related = &rel
+		}
+		sf := matchSchemaField(sch, f)
+		if sf == nil {
+			if f.Type == TypeRelation && f.Related != nil && f.Related.Kind == RelHasMany {
+				out = append(out, resolvedField{
+					Field:  copyRel,
+					column: "",
+					get:    func(any) any { return nil },
+					set:    func(any, any) error { return fmt.Errorf("has_many is not writable") },
+				})
+				continue
+			}
+			return nil, fmt.Errorf("admin: field %q does not exist on the model", f.Name)
+		}
+		column := f.Column
+		if column == "" {
+			column = sf.DBName
+		}
+		out = append(out, resolvedField{
+			Field:  copyRel,
+			column: column,
+			get:    makeGetter(sf.StructField.Index, f.Type),
+			set:    makeSetter(sf.StructField.Index, f.Type, sf.FieldType),
+		})
+	}
+	return out, nil
+}
