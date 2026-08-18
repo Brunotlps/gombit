@@ -39,7 +39,8 @@ frontend/package.json is an error (backend-only is not supported).
 The generated frontend is a Vite + React + TypeScript skeleton
 (router, generated client, React Hook Form). Bearer login is the
 default; --auth cookie is the CSRF/session preset. --ui mui is the
-opt-in MUI CRUD preset (default UI stays minimal).`,
+opt-in MUI CRUD preset (default UI stays minimal). Split deploy is the
+default; gombit build --embed is the optional single-binary SPA path.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !cmd.Flags().Changed("http") {

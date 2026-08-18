@@ -18,10 +18,11 @@ var goKeywords = map[string]struct{}{
 var reservedPackages = map[string]struct{}{
 	"platform": {}, "cmd": {}, "config": {}, "database": {}, "frontend": {},
 	"internal": {}, "main": {}, "testdata": {}, "vendor": {}, "product": {},
+	"web": {},
 }
 
 var reservedCommands = map[string]struct{}{
-	"new": {}, "dev": {}, "make": {}, "db": {}, "openapi": {}, "client": {},
+	"new": {}, "dev": {}, "build": {}, "make": {}, "db": {}, "openapi": {}, "client": {},
 	"routes": {}, "doctor": {}, "config": {}, "help": {}, "completion": {},
 	"gombit": {}, "register": {},
 }

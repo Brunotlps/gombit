@@ -324,6 +324,11 @@ func TestNewValidatesOptions(t *testing.T) {
 	if err == nil {
 		t.Fatal("New(WithLogger(nil)) error = nil, want error")
 	}
+
+	_, err = New(WithEmbeddedFrontend(nil))
+	if err == nil {
+		t.Fatal("New(WithEmbeddedFrontend(nil)) error = nil, want error")
+	}
 }
 
 func newTestApp(t *testing.T, options ...Option) *App {

@@ -33,7 +33,8 @@ server starts serving only after all start hooks succeed.
 
 `App.Router()` exposes the underlying `*gin.Engine` as the raw Gin escape hatch
 required by ADR-011. Public API routes that belong in OpenAPI still need Huma
-typed handlers in later contract work.
+typed handlers. `framework.WithEmbeddedFrontend` installs Gin `NoRoute` only
+when the FS has `index.html`; it does not wrap or replace `*gin.Engine`.
 
 The default router installs `gin.Recovery()` so panics in runtime probes or raw
 Gin escape-hatch handlers do not terminate the process. Production config sets
@@ -57,7 +58,7 @@ steps that need their own runtime surfaces.
 | 9. middleware installation | Recovery is owned in M1-2. Route-registration composition (independently-registered route groups, each with optional group-scoped middleware) is owned in M1-3 — see [`docs/router.md`](router.md). Request ID, trace context, metrics, security headers, request timeout, and trusted-proxy configuration are owned in M1-7. XSS HTML-tag sanitization of request input is owned in M1-8 (fundamental first-party default on the runtime stack; not covered by security headers alone). CORS, rate limiting, and auth remain separate issues. |
 | 10. module registration | Owned in M1-3 — applications register feature routes directly against `app.Router()`; see [`docs/router.md`](router.md). |
 | 11. readiness/liveness endpoints | Basic raw Gin probes are owned in M1-2; DB/cache-aware readiness is deferred to M1-4/M1-5. |
-| 12. frontend static asset mounting when embedded | Deferred to M5-5. |
+| 12. frontend static asset mounting when embedded | Owned in M5-5 through `framework.WithEmbeddedFrontend`. SPA fallback is installed only when the FS has `index.html`; the `gombit new` placeholder embed (`.keep` only) is a no-op so `go run ./cmd/server` works without a Vite `dist`. See [`docs/build.md`](build.md). |
 | 13. signal handling | Owned in M1-2 through `framework.Run`. |
 | 14. graceful shutdown | Owned in M1-2 through bounded `http.Server.Shutdown`. |
 | 15. dependency cleanup | Owned in M1-2 through `OnStop`; concrete DB/cache/log sink cleanup lands with those features. |

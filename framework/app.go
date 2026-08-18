@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"net"
 	"net/http"
 	"os"
@@ -36,19 +37,20 @@ type Option func(*App) error
 
 // App owns Gombit's runtime lifecycle and HTTP router.
 type App struct {
-	cfg             config.Config
-	cfgSet          bool
-	cache           cache.Cache
-	cacheStore      *cache.Store
-	cacheOwned      bool
-	redis           *redis.Client
-	db              *database.DB
-	logger          *zap.Logger
-	router          *gin.Engine
-	api             huma.API
-	startHooks      []Hook
-	stopHooks       []Hook
-	shutdownTimeout time.Duration
+	cfg              config.Config
+	cfgSet           bool
+	cache            cache.Cache
+	cacheStore       *cache.Store
+	cacheOwned       bool
+	redis            *redis.Client
+	db               *database.DB
+	logger           *zap.Logger
+	router           *gin.Engine
+	api              huma.API
+	startHooks       []Hook
+	stopHooks        []Hook
+	shutdownTimeout  time.Duration
+	embeddedFrontend fs.FS
 
 	mu     sync.RWMutex
 	server *http.Server
@@ -135,6 +137,7 @@ func New(options ...Option) (*App, error) {
 			return nil, err
 		}
 	}
+	mountEmbeddedFrontend(app.router, app.embeddedFrontend, app.cfg.API.Prefix)
 
 	return app, nil
 }
