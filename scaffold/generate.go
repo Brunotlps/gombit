@@ -129,6 +129,9 @@ func renderFiles(vars templateVars) ([]renderedFile, error) {
 		rel = filepath.ToSlash(rel)
 		rel = strings.TrimSuffix(rel, ".tmpl")
 		rel = rewriteTemplateName(rel)
+		if skipMUIOnlyTemplate(rel, vars.UI) {
+			return nil
+		}
 		// #nosec G304 -- path is a rooted embed.FS entry from WalkDir
 		raw, err := templateFS.ReadFile(path)
 		if err != nil {
@@ -159,6 +162,20 @@ func renderFiles(vars templateVars) ([]renderedFile, error) {
 		return files[i].relPath < files[j].relPath
 	})
 	return files, nil
+}
+
+// skipMUIOnlyTemplate keeps MUI-only files (theme.ts) out of the default
+// minimal tree so `gombit new` never writes @mui imports or a theme module.
+func skipMUIOnlyTemplate(rel, ui string) bool {
+	if ui == "mui" {
+		return false
+	}
+	switch rel {
+	case "frontend/src/theme.ts":
+		return true
+	default:
+		return false
+	}
 }
 
 func rewriteTemplateName(rel string) string {

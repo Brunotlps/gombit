@@ -1,8 +1,17 @@
 import { useMemo, type ReactNode } from "react";
+{{if eq .UI "mui"}}
+import { CssBaseline, ThemeProvider } from "@mui/material";
 
-import { ApiClientContext, createAppClient } from "../api/client";
+{{end}}import { ApiClientContext, createAppClient } from "../api/client";
+{{if eq .UI "mui"}}import { theme } from "../theme";
 
-export function AppProviders({ children }: { children: ReactNode }) {
+{{end}}export function AppProviders({ children }: { children: ReactNode }) {
   const client = useMemo(() => createAppClient(), []);
-  return <ApiClientContext.Provider value={client}>{children}</ApiClientContext.Provider>;
-}
+{{if eq .UI "mui"}}  return (
+    <ThemeProvider theme={theme}>
+      <CssBaseline />
+      <ApiClientContext.Provider value={client}>{children}</ApiClientContext.Provider>
+    </ThemeProvider>
+  );
+{{else}}  return <ApiClientContext.Provider value={client}>{children}</ApiClientContext.Provider>;
+{{end}}}

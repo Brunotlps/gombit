@@ -37,8 +37,9 @@ SIGINT/SIGTERM stops the child processes. air and watchexec are optional
 frontend/package.json is an error (backend-only is not supported).
 
 The generated frontend is a Vite + React + TypeScript skeleton
-(router, generated client, React Hook Form). Bearer login is M5-2;
-the MUI CRUD preset is M5-4.`,
+(router, generated client, React Hook Form). Bearer login is the
+default; --auth cookie is the CSRF/session preset. --ui mui is the
+opt-in MUI CRUD preset (default UI stays minimal).`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !cmd.Flags().Changed("http") {

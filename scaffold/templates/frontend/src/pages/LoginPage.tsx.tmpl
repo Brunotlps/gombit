@@ -1,11 +1,25 @@
 {{if eq .Auth "cookie"}}import { useEffect, useState } from "react";
-import { useForm } from "react-hook-form";
+{{else}}import { useState } from "react";
+{{end}}import { useForm{{if eq .UI "mui"}}, Controller{{end}} } from "react-hook-form";
 import { useNavigate } from "react-router";
+{{if eq .UI "mui"}}
+import {
+  Alert,
+  Box,
+  Button,
+  CircularProgress,
+  Paper,
+  TextField,
+  Typography,
+} from "@mui/material";
 
-import { bootstrapCSRF, useApiClient } from "../api/client";
+{{end}}
+import { {{if eq .Auth "cookie"}}bootstrapCSRF, {{end}}useApiClient } from "../api/client";
 import { applyContractErrors } from "../api/formErrors";
 import { unwrap } from "../api/generated/client";
-import { setAuthenticated } from "../auth/session";
+{{if eq .Auth "cookie"}}import { setAuthenticated } from "../auth/session";
+{{else}}import { applyTokenPair } from "../auth/session";
+{{end}}
 
 type LoginValues = {
   email: string;
@@ -17,119 +31,39 @@ export function LoginPage() {
   const navigate = useNavigate();
   const [status, setStatus] = useState("");
   const {
-    register,
-    handleSubmit,
+{{if eq .UI "mui"}}    control,
+{{else}}    register,
+{{end}}    handleSubmit,
     setError,
-    formState: { errors, isSubmitting },
+    formState: { {{if eq .UI "mui"}}isSubmitting{{else}}errors, isSubmitting{{end}} },
   } = useForm<LoginValues>({
     defaultValues: { email: "", password: "" },
   });
 
-  useEffect(() => {
+{{if eq .Auth "cookie"}}  useEffect(() => {
     // Bootstrap the CSRF cookie so the first mutating request on this page
     // (register or login) has a token to double-submit.
     void bootstrapCSRF();
   }, []);
 
-  async function onLogin(values: LoginValues) {
+{{end}}  async function onLogin(values: LoginValues) {
     setStatus("");
     try {
-      await unwrap(
+{{if eq .Auth "cookie"}}      await unwrap(
         await client.POST("/api/v1/auth/login", {
           body: { email: values.email, password: values.password },
         }),
       );
       setAuthenticated(true);
       navigate("/");
-    } catch (err: unknown) {
-      if (!applyContractErrors(setError, err)) {
-        setStatus(err instanceof Error ? err.message : "login failed");
-      }
-    }
-  }
-
-  async function onRegister(values: LoginValues) {
-    setStatus("");
-    try {
-      await unwrap(
-        await client.POST("/api/v1/auth/register", {
-          body: { email: values.email, password: values.password },
-        }),
-      );
-      await onLogin(values);
-    } catch (err: unknown) {
-      if (!applyContractErrors(setError, err)) {
-        setStatus(err instanceof Error ? err.message : "register failed");
-      }
-    }
-  }
-
-  return (
-    <section>
-      <h1>Sign in</h1>
-      <p>Your session is an HttpOnly cookie. It is never exposed to page JavaScript.</p>
-      <form
-        onSubmit={handleSubmit(onLogin)}
-      >
-        <label>
-          Email
-          <input type="email" autoComplete="username" {...register("email", { required: true })} />
-        </label>
-        {errors.email?.message ? <p>{errors.email.message}</p> : null}
-        <label>
-          Password
-          <input type="password" autoComplete="current-password" {...register("password", { required: true })} />
-        </label>
-        {errors.password?.message ? <p>{errors.password.message}</p> : null}
-        <button type="submit" disabled={isSubmitting}>
-          Log in
-        </button>
-        <button type="button" disabled={isSubmitting} onClick={handleSubmit(onRegister)}>
-          Create account
-        </button>
-      </form>
-      {status ? <p>{status}</p> : null}
-    </section>
-  );
-}
-{{else}}import { useState } from "react";
-import { useForm } from "react-hook-form";
-import { useNavigate } from "react-router";
-
-import { useApiClient } from "../api/client";
-import { applyContractErrors } from "../api/formErrors";
-import { unwrap } from "../api/generated/client";
-import { applyTokenPair } from "../auth/session";
-
-type LoginValues = {
-  email: string;
-  password: string;
-};
-
-export function LoginPage() {
-  const client = useApiClient();
-  const navigate = useNavigate();
-  const [status, setStatus] = useState("");
-  const {
-    register,
-    handleSubmit,
-    setError,
-    formState: { errors, isSubmitting },
-  } = useForm<LoginValues>({
-    defaultValues: { email: "", password: "" },
-  });
-
-  async function onLogin(values: LoginValues) {
-    setStatus("");
-    try {
-      const result = await unwrap(
+{{else}}      const result = await unwrap(
         await client.POST("/api/v1/auth/login", {
           body: { email: values.email, password: values.password },
         }),
       );
       applyTokenPair(result.data);
       navigate("/");
-    } catch (err: unknown) {
+{{end}}    } catch (err: unknown) {
       if (!applyContractErrors(setError, err)) {
         setStatus(err instanceof Error ? err.message : "login failed");
       }
@@ -152,10 +86,87 @@ export function LoginPage() {
     }
   }
 
-  return (
+{{if eq .UI "mui"}}  return (
+    <Box
+      sx={{"{{"}}
+        minHeight: "100vh",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        p: 2,
+      }}
+    >
+      <Paper sx={{"{{"}} p: 4, width: "100%", maxWidth: 420 }}>
+        <Typography component="h1" variant="h5" sx={{"{{"}} mb: 1 }}>
+          Sign in
+        </Typography>
+        <Typography variant="body2" color="text.secondary" sx={{"{{"}} mb: 3 }}>
+          {{if eq .Auth "cookie"}}Your session is an HttpOnly cookie. It is never exposed to page JavaScript.
+          {{else}}Access tokens stay in memory. They are never written to web storage.
+          {{end}}</Typography>
+        {status ? (
+          <Alert severity="error" sx={{"{{"}} mb: 2 }}>
+            {status}
+          </Alert>
+        ) : null}
+        <Box
+          component="form"
+          onSubmit={handleSubmit(onLogin)}
+          sx={{"{{"}} display: "flex", flexDirection: "column", gap: 2 }}
+        >
+          <Controller
+            name="email"
+            control={control}
+            rules={{"{{"}} required: true }}
+            render={({ field, fieldState }) => (
+              <TextField
+                {...field}
+                type="email"
+                label="Email"
+                autoComplete="username"
+                fullWidth
+                error={!!fieldState.error}
+                helperText={fieldState.error?.message}
+                disabled={isSubmitting}
+              />
+            )}
+          />
+          <Controller
+            name="password"
+            control={control}
+            rules={{"{{"}} required: true }}
+            render={({ field, fieldState }) => (
+              <TextField
+                {...field}
+                type="password"
+                label="Password"
+                autoComplete="current-password"
+                fullWidth
+                error={!!fieldState.error}
+                helperText={fieldState.error?.message}
+                disabled={isSubmitting}
+              />
+            )}
+          />
+          <Button type="submit" variant="contained" disabled={isSubmitting}>
+            {isSubmitting ? <CircularProgress size={24} color="inherit" /> : "Log in"}
+          </Button>
+          <Button
+            type="button"
+            variant="outlined"
+            disabled={isSubmitting}
+            onClick={handleSubmit(onRegister)}
+          >
+            Create account
+          </Button>
+        </Box>
+      </Paper>
+    </Box>
+  );
+{{else}}  return (
     <section>
       <h1>Sign in</h1>
-      <p>Access tokens stay in memory. They are never written to web storage.</p>
+      <p>{{if eq .Auth "cookie"}}Your session is an HttpOnly cookie. It is never exposed to page JavaScript.{{else}}Access tokens stay in memory. They are never written to web storage.{{end}}</p>
       <form
         onSubmit={handleSubmit(onLogin)}
       >
@@ -179,5 +190,4 @@ export function LoginPage() {
       {status ? <p>{status}</p> : null}
     </section>
   );
-}
-{{end}}
+{{end}}}

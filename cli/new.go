@@ -30,8 +30,9 @@ Non-interactive example:
 Defaults: --database sqlite, --cache memory, --auth jwt, --ui minimal.
 The Go module path defaults to github.com/example/<name> (--module).
 --auth cookie scaffolds HttpOnly session cookies and CSRF (see
-docs/auth-cookie.md). --ui mui is recorded in gombit.yaml only until
-M5-4. The generated frontend is a Vite + React skeleton.
+docs/auth-cookie.md). --ui mui scaffolds the MUI CRUD preset
+(ThemeProvider, AppBar, Table, TextField); the default UI stays
+minimal/headless. The generated frontend is a Vite + React skeleton.
 --dry-run prints the file list without writing. A non-empty destination
 requires --force.`,
 		Args: cobra.MaximumNArgs(1),
@@ -61,7 +62,7 @@ requires --force.`,
 	cmd.Flags().StringVar(&database, "database", scaffold.DefaultDatabase, "database driver: sqlite, postgres, or mysql")
 	cmd.Flags().StringVar(&cache, "cache", scaffold.DefaultCache, "cache driver: memory, redis, or noop")
 	cmd.Flags().StringVar(&auth, "auth", scaffold.DefaultAuth, "auth mode: jwt (Bearer default), cookie (HttpOnly session + CSRF), or none")
-	cmd.Flags().StringVar(&ui, "ui", scaffold.DefaultUI, "UI preset: minimal or mui (recorded in gombit.yaml)")
+	cmd.Flags().StringVar(&ui, "ui", scaffold.DefaultUI, "UI preset: minimal (headless default) or mui (MUI CRUD screens)")
 	cmd.Flags().StringVar(&module, "module", "", "Go module path (default github.com/example/<name>)")
 	cmd.Flags().BoolVar(&dryRun, "dry-run", false, "print files that would be written without writing")
 	cmd.Flags().BoolVar(&force, "force", false, "overwrite files in a non-empty destination")

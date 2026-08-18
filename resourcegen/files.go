@@ -19,12 +19,16 @@ type renderContext struct {
 	ImportPath string
 	ModelSpec  string
 	APIPrefix  string
+	UI         string
 	Service    bool
 	Repo       bool
 	DataType   string
 }
 
-func newRenderContext(module string, name ResourceName, fields []Field, apiPrefix string, service, repo bool) renderContext {
+func newRenderContext(module string, name ResourceName, fields []Field, apiPrefix, ui string, service, repo bool) renderContext {
+	if ui == "" {
+		ui = defaultUI
+	}
 	return renderContext{
 		Resource:   name,
 		Fields:     fields,
@@ -32,6 +36,7 @@ func newRenderContext(module string, name ResourceName, fields []Field, apiPrefi
 		ImportPath: module + "/internal/" + name.Package,
 		ModelSpec:  module + "/internal/" + name.Package + "." + name.TypeName,
 		APIPrefix:  apiPrefix,
+		UI:         ui,
 		Service:    service,
 		Repo:       repo,
 		DataType:   unexported(name.TypeName) + "Data",
@@ -298,6 +303,13 @@ func jsIdent(name string) string {
 }
 
 func renderListTSX(ctx renderContext) string {
+	if ctx.UI == "mui" {
+		return renderMUIListTSX(ctx)
+	}
+	return renderMinimalListTSX(ctx)
+}
+
+func renderMinimalListTSX(ctx renderContext) string {
 	listPath := ctx.APIPrefix + ctx.Resource.HTTPPath
 	labels := `["id"`
 	for _, field := range ctx.Fields {
@@ -391,6 +403,13 @@ func renderListTSX(ctx renderContext) string {
 }
 
 func renderFormTSX(ctx renderContext) string {
+	if ctx.UI == "mui" {
+		return renderMUIFormTSX(ctx)
+	}
+	return renderMinimalFormTSX(ctx)
+}
+
+func renderMinimalFormTSX(ctx renderContext) string {
 	createPath := ctx.APIPrefix + ctx.Resource.HTTPPath
 	var b strings.Builder
 	b.WriteString(tsBanner())
@@ -510,5 +529,286 @@ func renderFormField(field Field) string {
 	}
 	b.WriteString("        </label>\n")
 	b.WriteString("        {errors." + ident + "?.message ? <p>{errors." + ident + ".message}</p> : null}\n")
+	return b.String()
+}
+
+func renderMUIListTSX(ctx renderContext) string {
+	listPath := ctx.APIPrefix + ctx.Resource.HTTPPath
+	colSpan := 1 + len(ctx.Fields)
+	labels := `["id"`
+	for _, field := range ctx.Fields {
+		labels += `, "` + field.JSONName + `"`
+	}
+	labels += "]"
+
+	var b strings.Builder
+	b.WriteString(tsBanner())
+	b.WriteString("\nimport { useEffect, useState } from \"react\";\n")
+	b.WriteString("import { Link } from \"react-router\";\n")
+	b.WriteString("import AddIcon from \"@mui/icons-material/Add\";\n")
+	b.WriteString("import {\n")
+	b.WriteString("  Box,\n  Button,\n  CircularProgress,\n  Paper,\n")
+	b.WriteString("  Table,\n  TableBody,\n  TableCell,\n  TableContainer,\n")
+	b.WriteString("  TableHead,\n  TableRow,\n  Typography,\n")
+	b.WriteString("} from \"@mui/material\";\n\n")
+	b.WriteString("import { useApiClient } from \"../api/client\";\n")
+	b.WriteString("import { unwrap } from \"../api/generated/client\";\n")
+	b.WriteString("import type { paths } from \"../api/generated/schema\";\n\n")
+	b.WriteString("const listPath = \"" + listPath + "\" as const;\n\n")
+	b.WriteString("type ListResponse =\n")
+	b.WriteString("  paths[typeof listPath][\"get\"][\"responses\"][200][\"content\"][\"application/json\"];\n")
+	b.WriteString("type ListRow = NonNullable<ListResponse[\"data\"]>[number];\n\n")
+	b.WriteString("/**\n * MUI Table list page. Types come from the generated OpenAPI client\n")
+	b.WriteString(" * (gombit client generate / gombit dev). Do not duplicate API DTOs here.\n */\n")
+	b.WriteString("export function " + ctx.Resource.TypeName + "ListPage() {\n")
+	b.WriteString("  const client = useApiClient();\n")
+	b.WriteString("  const [rows, setRows] = useState<ListRow[]>([]);\n")
+	b.WriteString("  const [loading, setLoading] = useState(true);\n")
+	b.WriteString("  const [status, setStatus] = useState(\"\");\n\n")
+	b.WriteString("  useEffect(() => {\n")
+	b.WriteString("    let cancelled = false;\n")
+	b.WriteString("    void (async () => {\n")
+	b.WriteString("      try {\n")
+	b.WriteString("        const listed = await unwrap(await client.GET(listPath));\n")
+	b.WriteString("        if (cancelled) {\n")
+	b.WriteString("          return;\n")
+	b.WriteString("        }\n")
+	b.WriteString("        const data = Array.isArray(listed.data) ? listed.data : [];\n")
+	b.WriteString("        setRows(data);\n")
+	b.WriteString("        setStatus(data.length === 0 ? \"No " + ctx.Resource.Kebab + " yet.\" : \"\");\n")
+	b.WriteString("      } catch (err: unknown) {\n")
+	b.WriteString("        if (cancelled) {\n")
+	b.WriteString("          return;\n")
+	b.WriteString("        }\n")
+	b.WriteString("        setStatus(err instanceof Error ? err.message : \"request failed\");\n")
+	b.WriteString("      } finally {\n")
+	b.WriteString("        if (!cancelled) {\n")
+	b.WriteString("          setLoading(false);\n")
+	b.WriteString("        }\n")
+	b.WriteString("      }\n")
+	b.WriteString("    })();\n")
+	b.WriteString("    return () => {\n")
+	b.WriteString("      cancelled = true;\n")
+	b.WriteString("    };\n")
+	b.WriteString("  }, [client]);\n\n")
+	b.WriteString("  return (\n")
+	b.WriteString("    <Box>\n")
+	b.WriteString("      <Box sx={{ display: \"flex\", justifyContent: \"space-between\", alignItems: \"center\", mb: 2 }}>\n")
+	b.WriteString("        <Typography variant=\"h4\" component=\"h1\">\n")
+	b.WriteString("          " + ctx.Resource.Tag + "\n")
+	b.WriteString("        </Typography>\n")
+	b.WriteString("        <Button variant=\"contained\" component={Link} to=\"/" + ctx.Resource.Kebab + "/new\" startIcon={<AddIcon />}>\n")
+	b.WriteString("          New " + ctx.Resource.TypeName + "\n")
+	b.WriteString("        </Button>\n")
+	b.WriteString("      </Box>\n")
+	b.WriteString("      {loading ? (\n")
+	b.WriteString("        <Box sx={{ display: \"flex\", justifyContent: \"center\", py: 6 }}>\n")
+	b.WriteString("          <CircularProgress />\n")
+	b.WriteString("        </Box>\n")
+	b.WriteString("      ) : (\n")
+	b.WriteString("        <TableContainer component={Paper}>\n")
+	b.WriteString("          <Table>\n")
+	b.WriteString("            <TableHead>\n")
+	b.WriteString("              <TableRow>\n")
+	b.WriteString("                {" + labels + ".map((label) => (\n")
+	b.WriteString("                  <TableCell key={label}>{label}</TableCell>\n")
+	b.WriteString("                ))}\n")
+	b.WriteString("              </TableRow>\n")
+	b.WriteString("            </TableHead>\n")
+	b.WriteString("            <TableBody>\n")
+	b.WriteString("              {rows.length === 0 ? (\n")
+	b.WriteString("                <TableRow>\n")
+	b.WriteString("                  <TableCell colSpan={" + fmt.Sprintf("%d", colSpan) + "} align=\"center\">\n")
+	b.WriteString("                    {status || \"No " + ctx.Resource.Kebab + " yet.\"}\n")
+	b.WriteString("                  </TableCell>\n")
+	b.WriteString("                </TableRow>\n")
+	b.WriteString("              ) : (\n")
+	b.WriteString("                rows.map((row, index) => {\n")
+	b.WriteString("                  const record = row as { id?: unknown")
+	for _, field := range ctx.Fields {
+		b.WriteString("; " + field.JSONName + "?: unknown")
+	}
+	b.WriteString(" };\n")
+	b.WriteString("                  const values: unknown[] = [record.id")
+	for _, field := range ctx.Fields {
+		b.WriteString(", record." + field.JSONName)
+	}
+	b.WriteString("];\n")
+	b.WriteString("                  const key = record.id == null ? String(index) : String(record.id);\n")
+	b.WriteString("                  return (\n")
+	b.WriteString("                    <TableRow key={key}>\n")
+	b.WriteString("                      {values.map((value, cell) => (\n")
+	b.WriteString("                        <TableCell key={cell}>{value == null ? \"\" : String(value)}</TableCell>\n")
+	b.WriteString("                      ))}\n")
+	b.WriteString("                    </TableRow>\n")
+	b.WriteString("                  );\n")
+	b.WriteString("                })\n")
+	b.WriteString("              )}\n")
+	b.WriteString("            </TableBody>\n")
+	b.WriteString("          </Table>\n")
+	b.WriteString("        </TableContainer>\n")
+	b.WriteString("      )}\n")
+	b.WriteString("    </Box>\n")
+	b.WriteString("  );\n")
+	b.WriteString("}\n")
+	return b.String()
+}
+
+func renderMUIFormTSX(ctx renderContext) string {
+	createPath := ctx.APIPrefix + ctx.Resource.HTTPPath
+	needsCheckbox := false
+	for _, field := range ctx.Fields {
+		if field.Type == FieldBool {
+			needsCheckbox = true
+			break
+		}
+	}
+
+	var b strings.Builder
+	b.WriteString(tsBanner())
+	b.WriteString("\nimport { useState } from \"react\";\n")
+	b.WriteString("import { Controller, useForm } from \"react-hook-form\";\n")
+	b.WriteString("import { Link, useNavigate } from \"react-router\";\n")
+	b.WriteString("import { Alert, Box, Button, Paper, TextField, Typography")
+	if needsCheckbox {
+		b.WriteString(", Checkbox, FormControlLabel")
+	}
+	b.WriteString(" } from \"@mui/material\";\n\n")
+	b.WriteString("import { useApiClient } from \"../api/client\";\n")
+	b.WriteString("import { applyContractErrors } from \"../api/formErrors\";\n")
+	b.WriteString("import { unwrap } from \"../api/generated/client\";\n")
+	b.WriteString("import type { paths } from \"../api/generated/schema\";\n\n")
+	b.WriteString("const createPath = \"" + createPath + "\" as const;\n\n")
+	b.WriteString("type CreateBody =\n")
+	b.WriteString("  paths[typeof createPath][\"post\"][\"requestBody\"][\"content\"][\"application/json\"];\n\n")
+	b.WriteString("type FormValues = {\n")
+	for _, field := range ctx.Fields {
+		b.WriteString("  " + field.JSONName + ": " + tsFormType(field) + ";\n")
+	}
+	b.WriteString("};\n\n")
+	b.WriteString("/**\n * MUI TextField create page. Request/response types come from the\n")
+	b.WriteString(" * generated OpenAPI client. D10 error.fields map through applyContractErrors.\n")
+	b.WriteString(" * Run gombit client generate or gombit dev after adding routes.\n */\n")
+	b.WriteString("export function " + ctx.Resource.TypeName + "FormPage() {\n")
+	b.WriteString("  const client = useApiClient();\n")
+	b.WriteString("  const navigate = useNavigate();\n")
+	b.WriteString("  const [status, setStatus] = useState(\"\");\n")
+	b.WriteString("  const {\n")
+	b.WriteString("    control,\n")
+	b.WriteString("    handleSubmit,\n")
+	b.WriteString("    setError,\n")
+	b.WriteString("    formState: { isSubmitting },\n")
+	b.WriteString("  } = useForm<FormValues>({\n")
+	b.WriteString("    defaultValues: {")
+	for i, field := range ctx.Fields {
+		if i > 0 {
+			b.WriteString(",")
+		}
+		b.WriteString(" " + field.JSONName + ": " + tsDefaultValue(field))
+	}
+	b.WriteString(" },\n")
+	b.WriteString("  });\n\n")
+	b.WriteString("  async function onSubmit(values: FormValues) {\n")
+	b.WriteString("    setStatus(\"\");\n")
+	b.WriteString("    try {\n")
+	b.WriteString("      await unwrap(await client.POST(createPath, { body: values as CreateBody }));\n")
+	b.WriteString("      navigate(\"/" + ctx.Resource.Kebab + "\");\n")
+	b.WriteString("    } catch (err: unknown) {\n")
+	b.WriteString("      if (!applyContractErrors(setError, err)) {\n")
+	b.WriteString("        setStatus(err instanceof Error ? err.message : \"request failed\");\n")
+	b.WriteString("      }\n")
+	b.WriteString("    }\n")
+	b.WriteString("  }\n\n")
+	b.WriteString("  return (\n")
+	b.WriteString("    <Box>\n")
+	b.WriteString("      <Typography variant=\"h4\" component=\"h1\" sx={{ mb: 1 }}>\n")
+	b.WriteString("        New " + ctx.Resource.TypeName + "\n")
+	b.WriteString("      </Typography>\n")
+	b.WriteString("      <Button component={Link} to=\"/" + ctx.Resource.Kebab + "\" sx={{ mb: 2 }}>\n")
+	b.WriteString("        Back to list\n")
+	b.WriteString("      </Button>\n")
+	b.WriteString("      <Paper sx={{ p: 3, maxWidth: 480 }}>\n")
+	b.WriteString("        <Box component=\"form\" onSubmit={handleSubmit(onSubmit)} sx={{ display: \"flex\", flexDirection: \"column\", gap: 2 }}>\n")
+	for _, field := range ctx.Fields {
+		b.WriteString(renderMUIFormField(field))
+	}
+	b.WriteString("          <Button type=\"submit\" variant=\"contained\" disabled={isSubmitting}>\n")
+	b.WriteString("            Create\n")
+	b.WriteString("          </Button>\n")
+	b.WriteString("        </Box>\n")
+	b.WriteString("        {status ? (\n")
+	b.WriteString("          <Alert severity=\"error\" sx={{ mt: 2 }}>\n")
+	b.WriteString("            {status}\n")
+	b.WriteString("          </Alert>\n")
+	b.WriteString("        ) : null}\n")
+	b.WriteString("      </Paper>\n")
+	b.WriteString("    </Box>\n")
+	b.WriteString("  );\n")
+	b.WriteString("}\n")
+	return b.String()
+}
+
+func renderMUIFormField(field Field) string {
+	var b strings.Builder
+	rules := ""
+	if field.Required && field.Type != FieldBool {
+		rules = " rules={{ required: true }}"
+	}
+	b.WriteString("          <Controller\n")
+	b.WriteString("            name=\"" + field.JSONName + "\"\n")
+	b.WriteString("            control={control}\n")
+	if rules != "" {
+		b.WriteString("           " + rules + "\n")
+	}
+	b.WriteString("            render={({ field, fieldState }) => (\n")
+	switch field.Type {
+	case FieldBool:
+		b.WriteString("              <FormControlLabel\n")
+		b.WriteString("                control={\n")
+		b.WriteString("                  <Checkbox\n")
+		b.WriteString("                    {...field}\n")
+		b.WriteString("                    checked={Boolean(field.value)}\n")
+		b.WriteString("                    disabled={isSubmitting}\n")
+		b.WriteString("                  />\n")
+		b.WriteString("                }\n")
+		b.WriteString("                label=\"" + field.GoName + "\"\n")
+		b.WriteString("              />\n")
+	case FieldText:
+		b.WriteString("              <TextField\n")
+		b.WriteString("                {...field}\n")
+		b.WriteString("                label=\"" + field.GoName + "\"\n")
+		b.WriteString("                fullWidth\n")
+		b.WriteString("                multiline\n")
+		b.WriteString("                minRows={3}\n")
+		b.WriteString("                error={!!fieldState.error}\n")
+		b.WriteString("                helperText={fieldState.error?.message}\n")
+		b.WriteString("                disabled={isSubmitting}\n")
+		b.WriteString("              />\n")
+	case FieldInt, FieldInt64, FieldUint:
+		b.WriteString("              <TextField\n")
+		b.WriteString("                {...field}\n")
+		b.WriteString("                type=\"number\"\n")
+		b.WriteString("                label=\"" + field.GoName + "\"\n")
+		b.WriteString("                fullWidth\n")
+		b.WriteString("                error={!!fieldState.error}\n")
+		b.WriteString("                helperText={fieldState.error?.message}\n")
+		b.WriteString("                disabled={isSubmitting}\n")
+		b.WriteString("                onChange={(event) => {\n")
+		b.WriteString("                  const raw = event.target.value;\n")
+		b.WriteString("                  field.onChange(raw === \"\" ? 0 : Number(raw));\n")
+		b.WriteString("                }}\n")
+		b.WriteString("              />\n")
+	default:
+		b.WriteString("              <TextField\n")
+		b.WriteString("                {...field}\n")
+		b.WriteString("                label=\"" + field.GoName + "\"\n")
+		b.WriteString("                fullWidth\n")
+		b.WriteString("                error={!!fieldState.error}\n")
+		b.WriteString("                helperText={fieldState.error?.message}\n")
+		b.WriteString("                disabled={isSubmitting}\n")
+		b.WriteString("              />\n")
+	}
+	b.WriteString("            )}\n")
+	b.WriteString("          />\n")
 	return b.String()
 }
