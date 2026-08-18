@@ -115,6 +115,68 @@ func TestPermissionAssociationsPersist(t *testing.T) {
 	}
 }
 
+func TestPermissionAndGroupCanBeRecreatedAfterDelete(t *testing.T) {
+	ctx := context.Background()
+	db := openSQLite(t)
+	if err := auth.Migrate(db.DB); err != nil {
+		t.Fatalf("auth.Migrate() error = %v", err)
+	}
+
+	permission, err := auth.EnsurePermission(ctx, db.DB, "admin.widgets.recreate", "Recreate widgets")
+	if err != nil {
+		t.Fatalf("EnsurePermission(initial): %v", err)
+	}
+	group, err := auth.EnsureGroup(ctx, db.DB, "recreated-viewers")
+	if err != nil {
+		t.Fatalf("EnsureGroup(initial): %v", err)
+	}
+	if err := db.WithContext(ctx).Delete(&permission).Error; err != nil {
+		t.Fatalf("delete permission: %v", err)
+	}
+	if err := db.WithContext(ctx).Delete(&group).Error; err != nil {
+		t.Fatalf("delete group: %v", err)
+	}
+
+	recreatedPermission, err := auth.EnsurePermission(
+		ctx,
+		db.DB,
+		permission.Key,
+		permission.Description,
+	)
+	if err != nil {
+		t.Fatalf("EnsurePermission(recreate): %v", err)
+	}
+	recreatedGroup, err := auth.EnsureGroup(ctx, db.DB, group.Name)
+	if err != nil {
+		t.Fatalf("EnsureGroup(recreate): %v", err)
+	}
+	if recreatedPermission.ID == 0 || recreatedGroup.ID == 0 {
+		t.Fatalf(
+			"recreated identities must be persisted: permission ID = %d, group ID = %d",
+			recreatedPermission.ID,
+			recreatedGroup.ID,
+		)
+	}
+	if err := auth.GrantPermissionToGroup(
+		ctx,
+		db.DB,
+		&recreatedGroup,
+		&recreatedPermission,
+	); err != nil {
+		t.Fatalf("GrantPermissionToGroup(recreated): %v", err)
+	}
+
+	var loaded auth.Group
+	if err := db.WithContext(ctx).
+		Preload("Permissions").
+		First(&loaded, recreatedGroup.ID).Error; err != nil {
+		t.Fatalf("load recreated group: %v", err)
+	}
+	if len(loaded.Permissions) != 1 || loaded.Permissions[0].Key != permission.Key {
+		t.Fatalf("recreated group permissions = %+v, want %q", loaded.Permissions, permission.Key)
+	}
+}
+
 func TestPermissionKeyColumnAvoidsMySQLReservedWord(t *testing.T) {
 	parsed, err := schema.Parse(&auth.Permission{}, &sync.Map{}, schema.NamingStrategy{})
 	if err != nil {
