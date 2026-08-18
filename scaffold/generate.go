@@ -8,8 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"go/format"
+	"io"
 	"io/fs"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -40,17 +42,25 @@ func Generate(ctx context.Context, opts Options) error {
 		return err
 	}
 
+	frameworkVersion, fallbackReason := ResolveFrameworkVersion(opts.FrameworkVersion)
+	if fallbackReason != "" {
+		if err := warnUnresolvableFramework(opts.Stderr, opts.Module, fallbackReason); err != nil {
+			return err
+		}
+	}
+
 	vars := templateVars{
-		Name:           opts.Name,
-		Module:         opts.Module,
-		Database:       opts.Database,
-		Cache:          opts.Cache,
-		Auth:           opts.Auth,
-		UI:             opts.UI,
-		APIPrefix:      DefaultAPIPrefix,
-		DatabaseDSN:    defaultDSN(opts.Database, opts.Name),
-		CacheNamespace: config.DefaultCacheNamespace(opts.Name, config.EnvironmentDevelopment),
-		GoVersion:      generatedGoVersion,
+		Name:             opts.Name,
+		Module:           opts.Module,
+		Database:         opts.Database,
+		Cache:            opts.Cache,
+		Auth:             opts.Auth,
+		UI:               opts.UI,
+		APIPrefix:        DefaultAPIPrefix,
+		DatabaseDSN:      defaultDSN(opts.Database, opts.Name),
+		CacheNamespace:   config.DefaultCacheNamespace(opts.Name, config.EnvironmentDevelopment),
+		GoVersion:        generatedGoVersion,
+		FrameworkVersion: frameworkVersion,
 	}
 
 	files, err := renderFiles(vars)
@@ -92,20 +102,85 @@ func Generate(ctx context.Context, opts Options) error {
 			return fmt.Errorf("scaffold: write %s: %w", display, err)
 		}
 	}
+
+	// A pinned version alone is not enough to build: without go.sum, `go build`
+	// fails with "missing go.sum entry" rather than fetching. Only worth
+	// attempting when the pin is resolvable.
+	if opts.Tidy && !opts.DryRun && fallbackReason == "" {
+		if err := tidyModule(ctx, opts); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
+// goModTidy runs `go mod tidy` in dir. Indirected for tests, which must not
+// reach the network.
+var goModTidy = func(ctx context.Context, dir string) ([]byte, error) {
+	cmd := exec.CommandContext(ctx, "go", "mod", "tidy")
+	cmd.Dir = dir
+	return cmd.CombinedOutput()
+}
+
+// tidyModule populates go.sum so the generated app builds as-is. A failure
+// here (no network, no toolchain) is reported but not fatal: the tree is
+// already written and correct, and the user can rerun the command themselves.
+func tidyModule(ctx context.Context, opts Options) error {
+	if _, err := fmt.Fprintln(opts.Stdout, "go mod tidy"); err != nil {
+		return err
+	}
+	output, err := goModTidy(ctx, opts.Dest)
+	if err == nil {
+		return nil
+	}
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	_, writeErr := fmt.Fprintf(opts.Stderr,
+		"warning: go mod tidy failed: %v\n%s  %s will not build until you run it yourself:\n    cd %s && go mod tidy\n",
+		err, indentOutput(output), opts.Module, opts.Name)
+	return writeErr
+}
+
+func indentOutput(output []byte) string {
+	trimmed := strings.TrimSpace(string(output))
+	if trimmed == "" {
+		return ""
+	}
+	var b strings.Builder
+	for _, line := range strings.Split(trimmed, "\n") {
+		b.WriteString("  ")
+		b.WriteString(line)
+		b.WriteString("\n")
+	}
+	return b.String()
+}
+
 type templateVars struct {
-	Name           string
-	Module         string
-	Database       string
-	Cache          string
-	Auth           string
-	UI             string
-	APIPrefix      string
-	DatabaseDSN    string
-	CacheNamespace string
-	GoVersion      string
+	Name             string
+	Module           string
+	Database         string
+	Cache            string
+	Auth             string
+	UI               string
+	APIPrefix        string
+	DatabaseDSN      string
+	CacheNamespace   string
+	GoVersion        string
+	FrameworkVersion string
+}
+
+// warnUnresolvableFramework explains why the generated go.mod pins a version
+// the module proxy cannot resolve, and what to do about it. Without this the
+// user's first `go build` fails with an opaque "missing go.sum entry".
+func warnUnresolvableFramework(w io.Writer, module, reason string) error {
+	_, err := fmt.Fprintf(w, `warning: %s, so go.mod requires %s %s, which the module proxy cannot resolve.
+  %s will not build until you point it at a framework checkout:
+    go mod edit -replace %s=/path/to/gombit
+    go mod tidy
+  Installing a released gombit (go install %s/cmd/gombit@latest) avoids this.
+`, reason, frameworkModulePath, FallbackFrameworkVersion, module, frameworkModulePath, frameworkModulePath)
+	return err
 }
 
 type renderedFile struct {

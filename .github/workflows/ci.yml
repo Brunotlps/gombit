@@ -46,6 +46,11 @@ jobs:
       - name: Build packages
         run: go build ./...
 
+      # Docs promise these compile. The tutorial example in particular is the
+      # committed output of docs/tutorial.md and must not rot.
+      - name: Build examples
+        run: go build ./examples/...
+
   test:
     name: Test
     needs: build

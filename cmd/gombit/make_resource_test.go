@@ -19,7 +19,7 @@ func TestRunMakeResourceBookCompiles(t *testing.T) {
 	workDir := t.TempDir()
 	chdir(t, workDir)
 
-	err := run(context.Background(), []string{"new", "demo", "--database", "sqlite"}, ioDiscard{}, ioDiscard{})
+	err := run(context.Background(), []string{"new", "demo", "--database", "sqlite", "--skip-tidy"}, ioDiscard{}, ioDiscard{})
 	if err != nil {
 		t.Fatalf("gombit new: %v", err)
 	}
@@ -141,7 +141,7 @@ func TestRunMakeResourceBookCompiles(t *testing.T) {
 func TestRunMakeResourceDryRunOnFreshApp(t *testing.T) {
 	workDir := t.TempDir()
 	chdir(t, workDir)
-	if err := run(context.Background(), []string{"new", "demo", "--database", "sqlite"}, ioDiscard{}, ioDiscard{}); err != nil {
+	if err := run(context.Background(), []string{"new", "demo", "--database", "sqlite", "--skip-tidy"}, ioDiscard{}, ioDiscard{}); err != nil {
 		t.Fatalf("new: %v", err)
 	}
 	chdir(t, filepath.Join(workDir, "demo"))

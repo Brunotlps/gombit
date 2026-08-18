@@ -1,0 +1,267 @@
+# Publish cross-compiled `gombit` binaries for a v*.*.* tag.
+#
+# Triggered by pushing a tag, or manually with a semver bump (which computes and
+# pushes the tag for you). Gombit is an importable Go module, so every tag is a
+# permanent public API version on pkg.go.dev — releases are deliberately not
+# auto-cut on merges to main.
+#
+# Binaries are built on NATIVE runners with CGO_ENABLED=1 because the SQLite
+# driver (gorm.io/driver/sqlite -> mattn/go-sqlite3) is cgo-only. A CGO_ENABLED=0
+# build links and runs, but fails at the first SQLite connection with
+# "Binary was compiled with 'CGO_ENABLED=0', go-sqlite3 requires cgo to work" —
+# and SQLite is the default for `gombit new`.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: "Semver bump over the latest v*.*.* tag"
+        type: choice
+        options:
+          - patch
+          - minor
+          - major
+        default: patch
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-${{ github.repository }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Resolve version
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      tag: ${{ steps.version.outputs.tag }}
+      prerelease: ${{ steps.version.outputs.prerelease }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Verify modules
+        run: |
+          go mod download
+          go mod verify
+
+      # Gate the release on the same suite CI runs on main. The database,
+      # migration, and conformance matrices are integration-tagged and stay in
+      # ci.yml; this is the default suite.
+      - name: Test
+        run: go test ./... -count=1 -timeout=15m
+
+      - name: Resolve release tag
+        id: version
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          INPUT_BUMP: ${{ github.event.inputs.bump }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT_NAME" != "workflow_dispatch" ]; then
+            next="$REF_NAME"
+            echo "Tag push: $next"
+          else
+            BUMP="${INPUT_BUMP:-patch}"
+            git fetch --tags --force
+
+            latest=""
+            while IFS= read -r t; do
+              if [[ "$t" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                latest="$t"
+                break
+              fi
+            done < <(git tag -l 'v*' --sort=-v:refname)
+
+            if [ -z "$latest" ]; then
+              case "$BUMP" in
+                major) next="v1.0.0" ;;
+                *) next="v0.1.0" ;;
+              esac
+              echo "Latest stable tag: <none>"
+              echo "First release ($BUMP) -> $next"
+            else
+              ver="${latest#v}"
+              major="${ver%%.*}"
+              rest="${ver#*.}"
+              minor="${rest%%.*}"
+              patch="${rest#*.}"
+
+              case "$BUMP" in
+                major) major=$((major + 1)); minor=0; patch=0 ;;
+                minor) minor=$((minor + 1)); patch=0 ;;
+                patch) patch=$((patch + 1)) ;;
+                *) echo "unknown bump: $BUMP" >&2; exit 1 ;;
+              esac
+
+              next="v${major}.${minor}.${patch}"
+              echo "Latest stable tag: $latest"
+              echo "Bump: $BUMP -> $next"
+            fi
+
+            # A tag pushed with GITHUB_TOKEN does not start another workflow
+            # run, so this cannot recurse into the push trigger above.
+            git tag -a "$next" -m "$next"
+            git push origin "$next"
+          fi
+
+          # v1.2.3-rc.1 and friends publish as GitHub pre-releases.
+          if [[ "$next" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "prerelease=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "prerelease=true" >> "$GITHUB_OUTPUT"
+          fi
+          echo "tag=$next" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build ${{ matrix.goos }}/${{ matrix.goarch }}
+    needs: version
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            goos: linux
+            goarch: amd64
+          - runner: ubuntu-24.04-arm
+            goos: linux
+            goarch: arm64
+          - runner: macos-13
+            goos: darwin
+            goarch: amd64
+          - runner: macos-latest
+            goos: darwin
+            goarch: arm64
+          - runner: windows-latest
+            goos: windows
+            goarch: amd64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.version.outputs.tag }}
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build gombit
+        shell: bash
+        env:
+          CGO_ENABLED: "1"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+          VERSION: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          pkg=github.com/LAA-Software-Engineering/gombit/cli
+          ldflags="-s -w"
+          ldflags="$ldflags -X ${pkg}.Version=${VERSION}"
+          ldflags="$ldflags -X ${pkg}.Commit=${GITHUB_SHA}"
+          ldflags="$ldflags -X ${pkg}.BuildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          binary=gombit
+          if [ "$GOOS" = "windows" ]; then
+            binary=gombit.exe
+          fi
+
+          mkdir -p dist
+          go build -trimpath -ldflags "$ldflags" -o "dist/$binary" ./cmd/gombit
+
+      # Native runner, so the artifact we just built is runnable here. This is
+      # the check that the ldflags actually landed.
+      - name: Verify stamped version
+        shell: bash
+        env:
+          VERSION: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          binary=dist/gombit
+          if [ "${{ matrix.goos }}" = "windows" ]; then
+            binary=dist/gombit.exe
+          fi
+          got="$("$binary" version --short)"
+          echo "gombit version --short -> $got"
+          if [ "$got" != "$VERSION" ]; then
+            echo "expected $VERSION, got $got" >&2
+            exit 1
+          fi
+          "$binary" version
+
+      - name: Upload binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: gombit-${{ matrix.goos }}-${{ matrix.goarch }}
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    name: Publish release
+    needs: [version, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      # Archiving is centralised here so the per-OS runners don't each need
+      # matching tar/zip/sha256sum tooling.
+      - name: Package archives
+        env:
+          VERSION: ${{ needs.version.outputs.tag }}
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          out="$PWD/dist"
+
+          for dir in artifacts/gombit-*; do
+            name="$(basename "$dir")"
+            platform="${name#gombit-}"
+            if [ -f "$dir/gombit.exe" ]; then
+              chmod +x "$dir/gombit.exe"
+              (cd "$dir" && zip -q "$out/gombit-${VERSION}-${platform}.zip" gombit.exe)
+            else
+              chmod +x "$dir/gombit"
+              tar -czf "$out/gombit-${VERSION}-${platform}.tar.gz" -C "$dir" gombit
+            fi
+          done
+
+          (cd dist && sha256sum ./* | sed 's|\./||' | tee SHA256SUMS.txt)
+          ls -l dist
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version.outputs.tag }}
+          name: ${{ needs.version.outputs.tag }}
+          prerelease: ${{ needs.version.outputs.prerelease == 'true' }}
+          files: |
+            dist/*.tar.gz
+            dist/*.zip
+            dist/SHA256SUMS.txt
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

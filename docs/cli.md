@@ -32,6 +32,7 @@ go run ./cmd/gombit --help
 | `gombit doctor` | Environment and config checks | M4-4 |
 | `gombit config show` | Print typed config with secrets redacted | M4-4 |
 | `gombit createsuperuser` | Create a superuser (admin) account | M4-6 |
+| `gombit version` | Print version and build metadata | REL-4 |
 
 ## Generator golden tests
 
@@ -61,21 +62,36 @@ gombit new demo --database sqlite
 ```
 
 That writes a compiling app under `./demo`. The default Go module path is
-`github.com/example/demo`. Override it with `--module`. After scaffolding,
-pin the framework version:
+`github.com/example/demo`. Override it with `--module`.
 
 ```sh
 cd demo
-go get github.com/LAA-Software-Engineering/gombit@latest
-go mod tidy
 go run ./cmd/server
 ```
 
-When developing against a local checkout of Gombit, add a replace in the
-generated `go.mod` (do not commit a machine-specific path):
+No `go get` step: the generated `go.mod` requires **the same gombit version as
+the binary that scaffolded it**, and `gombit new` then runs `go mod tidy` to
+populate `go.sum`. An installed release therefore produces a tree that builds
+immediately.
 
-```
-replace github.com/LAA-Software-Engineering/gombit => /path/to/gombit
+Version resolution follows `gombit version` (see below) and falls back to
+`v0.0.0` — which the proxy cannot resolve — when the CLI reports something
+unpublishable:
+
+| CLI build | Requirement written | Tidy |
+| --- | --- | --- |
+| Release binary (ldflags) | that tag, e.g. `v0.1.0` | runs |
+| `go install ...@latest` | the module version, e.g. a pseudo-version | runs |
+| `go build` / `go run` from a checkout (`dev`, `+dirty`) | `v0.0.0` | skipped |
+| `--framework-version vX.Y.Z` | that version | runs |
+
+In the fallback case the command prints why, and the app needs a replace
+pointing at your checkout (never commit a machine-specific path):
+
+```sh
+cd demo
+go mod edit -replace github.com/LAA-Software-Engineering/gombit=/path/to/gombit
+go mod tidy
 ```
 
 ### Flags
@@ -87,6 +103,8 @@ replace github.com/LAA-Software-Engineering/gombit => /path/to/gombit
 | `--auth` | `jwt`, `cookie`, `none` | `jwt` |
 | `--ui` | `minimal`, `mui` | `minimal` |
 | `--module` | Go module path | `github.com/example/<name>` |
+| `--framework-version` | gombit version the generated `go.mod` requires | this binary's version |
+| `--skip-tidy` | | do not run `go mod tidy` (offline) |
 | `--dry-run` | | print the file list without writing |
 | `--force` | | required to write into a non-empty destination |
 
@@ -484,6 +502,48 @@ tests, pipes), the missing flags are a hard error instead of a hang.
 `createsuperuser` sets `auth.User.IsSuperuser`; ADMIN-3 treats that flag as
 a bypass for all direct and group permission checks. See
 [admin.md](admin.md).
+
+## `gombit version`
+
+```sh
+gombit version
+gombit version --short
+gombit --version
+```
+
+```text
+gombit:   v0.1.0
+commit:   9abb3c6ecc8c1bf93419aa43c4d4f1ae3de97a2b
+built:    2026-08-18T19:33:15Z
+go:       go1.25.7
+platform: linux/amd64
+```
+
+Include this output when filing a bug report — the issue form asks for it.
+
+Version resolution has three tiers, in order:
+
+1. **ldflags.** Release binaries are stamped by
+   `.github/workflows/release.yml` with
+   `-X github.com/LAA-Software-Engineering/gombit/cli.Version=<tag>` (plus
+   `Commit` and `BuildDate`).
+2. **Module build info.** A binary from
+   `go install github.com/LAA-Software-Engineering/gombit/cmd/gombit@v0.1.0`
+   carries no ldflags, so the version comes from
+   `runtime/debug.ReadBuildInfo()`. `commit` and `built` come from the
+   embedded `vcs.revision` / `vcs.time` settings when the build had them.
+3. **`dev`.** A local `go run ./cmd/gombit` or a build from a checkout
+   reports `dev` rather than Go's `(devel)`, with `unknown` for the fields
+   that have no source.
+
+`--short` prints the bare version string and nothing else, which is what you
+want in scripts:
+
+```sh
+test "$(gombit version --short)" = "v0.1.0"
+```
+
+See [installation.md](installation.md) and [releasing.md](releasing.md).
 
 ## `gombit openapi` and `gombit client`
 

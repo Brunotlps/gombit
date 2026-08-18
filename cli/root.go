@@ -56,6 +56,8 @@ func NewRoot(stdout io.Writer, stderr io.Writer) *Command {
 	root.SetOut(stdout)
 	root.SetErr(stderr)
 	root.CompletionOptions.DisableDefaultCmd = true
+	root.Version = resolveVersion()
+	root.SetVersionTemplate("gombit {{.Version}}\n")
 	root.AddCommand(newNewCommand(stdout, stderr))
 	root.AddCommand(newDevCommand(stdout, stderr))
 	root.AddCommand(newBuildCommand(stdout, stderr))
@@ -67,6 +69,7 @@ func NewRoot(stdout io.Writer, stderr io.Writer) *Command {
 	root.AddCommand(newDoctorCommand(stdout))
 	root.AddCommand(newConfigCommand(stdout, stderr))
 	root.AddCommand(newCreateSuperuserCommand(stdout))
+	root.AddCommand(newVersionCommand(stdout))
 	return root
 }
 
@@ -105,6 +108,7 @@ func rootLongHelp() string {
 		"  doctor    Check Go, Node, config, database, Redis, migrations, and ports",
 		"  config    Show typed configuration (config show)",
 		"  createsuperuser  Create a superuser (admin) account",
+		"  version   Print the gombit version and build metadata",
 	}, "\n")
 }
 
@@ -124,6 +128,7 @@ func usage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  doctor [--dir database/migrations]")
 	_, _ = fmt.Fprintln(w, "  config show")
 	_, _ = fmt.Fprintln(w, "  createsuperuser [--email you@example.com] [--password ...] [--no-input]")
+	_, _ = fmt.Fprintln(w, "  version [--short]")
 }
 
 func dbUsage(w io.Writer) {

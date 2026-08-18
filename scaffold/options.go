@@ -42,14 +42,21 @@ type Options struct {
 	Cache    string
 	Auth     string
 	UI       string
-	WorkDir  string
-	Dest     string
-	DryRun   bool
-	Force    bool
-	Stdin    io.Reader
-	Stdout   io.Writer
-	Stderr   io.Writer
-	IsTTY    func() bool
+	// FrameworkVersion is the gombit version the generated go.mod requires.
+	// Empty means derive it from the running CLI; see ResolveFrameworkVersion.
+	FrameworkVersion string
+	// Tidy runs `go mod tidy` in the generated tree so it builds without
+	// further steps. It reaches the network, so it is opt-in: the CLI enables
+	// it, library callers and tests do not.
+	Tidy    bool
+	WorkDir string
+	Dest    string
+	DryRun  bool
+	Force   bool
+	Stdin            io.Reader
+	Stdout           io.Writer
+	Stderr           io.Writer
+	IsTTY            func() bool
 }
 
 func (opts *Options) normalize() error {
@@ -76,6 +83,7 @@ func (opts *Options) normalize() error {
 	opts.Cache = strings.ToLower(strings.TrimSpace(opts.Cache))
 	opts.Auth = strings.ToLower(strings.TrimSpace(opts.Auth))
 	opts.UI = strings.ToLower(strings.TrimSpace(opts.UI))
+	opts.FrameworkVersion = strings.TrimSpace(opts.FrameworkVersion)
 	if opts.Database == "" {
 		opts.Database = DefaultDatabase
 	}
