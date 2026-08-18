@@ -42,6 +42,13 @@ export type Permissions = {
   delete: string;
 };
 
+export type Capabilities = {
+  view: boolean;
+  create: boolean;
+  update: boolean;
+  delete: boolean;
+};
+
 export type ModelMeta = {
   slug: string;
   singular: string;
@@ -54,6 +61,7 @@ export type ModelMeta = {
   ordering: string[];
   actions: Actions;
   permissions: Permissions;
+  can: Capabilities;
 };
 
 export type Catalog = {

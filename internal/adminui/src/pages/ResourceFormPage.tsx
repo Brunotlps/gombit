@@ -9,6 +9,7 @@ import { useApiClient } from "../api/client";
 import { applyContractErrors } from "../api/formErrors";
 import { ContractError } from "../api/error";
 import { FieldWidget } from "../components/FieldWidget";
+import { canCreate, canUpdate, canViewDetail } from "../capabilities";
 import { emptyFormValue, formValuesToBody, rowToFormValues, writableFields } from "../fields";
 import type { Row } from "../api/types";
 
@@ -49,7 +50,7 @@ export function ResourceFormPage({ mode }: Props) {
   });
 
   useEffect(() => {
-    if (!model || mode !== "edit" || !model.actions.update) {
+    if (!model || mode !== "edit" || !canUpdate(model) || !canViewDetail(model)) {
       setLoading(false);
       return;
     }
@@ -103,7 +104,7 @@ export function ResourceFormPage({ mode }: Props) {
         const created = await client.create(slug, body);
         const pk = model.pk || "id";
         const createdId = created.data[pk];
-        if (model.actions.detail && createdId !== undefined) {
+        if (canViewDetail(model) && createdId !== undefined) {
           navigate(`/${slug}/${String(createdId)}`);
         } else {
           navigate(`/${slug}`);
@@ -111,7 +112,7 @@ export function ResourceFormPage({ mode }: Props) {
         return;
       }
       await client.update(slug, id, body);
-      if (model.actions.detail) {
+      if (canViewDetail(model)) {
         navigate(`/${slug}/${id}`);
       } else {
         navigate(`/${slug}`);
@@ -119,6 +120,10 @@ export function ResourceFormPage({ mode }: Props) {
     } catch (err: unknown) {
       if (ContractError.unauthorized(err)) {
         setUnauthorized(true);
+        return;
+      }
+      if (ContractError.forbidden(err)) {
+        setForbidden(true);
         return;
       }
       if (!applyContractErrors(setError, err)) {
@@ -138,6 +143,12 @@ export function ResourceFormPage({ mode }: Props) {
   }
   if (mode === "edit" && !model.actions.update) {
     return <Alert severity="info">Update is disabled for {model.plural}.</Alert>;
+  }
+  if (mode === "create" && !canCreate(model)) {
+    return <Alert severity="warning">You do not have permission to create {model.plural}.</Alert>;
+  }
+  if (mode === "edit" && !canUpdate(model)) {
+    return <Alert severity="warning">You do not have permission to edit this {model.singular}.</Alert>;
   }
   if (forbidden) {
     return <Alert severity="warning">You do not have permission to edit this {model.singular}.</Alert>;

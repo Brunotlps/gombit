@@ -10,8 +10,9 @@ export function ForbiddenPage() {
           Forbidden
         </Typography>
         <Alert severity="warning" sx={{ mb: 2 }}>
-          This admin requires a superuser. Groups and permissions land in
-          ADMIN-3. Sign in with an account created by gombit createsuperuser.
+          Your account has no view permission for any registered admin model.
+          Ask an administrator for a group or direct permission, or sign in
+          with a superuser account.
         </Alert>
         <Button component={Link} to="/login" variant="contained">
           Back to login

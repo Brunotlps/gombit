@@ -1,4 +1,4 @@
-# Framework-owned admin SPA (ADMIN-2)
+# Framework-owned admin SPA (ADMIN-2 + ADMIN-3)
 
 Vite + React + TypeScript app served from `go:embed` under `/admin/`.
 Feature packages still only call `admin.Register` — there are **no**
@@ -13,6 +13,7 @@ an empty directory).
 ```sh
 cd internal/adminui
 npm ci
+npm test
 npm run typecheck
 npm run build
 ```

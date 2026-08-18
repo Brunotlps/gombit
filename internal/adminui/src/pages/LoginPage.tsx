@@ -65,8 +65,8 @@ export function LoginPage() {
           Admin sign in
         </Typography>
         <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
-          Cookie session. The CSRF token stays in memory. Superuser required
-          (gombit createsuperuser).
+          Cookie session. The CSRF token stays in memory. Admin access requires
+          a model permission or a superuser account.
         </Typography>
         {status ? (
           <Alert severity="error" sx={{ mb: 2 }}>
