@@ -68,7 +68,7 @@ func TestAdminMetaFixtureUnmarshal(t *testing.T) {
 	t.Parallel()
 
 	path := filepath.Join("testdata", "admin-meta.json")
-	raw, err := os.ReadFile(path)
+	raw, err := os.ReadFile(path) // #nosec G304 -- test fixture path
 	if err != nil {
 		t.Fatalf("read %s: %v", path, err)
 	}
