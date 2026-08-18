@@ -24,6 +24,7 @@ import { useCatalog } from "../app/providers";
 import { useApiClient } from "../api/client";
 import { ContractError } from "../api/error";
 import type { Row } from "../api/types";
+import { canCreate, canList, canViewDetail } from "../capabilities";
 import { formatCell } from "../fields";
 
 export function ResourceListPage() {
@@ -55,7 +56,7 @@ export function ResourceListPage() {
   const [unauthorized, setUnauthorized] = useState(false);
 
   useEffect(() => {
-    if (!model || !model.actions.list) {
+    if (!model || !canList(model)) {
       setLoading(false);
       return;
     }
@@ -119,6 +120,9 @@ export function ResourceListPage() {
   if (forbidden) {
     return <Alert severity="warning">You do not have permission to list {model.plural}.</Alert>;
   }
+  if (!model.can.view) {
+    return <Alert severity="warning">You do not have permission to list {model.plural}.</Alert>;
+  }
   if (!model.actions.list) {
     return <Alert severity="info">Listing is disabled for {model.plural}.</Alert>;
   }
@@ -131,7 +135,7 @@ export function ResourceListPage() {
         <Typography variant="h4" component="h1">
           {model.plural}
         </Typography>
-        {model.actions.create ? (
+        {canCreate(model) ? (
           <Button variant="contained" component={Link} to={`/${slug}/new`} startIcon={<AddIcon />}>
             New {model.singular}
           </Button>
@@ -238,10 +242,10 @@ export function ResourceListPage() {
                   return (
                     <TableRow
                       key={id || JSON.stringify(row)}
-                      hover={Boolean(model.actions.detail && id)}
-                      sx={model.actions.detail && id ? { cursor: "pointer" } : undefined}
+                      hover={Boolean(canViewDetail(model) && id)}
+                      sx={canViewDetail(model) && id ? { cursor: "pointer" } : undefined}
                       onClick={
-                        model.actions.detail && id ? () => navigate(`/${slug}/${id}`) : undefined
+                        canViewDetail(model) && id ? () => navigate(`/${slug}/${id}`) : undefined
                       }
                     >
                       {columns.map((column) => (

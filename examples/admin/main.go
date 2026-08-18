@@ -50,11 +50,7 @@ func main() {
 		if err != nil {
 			return err
 		}
-		_, err = svc.CreateSuperuser(ctx, "admin@example.com", "correct-horse-battery-staple")
-		if err != nil && !errors.Is(err, auth.ErrEmailTaken) {
-			return err
-		}
-		return nil
+		return seedAdminUsers(ctx, db, svc)
 	})
 	app.OnStop(func(context.Context) error {
 		return db.Close()
@@ -62,7 +58,35 @@ func main() {
 
 	log.Printf("admin example listening on http://%s (admin http://127.0.0.1:8082/admin/ docs http://127.0.0.1:8082/docs)", cfg.HTTP.Addr)
 	log.Printf("seeded superuser admin@example.com / correct-horse-battery-staple")
+	log.Printf("seeded view-only user viewer@example.com / correct-horse-battery-staple")
 	if err := framework.Run(app); err != nil {
 		log.Fatal(err)
 	}
+}
+
+func seedAdminUsers(ctx context.Context, db *database.DB, svc *auth.Service) error {
+	if _, err := svc.CreateSuperuser(ctx, "admin@example.com", "correct-horse-battery-staple"); err != nil &&
+		!errors.Is(err, auth.ErrEmailTaken) {
+		return err
+	}
+
+	viewer, err := svc.Register(ctx, "viewer@example.com", "correct-horse-battery-staple")
+	if errors.Is(err, auth.ErrEmailTaken) {
+		err = db.WithContext(ctx).Where("email = ?", "viewer@example.com").First(&viewer).Error
+	}
+	if err != nil {
+		return err
+	}
+	permission, err := auth.EnsurePermission(ctx, db.DB, "admin.widgets.view", "View widgets in the admin")
+	if err != nil {
+		return err
+	}
+	group, err := auth.EnsureGroup(ctx, db.DB, "viewers")
+	if err != nil {
+		return err
+	}
+	if err := auth.GrantPermissionToGroup(ctx, db.DB, &group, &permission); err != nil {
+		return err
+	}
+	return auth.AddUserToGroup(ctx, db.DB, &viewer, &group)
 }

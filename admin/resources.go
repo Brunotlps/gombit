@@ -57,7 +57,12 @@ type deleteOutput struct {
 }
 
 func (h *handlers) listResources(ctx context.Context, input *listInput) (*listOutput, error) {
-	m, err := h.modelForAction(ctx, input.Slug, func(a Actions) bool { return a.List })
+	m, err := h.modelForAction(
+		ctx,
+		input.Slug,
+		func(a Actions) bool { return a.List },
+		func(p Permissions) string { return p.View },
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -120,7 +125,12 @@ func (h *handlers) listResources(ctx context.Context, input *listInput) (*listOu
 }
 
 func (h *handlers) createResource(ctx context.Context, input *writeInput) (*rowOutput, error) {
-	m, err := h.modelForAction(ctx, input.Slug, func(a Actions) bool { return a.Create })
+	m, err := h.modelForAction(
+		ctx,
+		input.Slug,
+		func(a Actions) bool { return a.Create },
+		func(p Permissions) string { return p.Create },
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -139,7 +149,12 @@ func (h *handlers) createResource(ctx context.Context, input *writeInput) (*rowO
 }
 
 func (h *handlers) getResource(ctx context.Context, input *itemInput) (*rowOutput, error) {
-	m, err := h.modelForAction(ctx, input.Slug, func(a Actions) bool { return a.Detail })
+	m, err := h.modelForAction(
+		ctx,
+		input.Slug,
+		func(a Actions) bool { return a.Detail },
+		func(p Permissions) string { return p.View },
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -151,7 +166,12 @@ func (h *handlers) getResource(ctx context.Context, input *itemInput) (*rowOutpu
 }
 
 func (h *handlers) updateResource(ctx context.Context, input *patchInput) (*rowOutput, error) {
-	m, err := h.modelForAction(ctx, input.Slug, func(a Actions) bool { return a.Update })
+	m, err := h.modelForAction(
+		ctx,
+		input.Slug,
+		func(a Actions) bool { return a.Update },
+		func(p Permissions) string { return p.Update },
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -173,7 +193,12 @@ func (h *handlers) updateResource(ctx context.Context, input *patchInput) (*rowO
 }
 
 func (h *handlers) deleteResource(ctx context.Context, input *itemInput) (*deleteOutput, error) {
-	m, err := h.modelForAction(ctx, input.Slug, func(a Actions) bool { return a.Delete })
+	m, err := h.modelForAction(
+		ctx,
+		input.Slug,
+		func(a Actions) bool { return a.Delete },
+		func(p Permissions) string { return p.Delete },
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -191,13 +216,21 @@ func (h *handlers) deleteResource(ctx context.Context, input *itemInput) (*delet
 	return &deleteOutput{Body: contract.Data[deleteResult]{Data: deleteResult{OK: true}}}, nil
 }
 
-func (h *handlers) modelForAction(ctx context.Context, slug string, enabled func(Actions) bool) (*registered, error) {
+func (h *handlers) modelForAction(
+	ctx context.Context,
+	slug string,
+	enabled func(Actions) bool,
+	permission func(Permissions) string,
+) (*registered, error) {
 	m, ok := h.reg.get(slug)
 	if !ok {
 		return nil, contract.WithContext(ctx, contract.NotFound("unknown model"))
 	}
 	if !enabled(m.actions) {
 		return nil, contract.WithContext(ctx, contract.Authorization("action disabled"))
+	}
+	if err := h.requirePermission(ctx, permission(m.meta.Permissions)); err != nil {
+		return nil, err
 	}
 	return m, nil
 }

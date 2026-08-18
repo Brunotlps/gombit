@@ -65,6 +65,10 @@ jobs:
         with:
           node-version: "22"
 
+      - name: Run admin UI tests
+        working-directory: internal/adminui
+        run: npm ci && npm test
+
       - name: Run tests
         run: go test ./...
 

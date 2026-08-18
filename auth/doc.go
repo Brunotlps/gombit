@@ -7,4 +7,7 @@
 // hashed, and rotated on each successful refresh. The generated SPA keeps
 // both in memory — never localStorage or sessionStorage. Cookie/session
 // + CSRF (--auth cookie) is a first-class alternative (M5-3).
+//
+// Users can receive stable permission keys directly or through groups.
+// IsSuperuser bypasses every permission check.
 package auth

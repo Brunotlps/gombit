@@ -40,10 +40,11 @@ Passwords are hashed with bcrypt. Access JWTs are HS256, bound to the refresh
 row so logout (and reuse of a rotated refresh token) 401s `/me`. Reusing a
 revoked refresh token revokes that user's remaining refresh tokens.
 
-`User.IsSuperuser` is the only identity flag beyond email/password hash.
-`gombit createsuperuser` is the only path that sets it; `/auth/register`
-never does. There is no groups/permissions table yet — that is the admin
-milestone's authorization surface (ADMIN-3), not this one.
+`User.IsSuperuser` bypasses all permission checks.
+`gombit createsuperuser` is the only built-in path that sets it;
+`/auth/register` never does. Regular users receive `Permission` keys
+directly or through `Group` membership. See [admin.md](admin.md) for the
+ADMIN-3 assignment helpers and admin enforcement rules.
 
 ## Config
 

@@ -8,7 +8,6 @@ import (
 
 	"github.com/LAA-Software-Engineering/gombit/auth"
 	"github.com/LAA-Software-Engineering/gombit/config"
-	"github.com/LAA-Software-Engineering/gombit/contract"
 	"github.com/danielgtaylor/huma/v2"
 )
 
@@ -56,7 +55,7 @@ func mountRoutes(host Host, reg *registry, svc *auth.Service) {
 		prefix = "/api/v1"
 	}
 	h := &handlers{reg: reg, host: host}
-	gates := huma.Middlewares{svc.RequireCookieSession(), requireSuperuser, attachQuery}
+	gates := huma.Middlewares{svc.RequireCookieSession(), attachQuery}
 	security := []map[string][]string{{cookieSecurityName: {}}}
 	tags := []string{"Admin"}
 
@@ -129,19 +128,6 @@ func mountRoutes(host Host, reg *registry, svc *auth.Service) {
 		Security:    security,
 		Middlewares: gates,
 	}, h.deleteResource)
-}
-
-func requireSuperuser(ctx huma.Context, next func(huma.Context)) {
-	user, ok := auth.UserFromContext(ctx.Context())
-	if !ok {
-		writeEnvelope(ctx, contract.WithContext(ctx.Context(), contract.Authentication("missing session cookie")))
-		return
-	}
-	if !user.IsSuperuser {
-		writeEnvelope(ctx, contract.WithContext(ctx.Context(), contract.Authorization("admin requires a superuser")))
-		return
-	}
-	next(ctx)
 }
 
 func attachQuery(ctx huma.Context, next func(huma.Context)) {

@@ -50,7 +50,7 @@ func TestMetaEmptyCatalog(t *testing.T) {
 	if env.Meta == nil || env.Meta.Auth == nil {
 		t.Fatal("meta.auth is nil")
 	}
-	if env.Meta.Auth.Mode != "cookie" || env.Meta.Auth.Bootstrap != "is_superuser" {
+	if env.Meta.Auth.Mode != "cookie" || env.Meta.Auth.Bootstrap != "permissions" {
 		t.Fatalf("meta.auth = %+v", env.Meta.Auth)
 	}
 }
@@ -85,6 +85,9 @@ func TestMetaListsRegisteredModel(t *testing.T) {
 	if !got.Actions.List || !got.Actions.Create {
 		t.Fatalf("actions = %+v", got.Actions)
 	}
+	if !got.Can.View || !got.Can.Create || !got.Can.Update || !got.Can.Delete {
+		t.Fatalf("superuser can = %+v, want every enabled capability", got.Can)
+	}
 
 	one := doRequest(app, jar, http.MethodGet, "/api/v1/admin/meta/widgets", "")
 	if one.Code != http.StatusOK {
@@ -96,6 +99,9 @@ func TestMetaListsRegisteredModel(t *testing.T) {
 	}
 	if single.Data.Slug != "widgets" {
 		t.Fatalf("slug = %q", single.Data.Slug)
+	}
+	if !single.Data.Can.View || !single.Data.Can.Create || !single.Data.Can.Update || !single.Data.Can.Delete {
+		t.Fatalf("single superuser can = %+v, want every enabled capability", single.Data.Can)
 	}
 }
 
@@ -176,6 +182,67 @@ func TestMetaNonSuperuserForbidden(t *testing.T) {
 	jar := loginUser(t, app, "user@example.com", testPassword)
 	rec := doRequest(app, jar, http.MethodGet, "/api/v1/admin/meta", "")
 	assertError(t, rec, http.StatusForbidden, "authorization")
+}
+
+func TestMetaViewPermissionFiltersCatalogAndCapabilities(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	app := newCookieApp(t)
+	registerWidgets(t, app)
+	email := "viewer@example.com"
+	jar := loginUser(t, app, email, testPassword)
+	grantGroupPermission(t, app, email, "admin.widgets.view")
+
+	rec := doRequest(app, jar, http.MethodGet, "/api/v1/admin/meta", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("catalog status = %d; body: %s", rec.Code, rec.Body.String())
+	}
+	var env catalogEnvelope
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode catalog: %v", err)
+	}
+	if len(env.Data.Models) != 1 {
+		t.Fatalf("catalog models = %d, want 1; body: %s", len(env.Data.Models), rec.Body.String())
+	}
+	can := env.Data.Models[0].Can
+	if !can.View || can.Create || can.Update || can.Delete {
+		t.Fatalf("view-only can = %+v", can)
+	}
+
+	one := doRequest(app, jar, http.MethodGet, "/api/v1/admin/meta/widgets", "")
+	if one.Code != http.StatusOK {
+		t.Fatalf("model meta status = %d; body: %s", one.Code, one.Body.String())
+	}
+	var single modelEnvelope
+	if err := json.Unmarshal(one.Body.Bytes(), &single); err != nil {
+		t.Fatalf("decode model meta: %v", err)
+	}
+	if single.Data.Can != can {
+		t.Fatalf("model can = %+v, want %+v", single.Data.Can, can)
+	}
+}
+
+func TestMetaSuperuserCapabilitiesHonorDisabledActions(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	app := newCookieApp(t)
+	registerWidgets(t, app, func(opts *admin.Options) {
+		opts.Actions.Create = false
+	})
+	jar := loginSuperuser(t, app)
+
+	rec := doRequest(app, jar, http.MethodGet, "/api/v1/admin/meta", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("catalog status = %d; body: %s", rec.Code, rec.Body.String())
+	}
+	var env catalogEnvelope
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode catalog: %v", err)
+	}
+	if len(env.Data.Models) != 1 {
+		t.Fatalf("catalog models = %d, want 1", len(env.Data.Models))
+	}
+	if env.Data.Models[0].Can.Create {
+		t.Fatalf("superuser can.create = true when create action disabled: %+v", env.Data.Models[0].Can)
+	}
 }
 
 func TestMetaHonorsAPIPrefix(t *testing.T) {

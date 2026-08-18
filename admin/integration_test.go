@@ -60,6 +60,16 @@ func runResourceDriver(t *testing.T, driver config.DatabaseDriver, dsn string) {
 	if del.Code != http.StatusOK {
 		t.Fatalf("delete status = %d; body: %s", del.Code, del.Body.String())
 	}
+
+	email := "integration-viewer@example.com"
+	viewerJar := loginUser(t, app, email, testPassword)
+	grantGroupPermission(t, app, email, "admin.widgets.view")
+	viewOnly := doRequest(app, viewerJar, http.MethodGet, "/api/v1/admin/resources/widgets", "")
+	if viewOnly.Code != http.StatusOK {
+		t.Fatalf("view-only list status = %d; body: %s", viewOnly.Code, viewOnly.Body.String())
+	}
+	denied := doRequest(app, viewerJar, http.MethodPost, "/api/v1/admin/resources/widgets", `{"name":"Denied"}`)
+	assertError(t, denied, http.StatusForbidden, "authorization")
 }
 
 func openAdminDriver(t *testing.T, driver config.DatabaseDriver, dsn string) *database.DB {
@@ -70,6 +80,7 @@ func openAdminDriver(t *testing.T, driver config.DatabaseDriver, dsn string) *da
 	}
 	t.Cleanup(func() {
 		_ = db.Migrator().DropTable(&Widget{})
+		_ = db.Migrator().DropTable("auth_user_permissions", "auth_user_groups", "auth_group_permissions")
 		_ = db.Migrator().DropTable(auth.Models()...)
 		_ = db.Close()
 	})

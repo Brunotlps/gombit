@@ -209,7 +209,7 @@ The single biggest differentiator — **no Go web framework has a real Django-st
 - **[ADMIN-0] ADR-013: runtime generic admin over an introspection API** — decide the model-registry/introspection contract (models, fields, relations, permissions a feature-package registers) and confirm the admin is a framework-owned React app driven by that metadata endpoint — **not** `--admin` scaffolded pages. Prerequisite: session auth (C3). deps: M5-3. size: M. labels: `adr`, `admin`.
 - **[ADMIN-1] Model registry + introspection endpoint** — explicit `admin.Register(Model, opts)`; framework serves the metadata (no deep runtime reflection — principle 6.2). AC: registered models expose fields/permissions over the endpoint. deps: ADMIN-0. size: L. labels: `admin`, `runtime`.
 - **[ADMIN-2] Generic React admin app** — list/detail/create/edit/delete with filter/search/pagination, rendered from the metadata; permission-aware. AC: registering a model makes a working admin screen appear with zero per-model frontend code. deps: ADMIN-1, M5-1. size: L. labels: `admin`, `frontend`.
-- **[ADMIN-3] Admin auth + authorization** — session-gated admin, groups/permissions enforced. AC: non-permitted users are refused; superuser (M4-6) has full access. deps: ADMIN-2, M5-3. size: M. labels: `admin`, `auth`, `security`.
+- **[ADMIN-3] Admin auth + authorization** — session-gated admin, groups/permissions enforced. AC: non-permitted users are refused; superuser (M4-6) has full access. deps: ADMIN-2, M5-3. size: M. labels: `admin`, `auth`, `security`. — **done**
 
 ### M6 — Deferred batteries (POST-v0.1, not on the critical path)
 

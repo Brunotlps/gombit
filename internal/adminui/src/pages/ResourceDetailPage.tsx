@@ -18,6 +18,7 @@ import { useCatalog } from "../app/providers";
 import { useApiClient } from "../api/client";
 import { ContractError } from "../api/error";
 import type { Row } from "../api/types";
+import { canDelete, canUpdate, canViewDetail } from "../capabilities";
 import { formatCell } from "../fields";
 
 export function ResourceDetailPage() {
@@ -34,7 +35,7 @@ export function ResourceDetailPage() {
   const [unauthorized, setUnauthorized] = useState(false);
 
   useEffect(() => {
-    if (!model || !model.actions.detail) {
+    if (!model || !canViewDetail(model)) {
       setLoading(false);
       return;
     }
@@ -82,6 +83,10 @@ export function ResourceDetailPage() {
         setUnauthorized(true);
         return;
       }
+      if (ContractError.forbidden(err)) {
+        setForbidden(true);
+        return;
+      }
       setStatus(err instanceof Error ? err.message : "delete failed");
     }
   }
@@ -91,6 +96,9 @@ export function ResourceDetailPage() {
   }
   if (!model) {
     return <Alert severity="warning">Unknown model.</Alert>;
+  }
+  if (!model.can.view) {
+    return <Alert severity="warning">You do not have permission to view this {model.singular}.</Alert>;
   }
   if (!model.actions.detail) {
     return <Alert severity="info">Detail is disabled for {model.plural}.</Alert>;
@@ -125,12 +133,12 @@ export function ResourceDetailPage() {
         <Button component={Link} to={`/${slug}`}>
           Back to list
         </Button>
-        {model.actions.update ? (
+        {canUpdate(model) ? (
           <Button variant="contained" component={Link} to={`/${slug}/${id}/edit`}>
             Edit
           </Button>
         ) : null}
-        {model.actions.delete ? (
+        {canDelete(model) ? (
           <Button color="error" onClick={() => void onDelete()}>
             Delete
           </Button>

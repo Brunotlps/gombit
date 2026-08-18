@@ -1,4 +1,4 @@
-# Admin (ADMIN-1 + ADMIN-2)
+# Admin (ADMIN-1 through ADMIN-3)
 
 Gombit's Django-style admin is a **runtime generic admin** over an explicit
 model registry, a Huma introspection + data-plane API, and a
@@ -10,8 +10,8 @@ framework-owned React SPA under `/admin/`
 | --- | --- |
 | ADMIN-0 (#33) | ADR-013. Done. |
 | ADMIN-1 (#34) | `admin.Register` + `GET /api/v1/admin/meta` + generic `/api/v1/admin/resources/{slug}` |
-| ADMIN-2 (#35) | Framework-owned SPA under `/admin/` (this tree) |
-| ADMIN-3 | Groups/permissions on top of `IsSuperuser` — not here |
+| ADMIN-2 (#35) | Framework-owned SPA under `/admin/` |
+| ADMIN-3 (#36) | Session-gated direct/group permissions with a superuser bypass |
 
 ## When routes mount
 
@@ -22,17 +22,38 @@ when cookie session auth is on (`cfg.Auth.Mode == cookie` /
 OpenAPI). Dual Bearer-API + cookie-admin in one process is not introduced
 here.
 
-Session is required for the API. Until ADMIN-3, `auth.User.IsSuperuser`
-is the only admin principal (`gombit createsuperuser`). `/auth/register`
-never sets that flag. The SPA itself is public HTML (anonymous
-`GET /admin/` returns the shell and redirects to `/admin/login`).
+Session is required for the API. Regular users receive permission keys
+directly or through `auth.Group`; `auth.User.IsSuperuser` bypasses every
+permission check (`gombit createsuperuser`). `/auth/register` never sets
+that flag. The SPA itself is public HTML (anonymous `GET /admin/` returns
+the shell and redirects to `/admin/login`).
 
 | Caller | Admin API result |
 | --- | --- |
 | Anonymous | D10 `authentication` (401) |
-| Authenticated non-superuser | D10 `authorization` (403) — SPA shows a forbidden page |
-| Superuser, disabled action | D10 `authorization` (403) |
-| Superuser, unknown slug or id | D10 `not_found` (404) |
+| Authenticated without a required permission | D10 `authorization` (403) |
+| Superuser, enabled action | Allowed without a permission row |
+| Any authenticated user, disabled action | D10 `authorization` (403) |
+| Any authenticated user, unknown slug or id | D10 `not_found` (404) |
+
+`GET /admin/meta` returns only models for which the user has the registered
+view key. A regular user with no visible model receives 403, preventing
+catalog probing. Each model includes current-user `can.view/create/update/delete`;
+each value requires both the permission grant and an enabled action.
+
+Seed a group after the application has migrated the auth models:
+
+```go
+permission, _ := auth.EnsurePermission(ctx, db, "admin.widgets.view", "View widgets")
+viewers, _ := auth.EnsureGroup(ctx, db, "viewers")
+_ = auth.GrantPermissionToGroup(ctx, db, &viewers, &permission)
+_ = auth.AddUserToGroup(ctx, db, &user, &viewers)
+```
+
+Generated applications include `auth.User`, `auth.RefreshToken`,
+`auth.Group`, and `auth.Permission` in their complete `AutoMigrate`/Atlas
+desired-schema list. Production `gombit createsuperuser` still does not run
+`AutoMigrate`; migrate the application before invoking it.
 
 CSRF on POST/PATCH/DELETE is the existing M5-3 global middleware
 (`X-CSRF-Token`). See [auth-cookie.md](auth-cookie.md).
@@ -56,14 +77,15 @@ mode + seeded superuser). Screens are driven only by:
   `POST /api/v1/auth/logout`, `GET /api/v1/me`
 
 Anonymous `/admin` redirects to `/admin/login`. After login the catalog
-lists `data.models` (empty catalog is a valid empty state; models with
-`actions.list === false` are shown but not linked). List/detail/
-create/edit/delete honor `actions.*`. Field widgets cover the closed
+lists authorized `data.models` (a superuser can receive an empty catalog
+when nothing is registered; models with `actions.list === false` are shown
+but not linked). List/detail/create/edit/delete honor both `actions.*` and
+the current user's `can.*`. Field widgets cover the closed
 ADMIN-1 types; `belongs_to` is an FK input; `has_many` is read-only.
 `datetime-local` values are converted to RFC3339 before POST/PATCH.
 401 (including session expiry on list/detail/edit) returns to login;
-catalog 403 (non-superuser) shows a forbidden page; other catalog
-errors show the D10 message.
+catalog 403 shows a forbidden page; other catalog errors show the D10
+message.
 
 The SPA does **not** bake `/api/v1` at Vite build time. Gin injects
 `config.API.Prefix` when serving `index.html` (placeholder
@@ -143,8 +165,8 @@ arbitrary Go types.
   include the values. Search and filter still require an explicit field.
   If the model has no such GORM column, `Register` errors.
 - Zero `Actions` defaults to all enabled. Empty `Permissions` default to
-  `admin.{slug}.{view,create,update,delete}` and are echoed in meta only
-  (ADMIN-3 enforces them).
+  `admin.{slug}.{view,create,update,delete}`. Admin handlers enforce the
+  stored keys, including custom keys, and echo them in meta.
 
 Closed field types: `string`, `text`, `integer`, `float`, `decimal`,
 `boolean`, `datetime`, `date`, `uuid`, `json`, `relation`.
@@ -168,7 +190,7 @@ Paths honor `config.API.Prefix` (default `/api/v1`) and appear in OpenAPI.
 
 | Method | Path | Body |
 | --- | --- | --- |
-| `GET` | `/api/v1/admin/meta` | `{ "data": { "models": [ ... ] }, "meta"?: { "auth": { "mode": "cookie", "bootstrap": "is_superuser" } } }` |
+| `GET` | `/api/v1/admin/meta` | `{ "data": { "models": [ ... ] }, "meta"?: { "auth": { "mode": "cookie", "bootstrap": "permissions" } } }` |
 | `GET` | `/api/v1/admin/meta/{slug}` | `{ "data": { /* one model */ } }` — 404 `not_found` if unknown |
 | `GET` | `/api/v1/admin/resources/{slug}` | list; `meta` is `contract.PageMeta` (`page`, `per_page`, `total`) |
 | `POST` | `/api/v1/admin/resources/{slug}` | create writable fields |
@@ -200,15 +222,14 @@ routes. Admin does not replace them.
 ## Example
 
 [`examples/admin`](../examples/admin) — cookie mode + SQLite +
-`admin.Register` of `widget.Widget`, plus the `/admin/` SPA. Superuser is
-seeded with `auth.Service.CreateSuperuser` (same path as
-`gombit createsuperuser`). Curl for meta and one CRUD cycle is still in
-that README.
+`admin.Register` of `widget.Widget`, plus the `/admin/` SPA. It seeds a
+superuser with `auth.Service.CreateSuperuser` (the same path as
+`gombit createsuperuser`) and a `viewers` group with only
+`admin.widgets.view`. Curl for meta and one CRUD cycle is in that README.
 
 ## Out of scope
 
-- Groups/permissions tables (ADMIN-3); permission **keys** only; action
-  flags are the ADMIN-2 permission story
+- Full users/groups management screens in the admin SPA
 - `--admin` generator / golden template changes / copying the SPA into
   generated `frontend/`
 - `gombit dev` Admin URL in the service table

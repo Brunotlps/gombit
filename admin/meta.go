@@ -3,6 +3,7 @@ package admin
 import (
 	"context"
 
+	"github.com/LAA-Software-Engineering/gombit/auth"
 	"github.com/LAA-Software-Engineering/gombit/contract"
 )
 
@@ -16,7 +17,7 @@ type CatalogAux struct {
 	Auth *AuthMeta `json:"auth,omitempty"`
 }
 
-// AuthMeta tells the SPA which bootstrap rule is in force until ADMIN-3.
+// AuthMeta tells the SPA which authorization rule guards the catalog.
 type AuthMeta struct {
 	Mode      string `json:"mode"`
 	Bootstrap string `json:"bootstrap"`
@@ -24,17 +25,26 @@ type AuthMeta struct {
 
 // ModelMeta is one registered model in the introspection API.
 type ModelMeta struct {
-	Slug        string      `json:"slug"`
-	Singular    string      `json:"singular"`
-	Plural      string      `json:"plural"`
-	PK          string      `json:"pk"`
-	Fields      []FieldMeta `json:"fields"`
-	List        []string    `json:"list"`
-	Search      []string    `json:"search"`
-	Filter      []string    `json:"filter"`
-	Ordering    []string    `json:"ordering"`
-	Actions     Actions     `json:"actions"`
-	Permissions Permissions `json:"permissions"`
+	Slug        string       `json:"slug"`
+	Singular    string       `json:"singular"`
+	Plural      string       `json:"plural"`
+	PK          string       `json:"pk"`
+	Fields      []FieldMeta  `json:"fields"`
+	List        []string     `json:"list"`
+	Search      []string     `json:"search"`
+	Filter      []string     `json:"filter"`
+	Ordering    []string     `json:"ordering"`
+	Actions     Actions      `json:"actions"`
+	Permissions Permissions  `json:"permissions"`
+	Can         Capabilities `json:"can"`
+}
+
+// Capabilities are the current user's enabled actions for one model.
+type Capabilities struct {
+	View   bool `json:"view"`
+	Create bool `json:"create"`
+	Update bool `json:"update"`
+	Delete bool `json:"delete"`
 }
 
 // FieldMeta is the introspection shape of a field (no Column).
@@ -100,14 +110,30 @@ func cloneStrings(in []string) []string {
 
 func (h *handlers) listMeta(ctx context.Context, _ *struct{}) (*catalogOutput, error) {
 	models := h.reg.all()
+	user, ok := auth.UserFromContext(ctx)
+	if !ok {
+		return nil, contract.WithContext(ctx, contract.Authentication("missing session cookie"))
+	}
+	grants, err := h.permissionGrants(ctx, permissionKeys(models)...)
+	if err != nil {
+		return nil, err
+	}
 	catalog := Catalog{Models: make([]ModelMeta, 0, len(models))}
 	for _, m := range models {
-		catalog.Models = append(catalog.Models, m.meta)
+		if !grants[m.meta.Permissions.View] {
+			continue
+		}
+		meta := m.meta
+		meta.Can = capabilities(m, grants)
+		catalog.Models = append(catalog.Models, meta)
+	}
+	if len(catalog.Models) == 0 && !user.IsSuperuser {
+		return nil, contract.WithContext(ctx, contract.Authorization("no admin view permissions"))
 	}
 	return &catalogOutput{
 		Body: contract.DataMeta[Catalog, CatalogAux]{
 			Data: catalog,
-			Meta: &CatalogAux{Auth: &AuthMeta{Mode: "cookie", Bootstrap: "is_superuser"}},
+			Meta: &CatalogAux{Auth: &AuthMeta{Mode: "cookie", Bootstrap: "permissions"}},
 		},
 	}, nil
 }
@@ -117,5 +143,19 @@ func (h *handlers) getMeta(ctx context.Context, input *slugInput) (*modelOutput,
 	if !ok {
 		return nil, contract.WithContext(ctx, contract.NotFound("unknown model"))
 	}
-	return &modelOutput{Body: contract.Data[ModelMeta]{Data: m.meta}}, nil
+	grants, err := h.permissionGrants(ctx,
+		m.meta.Permissions.View,
+		m.meta.Permissions.Create,
+		m.meta.Permissions.Update,
+		m.meta.Permissions.Delete,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if !grants[m.meta.Permissions.View] {
+		return nil, contract.WithContext(ctx, contract.Authorization("admin permission denied"))
+	}
+	meta := m.meta
+	meta.Can = capabilities(m, grants)
+	return &modelOutput{Body: contract.Data[ModelMeta]{Data: meta}}, nil
 }
