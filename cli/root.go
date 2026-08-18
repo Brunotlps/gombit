@@ -28,8 +28,8 @@ func AddCommand(root *Command, cmds ...*Command) {
 	root.AddCommand(cmds...)
 }
 
-// NewRoot returns the framework Cobra tree (new, dev, make, db, openapi,
-// client, routes, doctor, config). Generated apps call NewRoot, then
+// NewRoot returns the framework Cobra tree (new, dev, build, make, db, openapi,
+// client, routes, doctor, config, createsuperuser). Generated apps call NewRoot, then
 // feature-package RegisterCommands, then ExecuteRoot.
 func NewRoot(stdout io.Writer, stderr io.Writer) *Command {
 	if stdout == nil {
@@ -58,6 +58,7 @@ func NewRoot(stdout io.Writer, stderr io.Writer) *Command {
 	root.CompletionOptions.DisableDefaultCmd = true
 	root.AddCommand(newNewCommand(stdout, stderr))
 	root.AddCommand(newDevCommand(stdout, stderr))
+	root.AddCommand(newBuildCommand(stdout, stderr))
 	root.AddCommand(newMakeCommand(stdout, stderr))
 	root.AddCommand(newDBCommand(stdout, stderr))
 	root.AddCommand(newOpenAPICommand(stdout, stderr))
@@ -95,6 +96,7 @@ func rootLongHelp() string {
 		"Command families:",
 		"  new       Scaffold a new application",
 		"  dev       Run the API and Vite frontend together",
+		"  build     Production build (embed is opt-in via --embed)",
 		"  make      Generate application code (resource, command)",
 		"  db        Database migrations (makemigrations, migrate, rollback, status, seed, reset)",
 		"  openapi   Write the live OpenAPI 3.1 document",
@@ -111,6 +113,7 @@ func usage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "available commands:")
 	_, _ = fmt.Fprintln(w, "  new [name]        scaffold a new Gombit application")
 	_, _ = fmt.Fprintln(w, "  dev               run the API and Vite frontend together")
+	_, _ = fmt.Fprintln(w, "  build --embed     collectstatic + compile a single binary (opt-in)")
 	_, _ = fmt.Fprintln(w, "  make resource     generate a feature-package resource")
 	_, _ = fmt.Fprintln(w, "  make command      generate a management command")
 	_, _ = fmt.Fprintln(w, "  db <subcommand>   see gombit db")

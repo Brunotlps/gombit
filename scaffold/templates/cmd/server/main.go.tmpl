@@ -9,6 +9,7 @@ import (
 
 	"{{.Module}}/internal/platform"
 	"{{.Module}}/internal/product"
+	"{{.Module}}/internal/web"
 )
 
 func main() {
@@ -25,6 +26,7 @@ func main() {
 	app, err := framework.New(
 		framework.WithConfig(cfg),
 		framework.WithDatabase(db),
+		framework.WithEmbeddedFrontend(web.FS()),
 	)
 	if err != nil {
 		_ = db.Close()

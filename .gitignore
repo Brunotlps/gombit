@@ -8,7 +8,6 @@
 *.out
 /bin/
 /dist/
-/build/
 
 # Go workspace / module tooling
 vendor/

@@ -22,6 +22,7 @@ go run ./cmd/gombit --help
 | --- | --- | --- |
 | `gombit new` | Scaffold an application | M4-1 |
 | `gombit dev` | Run API + Vite with HMR and live client regen | M4-2 |
+| `gombit build --embed` | Optional single-binary (collectstatic + `go:embed`) | M5-5 |
 | `gombit make resource` | Generate a feature-package resource (AST-safe) | M4-3 |
 | `gombit make command` | Scaffold a Cobra management command (AST-safe) | M4-7 |
 | `gombit db …` | Atlas-backed migrations | M2, migrated onto Cobra in M4-1 |
@@ -116,7 +117,8 @@ demo/
 ├── cmd/gombit/main.go    # framework tree + product.RegisterCommands
 ├── internal/
 │   ├── platform/
-│   └── product/          # model, handler.go, routes.go, commands.go
+│   ├── product/          # model, handler.go, routes.go, commands.go
+│   └── web/              # go:embed hook (static/.keep placeholder; no index.html)
 ├── database/migrations/
 ├── database/seeds/
 ├── config/
@@ -128,8 +130,11 @@ demo/
 └── README.md
 ```
 
-`cmd/server/main.go` calls `config.Load()`, `framework.New`, registers
-`internal/product` routes explicitly (no reflection), and `framework.Run`.
+`cmd/server/main.go` calls `config.Load()`, `framework.New` (including
+`framework.WithEmbeddedFrontend`), registers `internal/product` routes
+explicitly (no reflection), and `framework.Run`. The placeholder embed has
+no `index.html`, so `go run ./cmd/server` after `gombit new` does not
+install SPA fallback. See [build.md](build.md) for `gombit build --embed`.
 `cmd/gombit/main.go` calls `cli.NewRoot`, `product.RegisterCommands(root)`,
 and `cli.ExecuteRoot`. Public product routes are Huma-typed under `/api/v1`.
 There is no generated `service.go` or `repo.go` until
@@ -193,7 +198,48 @@ group so air/npm grandchildren exit. On Windows, teardown uses
 The scaffold is a Vite + React + TypeScript skeleton. See
 [frontend.md](frontend.md). `--ui mui` is documented in
 [frontend-mui.md](frontend-mui.md). Bearer login is documented in
-[auth.md](auth.md).
+[auth.md](auth.md). Split deploy is the default; production embed is
+[`gombit build --embed`](#gombit-build---embed).
+
+## `gombit build --embed`
+
+From an application directory (the output of `gombit new`):
+
+```sh
+gombit build --embed
+gombit build --embed --out bin/server
+gombit build --embed --dry-run
+```
+
+Split deploy is the default (C5). A bare `gombit build` without `--embed`
+is an error — it does not silently switch production to a single binary.
+
+`--embed` runs the Django `collectstatic` equivalent folded into the
+production build:
+
+1. Require `frontend/package.json` (same class of error as `gombit dev`).
+2. Vite production build in `frontend/` (`pnpm` when available or when
+   `frontend/pnpm-lock.yaml` exists, otherwise `npm run build`).
+3. Copy `frontend/dist` → `internal/web/static` (replace previous assets;
+   do not delete `internal/web/embed.go`). Fail if `frontend/dist/index.html`
+   is missing after the Vite build.
+4. `go build ./cmd/server` to `--out` (default `bin/server`).
+
+The compiled binary serves Huma `/api/*`, `/openapi.json`, `/docs`,
+`/livez`, `/readyz`, `/metrics`, real files from the embed FS, and
+`index.html` for unmatched GET frontend routes (`/`, `/login`,
+`/products/new`). Non-GET unmatched routes stay 404. See
+[build.md](build.md).
+
+### Flags
+
+| Flag | Default | Role |
+| --- | --- | --- |
+| `--embed` | off (required for v0.1) | Opt in to collectstatic + `go:embed` |
+| `--out` | `bin/server` | Output binary path |
+| `--dry-run` | | Print the plan without writing or compiling |
+
+`frontend/package.json` is required. `--dry-run` writes nothing.
 
 ## `gombit make resource`
 
@@ -320,8 +366,8 @@ Registration edits use `go/ast` + `go/parser` + `go/format` (never regex).
 (or a user-owned file) is refused unless `--force`. `commands.go` and
 `cmd/gombit/main.go` are additive AST edits of known registration points.
 
-Command names that collide with framework families (`new`, `dev`, `make`,
-`db`, `openapi`, `client`, `routes`, `doctor`, `config`, `help`,
+Command names that collide with framework families (`new`, `dev`, `build`,
+`make`, `db`, `openapi`, `client`, `routes`, `doctor`, `config`, `help`,
 `completion`) are rejected.
 
 ## `gombit db`

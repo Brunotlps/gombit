@@ -3,7 +3,8 @@
 Gombit is a Django-for-Go full-stack framework. The current repository has
 typed config, `framework.App` lifecycle, Huma contract/OpenAPI/client
 generation, Atlas-backed `gombit db` migrations, and a Cobra CLI that
-scaffolds apps with `gombit new` and runs them with `gombit dev`.
+scaffolds apps with `gombit new`, runs them with `gombit dev`, and optionally
+embeds the Vite frontend with `gombit build --embed`.
 
 ## Development
 
@@ -41,7 +42,8 @@ default). See [`docs/openapi.md`](docs/openapi.md).
 The authoritative implementation backlog and architecture decisions live in
 [`docs/GOMBIT_BUILD_PLAN.md`](docs/GOMBIT_BUILD_PLAN.md).
 
-The Cobra command tree, `gombit new`, `gombit dev`, `gombit make resource`,
+The Cobra command tree, `gombit new`, `gombit dev`, `gombit build --embed`,
+`gombit make resource`,
 `gombit make command`, `gombit routes`, `gombit doctor`, and
 `gombit config show` are documented in [`docs/cli.md`](docs/cli.md).
 Accepted architecture decisions are recorded under [`docs/adr/`](docs/adr/).
@@ -53,6 +55,7 @@ OpenAPI emission and `/docs` are documented in [`docs/openapi.md`](docs/openapi.
 TypeScript client generation and the contract drift check are documented in
 [`docs/client.md`](docs/client.md).
 The Vite + React skeleton is documented in [`docs/frontend.md`](docs/frontend.md).
+Optional `go:embed` production is documented in [`docs/build.md`](docs/build.md).
 Bearer JWT login is documented in [`docs/auth.md`](docs/auth.md); cookie/session
 auth (`--auth cookie`) and its CSRF threat model are documented in
 [`docs/auth-cookie.md`](docs/auth-cookie.md).

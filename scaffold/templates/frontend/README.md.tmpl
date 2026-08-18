@@ -24,6 +24,16 @@ gombit dev
 That starts the Go API, Vite HMR, and live `gombit client generate` into
 `src/api/generated`. Vite proxies `/api`, `/openapi.json`, and `/docs`.
 
+Optional single-binary production (split remains the default):
+
+```sh
+gombit build --embed
+```
+
+That runs the Vite production build, copies `dist/` into
+`internal/web/static`, and compiles `./cmd/server`. See the framework
+[`docs/build.md`](https://github.com/LAA-Software-Engineering/gombit/blob/main/docs/build.md).
+
 Public API origin:
 
 ```

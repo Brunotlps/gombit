@@ -11,7 +11,8 @@ variants documented in [auth-cookie.md](auth-cookie.md). Auth behavior is
 independent of the UI preset: `--auth cookie --ui mui` still has CSRF
 double-submit **and** MUI screens.
 
-See also [cli.md](cli.md) (`gombit new`, `gombit dev`) and
+See also [cli.md](cli.md) (`gombit new`, `gombit dev`, `gombit build --embed`),
+[build.md](build.md) (collectstatic + SPA fallback), and
 [client.md](client.md) (TypeScript client generation).
 
 ## Stack
@@ -112,6 +113,14 @@ gombit dev
 `gombit make resource` honors `ui:` in `gombit.yaml`. Default (`minimal`
 or missing) stays headless; `ui: mui` emits MUI Table/TextField pages.
 
-## What is not here yet
+## Split vs embed (C5)
 
-- `go:embed` single-binary SPA: M5-5
+Split deploy is the default. The Vite app is a separate origin; set
+`VITE_API_URL` to the API origin for production. Optional single-binary
+deploy is `gombit build --embed`: Vite production build, collectstatic into
+`internal/web/static`, `go:embed`, `go build ./cmd/server`. The binary
+serves API + static assets + `index.html` SPA fallback. After `gombit new`,
+`go run ./cmd/server` still works without a Vite `dist` — the placeholder
+embed has no `index.html`, so unknown paths stay 404.
+
+See [build.md](build.md) and [cli.md](cli.md#gombit-build---embed).

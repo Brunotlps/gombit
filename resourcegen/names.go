@@ -18,6 +18,7 @@ var goKeywords = map[string]struct{}{
 var reservedPackages = map[string]struct{}{
 	"platform": {}, "cmd": {}, "config": {}, "database": {}, "frontend": {},
 	"internal": {}, "main": {}, "testdata": {}, "vendor": {}, "commands": {},
+	"web": {},
 }
 
 var reservedFields = map[string]struct{}{

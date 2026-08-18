@@ -33,6 +33,8 @@ func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
 		"internal/product/handler.go",
 		"internal/product/routes.go",
 		"internal/product/commands.go",
+		"internal/web/embed.go",
+		"internal/web/static/.keep",
 		"database/migrations/.gitkeep",
 		"database/seeds/.gitkeep",
 		"config/README.md",
@@ -146,6 +148,28 @@ func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
 	commands := readFile(t, filepath.Join(dest, "internal", "product", "commands.go"))
 	if !strings.Contains(commands, "func RegisterCommands") {
 		t.Fatal("internal/product/commands.go missing RegisterCommands")
+	}
+
+	embedGo := readFile(t, filepath.Join(dest, "internal", "web", "embed.go"))
+	if !strings.Contains(embedGo, "//go:embed all:static") {
+		t.Fatal("internal/web/embed.go missing //go:embed all:static")
+	}
+	if !strings.Contains(embedGo, "func FS()") {
+		t.Fatal("internal/web/embed.go missing FS helper")
+	}
+	indexPath := filepath.Join(dest, "internal", "web", "static", "index.html")
+	if _, err := os.Stat(indexPath); !os.IsNotExist(err) {
+		t.Fatal("placeholder embed must not include index.html")
+	}
+	serverMain := readFile(t, filepath.Join(dest, "cmd", "server", "main.go"))
+	if !strings.Contains(serverMain, "framework.WithEmbeddedFrontend(web.FS())") {
+		t.Fatal("cmd/server/main.go does not pass WithEmbeddedFrontend")
+	}
+	gitignore := readFile(t, filepath.Join(dest, ".gitignore"))
+	for _, want := range []string{"internal/web/static/*", "!internal/web/static/.keep", "bin/"} {
+		if !strings.Contains(gitignore, want) {
+			t.Fatalf(".gitignore missing %q:\n%s", want, gitignore)
+		}
 	}
 
 	viteConfig := readFile(t, filepath.Join(dest, "frontend", "vite.config.ts"))

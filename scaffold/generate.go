@@ -157,6 +157,10 @@ func renderFiles(vars templateVars) ([]renderedFile, error) {
 	files = append(files,
 		renderedFile{relPath: "database/migrations/.gitkeep", content: []byte("")},
 		renderedFile{relPath: "database/seeds/.gitkeep", content: []byte("")},
+		// .keep (not a template) so go:embed all:static compiles after gombit
+		// new. No index.html: framework.WithEmbeddedFrontend is a no-op until
+		// gombit build --embed collectstatics frontend/dist here.
+		renderedFile{relPath: "internal/web/static/.keep", content: []byte("")},
 	)
 	sort.Slice(files, func(i, j int) bool {
 		return files[i].relPath < files[j].relPath

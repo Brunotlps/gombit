@@ -9,11 +9,11 @@ a generated React+TypeScript frontend, Atlas-backed migrations. Module path
 This repo has completed M0–M4 and started **M5 frontend**. It has typed
 `config.Config`, `framework.App` lifecycle and routing, Huma contract/OpenAPI/
 TypeScript client generation, Atlas-backed migrations, a Cobra `gombit`
-command tree (`new`, `dev`, `make resource`, `make command`, `db`, `openapi`,
-`client`), and a Vite + React + TypeScript minimal skeleton (router,
-generated client, React Hook Form). Bearer login (M5-2), cookie/CSRF
-(M5-3), and the MUI preset (M5-4, `--ui mui`) are in. The M5-5 embed
-build and M6 batteries are not here yet.
+command tree (`new`, `dev`, `build --embed`, `make resource`, `make command`,
+`db`, `openapi`, `client`), and a Vite + React + TypeScript minimal skeleton
+(router, generated client, React Hook Form). Bearer login (M5-2), cookie/CSRF
+(M5-3), the MUI preset (M5-4, `--ui mui`), and optional `gombit build --embed`
+(M5-5) are in. M6 batteries are not here yet.
 Don't assume generated apps are committed in-tree; `gombit new` writes them
 on demand. Check `git log` / `ls` before describing "how the code works."
 

@@ -33,8 +33,9 @@ The Go module path defaults to github.com/example/<name> (--module).
 docs/auth-cookie.md). --ui mui scaffolds the MUI CRUD preset
 (ThemeProvider, AppBar, Table, TextField); the default UI stays
 minimal/headless. The generated frontend is a Vite + React skeleton.
---dry-run prints the file list without writing. A non-empty destination
-requires --force.`,
+Split deploy is the default (C5); gombit build --embed is the optional
+single-binary path. --dry-run prints the file list without writing. A
+non-empty destination requires --force.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts := scaffold.Options{
