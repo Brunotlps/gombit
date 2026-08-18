@@ -25,7 +25,6 @@ func AutoMigrate(db *database.DB) error {
 		&auth.RefreshToken{},
 		&auth.Group{},
 		&auth.Permission{},
-		&product.Product{},
-		&book.Book{},
+		&product.Product{}, &book.Book{},
 	)
 }
