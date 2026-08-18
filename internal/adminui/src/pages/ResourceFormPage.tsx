@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useForm, type FieldValues } from "react-hook-form";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, Navigate, useNavigate, useParams } from "react-router";
 
 import { Alert, Box, Button, CircularProgress, Paper, Typography } from "@mui/material";
 
@@ -25,6 +25,7 @@ export function ResourceFormPage({ mode }: Props) {
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(mode === "edit");
   const [forbidden, setForbidden] = useState(false);
+  const [unauthorized, setUnauthorized] = useState(false);
 
   const defaults = useMemo(() => {
     const values: Row = {};
@@ -65,7 +66,11 @@ export function ResourceFormPage({ mode }: Props) {
         if (cancelled) {
           return;
         }
-        if (err instanceof ContractError && err.status === 403) {
+        if (ContractError.unauthorized(err)) {
+          setUnauthorized(true);
+          return;
+        }
+        if (ContractError.forbidden(err)) {
           setForbidden(true);
           return;
         }
@@ -112,12 +117,19 @@ export function ResourceFormPage({ mode }: Props) {
         navigate(`/${slug}`);
       }
     } catch (err: unknown) {
+      if (ContractError.unauthorized(err)) {
+        setUnauthorized(true);
+        return;
+      }
       if (!applyContractErrors(setError, err)) {
         setStatus(err instanceof Error ? err.message : "request failed");
       }
     }
   }
 
+  if (unauthorized) {
+    return <Navigate to="/login" replace />;
+  }
   if (!model) {
     return <Alert severity="warning">Unknown model.</Alert>;
   }

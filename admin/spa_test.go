@@ -41,6 +41,61 @@ func TestAdminSPAServesIndexFallback(t *testing.T) {
 		if !strings.Contains(csp, "'unsafe-inline'") {
 			t.Fatalf("GET %s CSP = %q, want style-src unsafe-inline", path, csp)
 		}
+
+		head := doRequest(app, nil, http.MethodHead, path, "")
+		if head.Code != http.StatusOK {
+			t.Fatalf("HEAD %s status = %d, want %d", path, head.Code, http.StatusOK)
+		}
+		if ct := head.Header().Get("Content-Type"); !strings.Contains(ct, "text/html") {
+			t.Fatalf("HEAD %s Content-Type = %q, want text/html", path, ct)
+		}
+	}
+}
+
+func TestAdminSPAIndexHonorsAPIPrefix(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := openSQLite(t)
+	if err := auth.Migrate(db.DB); err != nil {
+		t.Fatalf("auth.Migrate: %v", err)
+	}
+	cfg := config.DefaultFor(config.EnvironmentTest)
+	cfg.HTTP.Addr = "127.0.0.1:0"
+	cfg.Auth.JWTSecret = testJWTSecret
+	cfg.Auth.BcryptCost = bcrypt.MinCost
+	cfg.Auth.AccessTokenTTL = time.Minute
+	cfg.Auth.RefreshTokenTTL = time.Hour
+	cfg.Auth.Mode = config.AuthModeCookie
+	cfg.API.Prefix = "/svc/v2"
+	app, err := framework.New(
+		framework.WithConfig(cfg),
+		framework.WithDatabase(db),
+		framework.WithLogger(zap.NewNop()),
+	)
+	if err != nil {
+		t.Fatalf("framework.New: %v", err)
+	}
+
+	rec := doRequest(app, nil, http.MethodGet, "/admin/", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /admin/ status = %d; body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, "/svc/v2") {
+		t.Fatalf("GET /admin/ missing runtime prefix /svc/v2: %s", truncateBody(body))
+	}
+	if strings.Contains(body, "__GOMBIT_API_PREFIX__") {
+		t.Fatal("GET /admin/ still contains __GOMBIT_API_PREFIX__ placeholder")
+	}
+
+	rec = doRequest(app, nil, http.MethodGet, "/admin/config.json", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /admin/config.json status = %d; body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "/svc/v2") {
+		t.Fatalf("GET /admin/config.json = %s, want /svc/v2", rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "/api/v1") {
+		t.Fatalf("GET /admin/config.json should not mention /api/v1: %s", rec.Body.String())
 	}
 }
 

@@ -23,4 +23,6 @@ tree into generated `frontend/`. Do not add `--admin` to
 
 `base` is `/admin/` so hashed assets are `/admin/assets/…`. Auth is
 cookie + CSRF only. Tokens and CSRF stay out of `localStorage` /
-`sessionStorage`. `VITE_API_URL` is empty (same-origin `/api/v1`).
+`sessionStorage`. `VITE_API_URL` is origin-only (empty = same-origin).
+The API path prefix is injected at serve time from `config.API.Prefix`
+(`__GOMBIT_API_PREFIX__` in `index.html`); do not set it via `VITE_*`.

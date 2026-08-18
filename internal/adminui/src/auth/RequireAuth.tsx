@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Navigate, Outlet } from "react-router";
 
 import { useApiClient } from "../api/client";
+import { LoadingMessage } from "../components/Loading";
 import { isAuthenticated, setAuthenticated } from "./session";
 
 /**
@@ -40,7 +41,7 @@ export function RequireAuth() {
   }, [client, status]);
 
   if (status === "checking") {
-    return null;
+    return <LoadingMessage />;
   }
   if (status === "unauthenticated") {
     return <Navigate to="/login" replace />;

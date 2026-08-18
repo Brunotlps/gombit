@@ -1,11 +1,12 @@
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { Navigate, Outlet } from "react-router";
 
-import { CssBaseline, ThemeProvider } from "@mui/material";
+import { Alert, Box, CssBaseline, ThemeProvider } from "@mui/material";
 
 import { ApiClientContext, bootstrapCSRF, createAdminClient, useApiClient } from "../api/client";
 import { ContractError } from "../api/error";
 import type { Catalog, ModelMeta } from "../api/types";
+import { LoadingMessage } from "../components/Loading";
 import { theme } from "../theme";
 
 export function AppProviders({ children }: { children: ReactNode }) {
@@ -38,7 +39,7 @@ export function useCatalog(): CatalogState {
   return value;
 }
 
-/** Loads GET /api/v1/admin/meta. 401 → login; 403 → forbidden. */
+/** Loads GET {API.Prefix}/admin/meta. 401 → login; 403 → forbidden; other errors stay here. */
 export function AdminGate() {
   const client = useApiClient();
   const [state, setState] = useState<CatalogState | null>(null);
@@ -77,11 +78,18 @@ export function AdminGate() {
   if (error?.status === 401) {
     return <Navigate to="/login" replace />;
   }
-  if (error) {
+  if (error?.status === 403) {
     return <Navigate to="/forbidden" replace />;
   }
+  if (error) {
+    return (
+      <Box sx={{ p: 3 }}>
+        <Alert severity="error">{error.message}</Alert>
+      </Box>
+    );
+  }
   if (state === null) {
-    return null;
+    return <LoadingMessage />;
   }
   return (
     <CatalogContext.Provider value={state}>

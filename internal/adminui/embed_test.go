@@ -75,19 +75,37 @@ func TestCookieClientInvariants(t *testing.T) {
 	src := string(client)
 	for _, want := range []string{
 		"refreshInFlight",
+		"csrfInFlight",
 		"X-CSRF-Token",
 		"credentials: \"same-origin\"",
 		"VITE_API_URL",
-		"/api/v1/auth/csrf",
-		"/api/v1/auth/login",
-		"/api/v1/admin/meta",
+		"apiPrefix",
+		"/auth/csrf",
+		"/auth/login",
+		"/admin/meta",
+		"__GOMBIT_API_PREFIX__",
 	} {
 		if !strings.Contains(src, want) {
 			t.Errorf("client.ts missing %q", want)
 		}
 	}
+	if strings.Contains(src, `"/api/v1/auth/`) || strings.Contains(src, `"/api/v1/admin/`) {
+		t.Error("client.ts hardcodes /api/v1 auth/admin paths; prefix must be runtime-injected")
+	}
 	if strings.Contains(src, "localStorage") || strings.Contains(src, "sessionStorage") {
 		t.Error("client.ts uses web storage")
+	}
+}
+
+func TestDistIndexHasAPIPrefixPlaceholder(t *testing.T) {
+	t.Parallel()
+	data, err := fs.ReadFile(FS(), "index.html")
+	if err != nil {
+		t.Fatalf("ReadFile index.html: %v", err)
+	}
+	body := string(data)
+	if !strings.Contains(body, "__GOMBIT_API_PREFIX__") {
+		t.Fatal("dist/index.html missing __GOMBIT_API_PREFIX__ placeholder (must not bake API.Prefix at Vite build time)")
 	}
 }
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, Navigate, useNavigate, useParams } from "react-router";
 
 import AddIcon from "@mui/icons-material/Add";
 import {
@@ -48,9 +48,11 @@ export function ResourceListPage() {
   const [searchDraft, setSearchDraft] = useState("");
   const [ordering, setOrdering] = useState("");
   const [filters, setFilters] = useState<Record<string, string>>({});
+  const [filterDraft, setFilterDraft] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState("");
   const [forbidden, setForbidden] = useState(false);
+  const [unauthorized, setUnauthorized] = useState(false);
 
   useEffect(() => {
     if (!model || !model.actions.list) {
@@ -88,7 +90,11 @@ export function ResourceListPage() {
         if (cancelled) {
           return;
         }
-        if (err instanceof ContractError && err.status === 403) {
+        if (ContractError.unauthorized(err)) {
+          setUnauthorized(true);
+          return;
+        }
+        if (ContractError.forbidden(err)) {
           setForbidden(true);
           return;
         }
@@ -104,6 +110,9 @@ export function ResourceListPage() {
     };
   }, [client, filters, model, ordering, page, perPage, search, slug]);
 
+  if (unauthorized) {
+    return <Navigate to="/login" replace />;
+  }
   if (!model) {
     return <Alert severity="warning">Unknown model.</Alert>;
   }
@@ -174,18 +183,32 @@ export function ResourceListPage() {
             ])}
           </TextField>
         ) : null}
-        {model.filter.map((key) => (
-          <TextField
-            key={key}
-            size="small"
-            label={`Filter ${key}`}
-            value={filters[key] ?? ""}
-            onChange={(event) => {
+        {model.filter.length > 0 ? (
+          <Box
+            component="form"
+            onSubmit={(event) => {
+              event.preventDefault();
               setPage(0);
-              setFilters((current) => ({ ...current, [key]: event.target.value }));
+              setFilters({ ...filterDraft });
             }}
-          />
-        ))}
+            sx={{ display: "flex", flexWrap: "wrap", gap: 1 }}
+          >
+            {model.filter.map((key) => (
+              <TextField
+                key={key}
+                size="small"
+                label={`Filter ${key}`}
+                value={filterDraft[key] ?? ""}
+                onChange={(event) => {
+                  setFilterDraft((current) => ({ ...current, [key]: event.target.value }));
+                }}
+              />
+            ))}
+            <Button type="submit" variant="outlined">
+              Apply
+            </Button>
+          </Box>
+        ) : null}
       </Box>
 
       {loading ? (

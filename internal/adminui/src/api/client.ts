@@ -14,11 +14,44 @@ export type Envelope<T, M = unknown> = {
   meta?: M;
 };
 
-const CSRF_PATH = "/api/v1/auth/csrf";
-const REFRESH_PATH = "/api/v1/auth/refresh";
+const DEFAULT_API_PREFIX = "/api/v1";
+const PREFIX_PLACEHOLDER = "__GOMBIT_API_PREFIX__";
 
 function apiOrigin(): string {
   return import.meta.env.VITE_API_URL ?? "";
+}
+
+/**
+ * Runtime API prefix (ADMIN-1 honors config.API.Prefix). Read from the
+ * served index (`window.__GOMBIT_API_PREFIX__` or
+ * `<meta name="gombit-api-prefix">`), not from VITE_* (that would freeze
+ * the prefix in committed dist). Default remains `/api/v1`.
+ */
+export function apiPrefix(): string {
+  const injected = readInjectedAPIPrefix();
+  const raw = (injected ?? "").trim();
+  if (raw === "" || raw === PREFIX_PLACEHOLDER) {
+    return DEFAULT_API_PREFIX;
+  }
+  return raw.replace(/\/+$/, "") || DEFAULT_API_PREFIX;
+}
+
+function readInjectedAPIPrefix(): string | undefined {
+  if (typeof window !== "undefined" && typeof window.__GOMBIT_API_PREFIX__ === "string") {
+    return window.__GOMBIT_API_PREFIX__;
+  }
+  if (typeof document !== "undefined") {
+    const content = document.querySelector('meta[name="gombit-api-prefix"]')?.getAttribute("content");
+    if (content) {
+      return content;
+    }
+  }
+  return undefined;
+}
+
+function apiPath(path: string): string {
+  const suffix = path.startsWith("/") ? path : `/${path}`;
+  return apiPrefix() + suffix;
 }
 
 /**
@@ -36,7 +69,7 @@ export function createAdminClient() {
     }
     refreshInFlight = (async () => {
       try {
-        const response = await fetch(baseUrl + REFRESH_PATH, {
+        const response = await fetch(baseUrl + apiPath("/auth/refresh"), {
           method: "POST",
           credentials: "same-origin",
           headers: csrfRequestHeaders(),
@@ -107,23 +140,23 @@ export function createAdminClient() {
     patch: <T, M = unknown>(path: string, body?: unknown) => request<T, M>("PATCH", path, { body }),
     delete: <T, M = unknown>(path: string) => request<T, M>("DELETE", path),
     login: (email: string, password: string) =>
-      request<{ id: number; email: string }>("POST", "/api/v1/auth/login", {
+      request<{ id: number; email: string }>("POST", apiPath("/auth/login"), {
         body: { email, password },
       }),
-    logout: () => request<{ ok: boolean }>("POST", "/api/v1/auth/logout"),
-    me: () => request<{ id: number; email: string }>("GET", "/api/v1/me"),
-    catalog: () => request<Catalog, CatalogAux>("GET", "/api/v1/admin/meta"),
-    model: (slug: string) => request<ModelMeta>("GET", `/api/v1/admin/meta/${slug}`),
+    logout: () => request<{ ok: boolean }>("POST", apiPath("/auth/logout")),
+    me: () => request<{ id: number; email: string }>("GET", apiPath("/me")),
+    catalog: () => request<Catalog, CatalogAux>("GET", apiPath("/admin/meta")),
+    model: (slug: string) => request<ModelMeta>("GET", apiPath(`/admin/meta/${slug}`)),
     list: (slug: string, query?: Record<string, string | number | undefined>) =>
-      request<Row[], PageMeta>("GET", `/api/v1/admin/resources/${slug}`, { query }),
+      request<Row[], PageMeta>("GET", apiPath(`/admin/resources/${slug}`), { query }),
     create: (slug: string, body: Row) =>
-      request<Row>("POST", `/api/v1/admin/resources/${slug}`, { body }),
+      request<Row>("POST", apiPath(`/admin/resources/${slug}`), { body }),
     detail: (slug: string, id: string) =>
-      request<Row>("GET", `/api/v1/admin/resources/${slug}/${id}`),
+      request<Row>("GET", apiPath(`/admin/resources/${slug}/${id}`)),
     update: (slug: string, id: string, body: Row) =>
-      request<Row>("PATCH", `/api/v1/admin/resources/${slug}/${id}`, { body }),
+      request<Row>("PATCH", apiPath(`/admin/resources/${slug}/${id}`), { body }),
     remove: (slug: string, id: string) =>
-      request<{ ok: boolean }>("DELETE", `/api/v1/admin/resources/${slug}/${id}`),
+      request<{ ok: boolean }>("DELETE", apiPath(`/admin/resources/${slug}/${id}`)),
   };
 }
 
@@ -139,21 +172,40 @@ export function useApiClient(): AdminClient {
   return client;
 }
 
+let csrfInFlight: Promise<void> | null = null;
+
 /**
- * Fetches a fresh CSRF cookie/token pair. Call on app load and on the login
- * page so POST /auth/login and other unsafe methods have a token to
- * double-submit. The token is held in memory only.
+ * Fetches a CSRF cookie/token pair. Concurrent callers share one in-flight
+ * promise (GET /auth/csrf always mints a new pair; overlapping responses
+ * desync the cookie from the in-memory X-CSRF-Token). If a token is already
+ * in memory, this is a no-op so React StrictMode remounts do not mint a
+ * second pair. After clearSession the token is gone and the next call
+ * bootstraps again. Login must await this before POST.
  */
-export async function bootstrapCSRF(): Promise<void> {
-  const baseUrl = apiOrigin();
-  const response = await fetch(baseUrl + CSRF_PATH, { credentials: "same-origin" });
-  if (!response.ok) {
-    return;
+export function bootstrapCSRF(): Promise<void> {
+  if (getCSRFToken()) {
+    return Promise.resolve();
   }
-  const body = (await response.json()) as { data?: { csrf_token?: string } };
-  if (body.data?.csrf_token) {
-    setCSRFToken(body.data.csrf_token);
+  if (csrfInFlight) {
+    return csrfInFlight;
   }
+  csrfInFlight = (async () => {
+    try {
+      const response = await fetch(apiOrigin() + apiPath("/auth/csrf"), {
+        credentials: "same-origin",
+      });
+      if (!response.ok) {
+        return;
+      }
+      const body = (await response.json()) as { data?: { csrf_token?: string } };
+      if (body.data?.csrf_token) {
+        setCSRFToken(body.data.csrf_token);
+      }
+    } finally {
+      csrfInFlight = null;
+    }
+  })();
+  return csrfInFlight;
 }
 
 function csrfRequestHeaders(): HeadersInit {

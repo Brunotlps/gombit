@@ -49,6 +49,14 @@ export class ContractError extends Error {
     this.requestId = requestId;
   }
 
+  static unauthorized(err: unknown): boolean {
+    return err instanceof ContractError && err.status === 401;
+  }
+
+  static forbidden(err: unknown): boolean {
+    return err instanceof ContractError && err.status === 403;
+  }
+
   static fromResponse(response: Response, body: unknown): ContractError {
     const parsed = parseD10Error(body);
     if (parsed) {

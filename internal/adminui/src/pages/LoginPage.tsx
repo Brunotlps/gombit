@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import { Controller, useForm } from "react-hook-form";
 import { useNavigate } from "react-router";
 
@@ -34,13 +34,12 @@ export function LoginPage() {
     defaultValues: { email: "", password: "" },
   });
 
-  useEffect(() => {
-    void bootstrapCSRF();
-  }, []);
-
   async function onLogin(values: LoginValues) {
     setStatus("");
     try {
+      // Providers start CSRF on app load; wait for that in-flight pair (or
+      // mint one after clearSession) before POST /auth/login.
+      await bootstrapCSRF();
       await client.login(values.email, values.password);
       setAuthenticated(true);
       navigate("/", { replace: true });

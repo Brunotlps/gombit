@@ -146,7 +146,7 @@ func New(options ...Option) (*App, error) {
 			}
 			// Framework-owned admin SPA (ADMIN-2 / ADR-013). Explicit Gin
 			// routes so /admin wins over Huma and over the app NoRoute SPA.
-			mountAdminSPA(app.router, adminui.FS())
+			mountAdminSPA(app.router, adminui.FS(), app.cfg.API.Prefix)
 		}
 	}
 	mountEmbeddedFrontend(app.router, app.embeddedFrontend, app.cfg.API.Prefix)

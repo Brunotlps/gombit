@@ -56,10 +56,19 @@ mode + seeded superuser). Screens are driven only by:
   `POST /api/v1/auth/logout`, `GET /api/v1/me`
 
 Anonymous `/admin` redirects to `/admin/login`. After login the catalog
-lists `data.models` (empty catalog is a valid empty state). List/detail/
+lists `data.models` (empty catalog is a valid empty state; models with
+`actions.list === false` are shown but not linked). List/detail/
 create/edit/delete honor `actions.*`. Field widgets cover the closed
 ADMIN-1 types; `belongs_to` is an FK input; `has_many` is read-only.
-401 returns to login; 403 (non-superuser) shows a forbidden page.
+`datetime-local` values are converted to RFC3339 before POST/PATCH.
+401 (including session expiry on list/detail/edit) returns to login;
+catalog 403 (non-superuser) shows a forbidden page; other catalog
+errors show the D10 message.
+
+The SPA does **not** bake `/api/v1` at Vite build time. Gin injects
+`config.API.Prefix` when serving `index.html` (placeholder
+`__GOMBIT_API_PREFIX__`) and `GET /admin/config.json`. The client
+prefixes `/auth/*` and `/admin/*` with that value (default `/api/v1`).
 
 The SPA may use MUI internally. That is **not** a C4 violation: `--ui mui`
 remains the generated **application** preset. `gombit new` trees do not

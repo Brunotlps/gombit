@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate, useParams } from "react-router";
+import { Link, Navigate, useNavigate, useParams } from "react-router";
 
 import {
   Alert,
@@ -31,6 +31,7 @@ export function ResourceDetailPage() {
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(true);
   const [forbidden, setForbidden] = useState(false);
+  const [unauthorized, setUnauthorized] = useState(false);
 
   useEffect(() => {
     if (!model || !model.actions.detail) {
@@ -49,7 +50,11 @@ export function ResourceDetailPage() {
         if (cancelled) {
           return;
         }
-        if (err instanceof ContractError && err.status === 403) {
+        if (ContractError.unauthorized(err)) {
+          setUnauthorized(true);
+          return;
+        }
+        if (ContractError.forbidden(err)) {
           setForbidden(true);
           return;
         }
@@ -73,10 +78,17 @@ export function ResourceDetailPage() {
       await client.remove(slug, id);
       navigate(`/${slug}`);
     } catch (err: unknown) {
+      if (ContractError.unauthorized(err)) {
+        setUnauthorized(true);
+        return;
+      }
       setStatus(err instanceof Error ? err.message : "delete failed");
     }
   }
 
+  if (unauthorized) {
+    return <Navigate to="/login" replace />;
+  }
   if (!model) {
     return <Alert severity="warning">Unknown model.</Alert>;
   }

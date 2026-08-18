@@ -3,6 +3,7 @@ import { Link } from "react-router";
 import {
   Alert,
   List,
+  ListItem,
   ListItemButton,
   ListItemText,
   Paper,
@@ -27,11 +28,17 @@ export function CatalogPage() {
       ) : (
         <Paper>
           <List>
-            {models.map((model) => (
-              <ListItemButton key={model.slug} component={Link} to={`/${model.slug}`}>
-                <ListItemText primary={model.plural} secondary={model.slug} />
-              </ListItemButton>
-            ))}
+            {models.map((model) =>
+              model.actions.list ? (
+                <ListItemButton key={model.slug} component={Link} to={`/${model.slug}`}>
+                  <ListItemText primary={model.plural} secondary={model.slug} />
+                </ListItemButton>
+              ) : (
+                <ListItem key={model.slug}>
+                  <ListItemText primary={model.plural} secondary={`${model.slug} (listing disabled)`} />
+                </ListItem>
+              ),
+            )}
           </List>
         </Paper>
       )}
