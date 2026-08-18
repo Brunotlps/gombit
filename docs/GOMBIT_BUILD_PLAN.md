@@ -204,7 +204,7 @@ One issue per seam. Each must keep the existing tests green (see §5).
 
 ### M6-Admin — Django-style admin (POST-v0.1 flagship)
 
-The single biggest differentiator — **no Go web framework has a real Django-style admin** (not Gin/Echo/Fiber/Encore). This is the headline of the first release *after* v0.1, not part of the v0.1 loop. Architecture follows the §3.3 law: the admin is a **runtime** surface, not generated pages.
+The single biggest differentiator — **no Go web framework has a real Django-style admin** (not Gin/Echo/Fiber/Encore). This is the headline of the first release *after* v0.1, not part of the v0.1 loop. Architecture follows the §3.3 law: the admin is a **runtime** surface, not generated pages. Accepted decision: [ADR-013](adr/013-runtime-generic-admin.md).
 
 - **[ADMIN-0] ADR-013: runtime generic admin over an introspection API** — decide the model-registry/introspection contract (models, fields, relations, permissions a feature-package registers) and confirm the admin is a framework-owned React app driven by that metadata endpoint — **not** `--admin` scaffolded pages. Prerequisite: session auth (C3). deps: M5-3. size: M. labels: `adr`, `admin`.
 - **[ADMIN-1] Model registry + introspection endpoint** — explicit `admin.Register(Model, opts)`; framework serves the metadata (no deep runtime reflection — principle 6.2). AC: registered models expose fields/permissions over the endpoint. deps: ADMIN-0. size: L. labels: `admin`, `runtime`.

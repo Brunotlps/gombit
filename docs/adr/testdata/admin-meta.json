@@ -1,0 +1,103 @@
+{
+  "data": {
+    "models": [
+      {
+        "slug": "products",
+        "singular": "Product",
+        "plural": "Products",
+        "pk": "id",
+        "fields": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "required": false,
+            "readonly": true
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "required": true,
+            "readonly": false
+          },
+          {
+            "name": "price",
+            "type": "decimal",
+            "required": true,
+            "readonly": false
+          },
+          {
+            "name": "category_id",
+            "type": "relation",
+            "required": false,
+            "readonly": false,
+            "related": {
+              "slug": "categories",
+              "kind": "belongs_to",
+              "label_field": "name"
+            }
+          }
+        ],
+        "list": ["name", "category_id", "price"],
+        "search": ["name"],
+        "filter": ["category_id"],
+        "ordering": ["name", "created_at"],
+        "actions": {
+          "list": true,
+          "detail": true,
+          "create": true,
+          "update": true,
+          "delete": true
+        },
+        "permissions": {
+          "view": "admin.products.view",
+          "create": "admin.products.create",
+          "update": "admin.products.update",
+          "delete": "admin.products.delete"
+        }
+      },
+      {
+        "slug": "categories",
+        "singular": "Category",
+        "plural": "Categories",
+        "pk": "id",
+        "fields": [
+          {
+            "name": "id",
+            "type": "uuid",
+            "required": false,
+            "readonly": true
+          },
+          {
+            "name": "name",
+            "type": "string",
+            "required": true,
+            "readonly": false
+          }
+        ],
+        "list": ["name"],
+        "search": ["name"],
+        "filter": [],
+        "ordering": ["name"],
+        "actions": {
+          "list": true,
+          "detail": true,
+          "create": true,
+          "update": true,
+          "delete": true
+        },
+        "permissions": {
+          "view": "admin.categories.view",
+          "create": "admin.categories.create",
+          "update": "admin.categories.update",
+          "delete": "admin.categories.delete"
+        }
+      }
+    ]
+  },
+  "meta": {
+    "auth": {
+      "mode": "cookie",
+      "bootstrap": "is_superuser"
+    }
+  }
+}

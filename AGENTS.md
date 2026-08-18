@@ -6,14 +6,17 @@ a generated React+TypeScript frontend, Atlas-backed migrations. Module path
 
 ## Current state
 
-This repo has completed M0–M4 and started **M5 frontend**. It has typed
+This repo has completed M0–M5. It has typed
 `config.Config`, `framework.App` lifecycle and routing, Huma contract/OpenAPI/
 TypeScript client generation, Atlas-backed migrations, a Cobra `gombit`
 command tree (`new`, `dev`, `build --embed`, `make resource`, `make command`,
 `db`, `openapi`, `client`), and a Vite + React + TypeScript minimal skeleton
 (router, generated client, React Hook Form). Bearer login (M5-2), cookie/CSRF
 (M5-3), the MUI preset (M5-4, `--ui mui`), and optional `gombit build --embed`
-(M5-5) are in. M6 batteries are not here yet.
+(M5-5) are in. **ADMIN-0 (ADR-013) is accepted**: the admin is a
+framework-owned React app driven by a Huma introspection API, not `--admin`
+scaffolded pages. ADMIN-1+ (registry, generic SPA, groups/permissions) are
+not implemented. Other M6 batteries are not here yet.
 Don't assume generated apps are committed in-tree; `gombit new` writes them
 on demand. Check `git log` / `ls` before describing "how the code works."
 
@@ -53,6 +56,9 @@ on demand. Check `git log` / `ls` before describing "how the code works."
   Nested families and M4-7 app-registered management commands use Cobra
   `AddCommand`. Do not introduce Kong or a parallel hand-rolled router as the
   long-term CLI architecture; pre-M4 stdlib `flag` is temporary until M4-1.
+- **Admin (ADR-013):** runtime generic admin over an explicit registry + Huma
+  introspection API; framework-owned React app under `/admin/`. Never
+  `--admin` generated pages, never request-time reflection over GORM models.
 
 ## Agent working agreement (definition of done — build plan §5)
 
