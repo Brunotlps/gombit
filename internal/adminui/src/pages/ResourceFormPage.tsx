@@ -151,7 +151,11 @@ export function ResourceFormPage({ mode }: Props) {
     return <Alert severity="warning">You do not have permission to edit this {model.singular}.</Alert>;
   }
   if (forbidden) {
-    return <Alert severity="warning">You do not have permission to edit this {model.singular}.</Alert>;
+    return (
+      <Alert severity="warning">
+        You do not have permission to {mode === "create" ? `create ${model.plural}` : `edit this ${model.singular}`}.
+      </Alert>
+    );
   }
   if (loading) {
     return (
