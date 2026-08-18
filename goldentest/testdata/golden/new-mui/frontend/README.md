@@ -1,10 +1,10 @@
-# Frontend (minimal React skeleton)
+# Frontend (MUI preset)
 
 This directory is the split-deploy frontend root (build plan C5 / §3.2).
-`gombit new` writes a **Vite + React + TypeScript** minimal/headless
-skeleton: React Router, an API-client provider, and React Hook Form with
-D10 `error.fields` mapping. `--ui mui` scaffolds the MUI CRUD preset
-(ThemeProvider, AppBar, Table, TextField) — see
+`gombit new --ui mui` writes a **Vite + React + TypeScript** app with the
+opt-in MUI CRUD preset: `ThemeProvider` + `CssBaseline`, an AppBar layout,
+Paper/TextField login, a product Table, and a dedicated create form.
+Default `gombit new` stays **minimal/headless** (C4). See the framework
 [`docs/frontend-mui.md`](https://github.com/LAA-Software-Engineering/gombit/blob/main/docs/frontend-mui.md).
 Bearer login/refresh is documented in the framework [`docs/auth.md`](https://github.com/LAA-Software-Engineering/gombit/blob/main/docs/auth.md).
 Cookie/CSRF mode (`--auth cookie`) is independent of the UI preset.

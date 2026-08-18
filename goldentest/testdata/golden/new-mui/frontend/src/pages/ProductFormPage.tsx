@@ -1,9 +1,9 @@
 import { useState } from "react";
-import { useForm{{if eq .UI "mui"}}, Controller{{end}} } from "react-hook-form";
+import { useForm, Controller } from "react-hook-form";
 import { Link, useNavigate } from "react-router";
-{{if eq .UI "mui"}}
+
 import { Alert, Box, Button, Paper, TextField, Typography } from "@mui/material";
-{{end}}
+
 import { useApiClient } from "../api/client";
 import { applyContractErrors } from "../api/formErrors";
 import { unwrap } from "../api/generated/client";
@@ -18,11 +18,10 @@ export function ProductFormPage() {
   const navigate = useNavigate();
   const [status, setStatus] = useState("");
   const {
-{{if eq .UI "mui"}}    control,
-{{else}}    register,
-{{end}}    handleSubmit,
+    control,
+    handleSubmit,
     setError,
-    formState: { {{if eq .UI "mui"}}isSubmitting{{else}}errors, isSubmitting{{end}} },
+    formState: { isSubmitting },
   } = useForm<ProductFormValues>({
     defaultValues: { name: "", price: 0 },
   });
@@ -43,20 +42,20 @@ export function ProductFormPage() {
     }
   }
 
-{{if eq .UI "mui"}}  return (
+  return (
     <Box>
-      <Typography variant="h4" component="h1" sx={{"{{"}} mb: 1 }}>
+      <Typography variant="h4" component="h1" sx={{ mb: 1 }}>
         New product
       </Typography>
-      <Button component={Link} to="/" sx={{"{{"}} mb: 2 }}>
+      <Button component={Link} to="/" sx={{ mb: 2 }}>
         Back to list
       </Button>
-      <Paper sx={{"{{"}} p: 3, maxWidth: 480 }}>
-        <Box component="form" onSubmit={handleSubmit(onSubmit)} sx={{"{{"}} display: "flex", flexDirection: "column", gap: 2 }}>
+      <Paper sx={{ p: 3, maxWidth: 480 }}>
+        <Box component="form" onSubmit={handleSubmit(onSubmit)} sx={{ display: "flex", flexDirection: "column", gap: 2 }}>
           <Controller
             name="name"
             control={control}
-            rules={{"{{"}} required: true }}
+            rules={{ required: true }}
             render={({ field, fieldState }) => (
               <TextField
                 {...field}
@@ -92,35 +91,11 @@ export function ProductFormPage() {
           </Button>
         </Box>
         {status ? (
-          <Alert severity="error" sx={{"{{"}} mt: 2 }}>
+          <Alert severity="error" sx={{ mt: 2 }}>
             {status}
           </Alert>
         ) : null}
       </Paper>
     </Box>
   );
-{{else}}  return (
-    <section>
-      <h1>New product</h1>
-      <p>
-        <Link to="/">Back to list</Link>
-      </p>
-      <form onSubmit={handleSubmit(onSubmit)}>
-        <label>
-          Name
-          <input type="text" {...register("name", { required: true })} />
-        </label>
-        {errors.name?.message ? <p>{errors.name.message}</p> : null}
-        <label>
-          Price
-          <input type="number" {...register("price", { valueAsNumber: true })} />
-        </label>
-        {errors.price?.message ? <p>{errors.price.message}</p> : null}
-        <button type="submit" disabled={isSubmitting}>
-          Create
-        </button>
-      </form>
-      {status ? <p>{status}</p> : null}
-    </section>
-  );
-{{end}}}
+}

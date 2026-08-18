@@ -10,5 +10,5 @@ cache: memory
 auth: jwt
 # Minimal/headless is the default (C4). `--ui mui` scaffolds the MUI CRUD
 # preset (ThemeProvider, AppBar, Table, TextField). See docs/frontend-mui.md.
-ui: minimal
+ui: mui
 api_prefix: /api/v1

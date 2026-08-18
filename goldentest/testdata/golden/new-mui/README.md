@@ -38,9 +38,8 @@ Backend reload uses `air` or `watchexec` when installed; otherwise it falls
 back to `go run ./cmd/server`. The frontend uses `pnpm` when available,
 otherwise `npm`. Node.js is required for Vite HMR. The frontend is a Vite +
 React + TypeScript skeleton (router, generated client, React Hook Form,
-HttpOnly cookie session + CSRF login — see
-[`docs/auth-cookie.md`](https://github.com/LAA-Software-Engineering/gombit/blob/main/docs/auth-cookie.md)
-for the threat model).
+Bearer login, MUI CRUD preset — see
+[`docs/frontend-mui.md`](https://github.com/LAA-Software-Engineering/gombit/blob/main/docs/frontend-mui.md)).
 
 This module requires [`github.com/LAA-Software-Engineering/gombit`](https://github.com/LAA-Software-Engineering/gombit).
 After scaffolding, pin a released version:
@@ -59,8 +58,8 @@ The default module path is `github.com/example/demo` (override with
 | --- | --- | --- |
 | database | `sqlite` | sqlite, postgres, or mysql |
 | cache | `memory` | memory, redis, or noop |
-| auth | `cookie` | Bearer JWT (v0.1 default) or `cookie` (HttpOnly session + CSRF, see `docs/auth-cookie.md`) |
-| ui | `minimal` | minimal/headless default; `--ui mui` scaffolds the MUI CRUD preset (AppBar, Table, TextField) |
+| auth | `jwt` | Bearer JWT (v0.1 default) or `cookie` (HttpOnly session + CSRF, see `docs/auth-cookie.md`) |
+| ui | `mui` | minimal/headless default; `--ui mui` scaffolds the MUI CRUD preset (AppBar, Table, TextField) |
 
 Runtime still reads `GOMBIT_*` environment variables, not `gombit.yaml`.
 
@@ -71,7 +70,7 @@ Runtime still reads `GOMBIT_*` environment variables, not `gombit.yaml`.
 - `internal/product` — model, Huma handlers, routes (no `service.go` / `repo.go`); `RegisterCommands` for CLI hooks
 - `internal/platform` — database open + AutoMigrate for the example product
 - `database/migrations`, `database/seeds` — Atlas SQL (see `gombit db`)
-- `frontend/` — Vite + React + TypeScript minimal skeleton (`gombit dev`)
+- `frontend/` — Vite + React + TypeScript MUI preset (`gombit dev`)
 
 ## Migrations
 

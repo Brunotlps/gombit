@@ -1,8 +1,7 @@
-{{if eq .Auth "cookie"}}import { useEffect, useState } from "react";
-{{else}}import { useState } from "react";
-{{end}}import { useForm{{if eq .UI "mui"}}, Controller{{end}} } from "react-hook-form";
+import { useState } from "react";
+import { useForm, Controller } from "react-hook-form";
 import { useNavigate } from "react-router";
-{{if eq .UI "mui"}}
+
 import {
   Alert,
   Box,
@@ -12,13 +11,12 @@ import {
   TextField,
   Typography,
 } from "@mui/material";
-{{end}}
-import { {{if eq .Auth "cookie"}}bootstrapCSRF, {{end}}useApiClient } from "../api/client";
+
+import { useApiClient } from "../api/client";
 import { applyContractErrors } from "../api/formErrors";
 import { unwrap } from "../api/generated/client";
-{{if eq .Auth "cookie"}}import { setAuthenticated } from "../auth/session";
-{{else}}import { applyTokenPair } from "../auth/session";
-{{end}}
+import { applyTokenPair } from "../auth/session";
+
 type LoginValues = {
   email: string;
   password: string;
@@ -29,39 +27,25 @@ export function LoginPage() {
   const navigate = useNavigate();
   const [status, setStatus] = useState("");
   const {
-{{if eq .UI "mui"}}    control,
-{{else}}    register,
-{{end}}    handleSubmit,
+    control,
+    handleSubmit,
     setError,
-    formState: { {{if eq .UI "mui"}}isSubmitting{{else}}errors, isSubmitting{{end}} },
+    formState: { isSubmitting },
   } = useForm<LoginValues>({
     defaultValues: { email: "", password: "" },
   });
 
-{{if eq .Auth "cookie"}}  useEffect(() => {
-    // Bootstrap the CSRF cookie so the first mutating request on this page
-    // (register or login) has a token to double-submit.
-    void bootstrapCSRF();
-  }, []);
-
-{{end}}  async function onLogin(values: LoginValues) {
+  async function onLogin(values: LoginValues) {
     setStatus("");
     try {
-{{if eq .Auth "cookie"}}      await unwrap(
-        await client.POST("/api/v1/auth/login", {
-          body: { email: values.email, password: values.password },
-        }),
-      );
-      setAuthenticated(true);
-      navigate("/");
-{{else}}      const result = await unwrap(
+      const result = await unwrap(
         await client.POST("/api/v1/auth/login", {
           body: { email: values.email, password: values.password },
         }),
       );
       applyTokenPair(result.data);
       navigate("/");
-{{end}}    } catch (err: unknown) {
+    } catch (err: unknown) {
       if (!applyContractErrors(setError, err)) {
         setStatus(err instanceof Error ? err.message : "login failed");
       }
@@ -84,9 +68,9 @@ export function LoginPage() {
     }
   }
 
-{{if eq .UI "mui"}}  return (
+  return (
     <Box
-      sx={{"{{"}}
+      sx={{
         minHeight: "100vh",
         display: "flex",
         alignItems: "center",
@@ -94,28 +78,27 @@ export function LoginPage() {
         p: 2,
       }}
     >
-      <Paper sx={{"{{"}} p: 4, width: "100%", maxWidth: 420 }}>
-        <Typography component="h1" variant="h5" sx={{"{{"}} mb: 1 }}>
+      <Paper sx={{ p: 4, width: "100%", maxWidth: 420 }}>
+        <Typography component="h1" variant="h5" sx={{ mb: 1 }}>
           Sign in
         </Typography>
-        <Typography variant="body2" color="text.secondary" sx={{"{{"}} mb: 3 }}>
-          {{if eq .Auth "cookie"}}Your session is an HttpOnly cookie. It is never exposed to page JavaScript.
-          {{else}}Access tokens stay in memory. They are never written to web storage.
-          {{end}}</Typography>
+        <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+          Access tokens stay in memory. They are never written to web storage.
+          </Typography>
         {status ? (
-          <Alert severity="error" sx={{"{{"}} mb: 2 }}>
+          <Alert severity="error" sx={{ mb: 2 }}>
             {status}
           </Alert>
         ) : null}
         <Box
           component="form"
           onSubmit={handleSubmit(onLogin)}
-          sx={{"{{"}} display: "flex", flexDirection: "column", gap: 2 }}
+          sx={{ display: "flex", flexDirection: "column", gap: 2 }}
         >
           <Controller
             name="email"
             control={control}
-            rules={{"{{"}} required: true }}
+            rules={{ required: true }}
             render={({ field, fieldState }) => (
               <TextField
                 {...field}
@@ -132,7 +115,7 @@ export function LoginPage() {
           <Controller
             name="password"
             control={control}
-            rules={{"{{"}} required: true }}
+            rules={{ required: true }}
             render={({ field, fieldState }) => (
               <TextField
                 {...field}
@@ -161,31 +144,4 @@ export function LoginPage() {
       </Paper>
     </Box>
   );
-{{else}}  return (
-    <section>
-      <h1>Sign in</h1>
-      <p>{{if eq .Auth "cookie"}}Your session is an HttpOnly cookie. It is never exposed to page JavaScript.{{else}}Access tokens stay in memory. They are never written to web storage.{{end}}</p>
-      <form
-        onSubmit={handleSubmit(onLogin)}
-      >
-        <label>
-          Email
-          <input type="email" autoComplete="username" {...register("email", { required: true })} />
-        </label>
-        {errors.email?.message ? <p>{errors.email.message}</p> : null}
-        <label>
-          Password
-          <input type="password" autoComplete="current-password" {...register("password", { required: true })} />
-        </label>
-        {errors.password?.message ? <p>{errors.password.message}</p> : null}
-        <button type="submit" disabled={isSubmitting}>
-          Log in
-        </button>
-        <button type="button" disabled={isSubmitting} onClick={handleSubmit(onRegister)}>
-          Create account
-        </button>
-      </form>
-      {status ? <p>{status}</p> : null}
-    </section>
-  );
-{{end}}}
+}

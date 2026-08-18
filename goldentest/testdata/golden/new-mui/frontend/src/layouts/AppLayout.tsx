@@ -1,11 +1,10 @@
 import { Link, Outlet, useNavigate } from "react-router";
-{{if eq .UI "mui"}}
+
 import { AppBar, Box, Button, Toolbar, Typography } from "@mui/material";
-{{end}}
+
 import { useApiClient } from "../api/client";
-{{if eq .Auth "cookie"}}import { clearSession } from "../auth/session";
-{{else}}import { clearSession, getRefreshToken } from "../auth/session";
-{{end}}import { generatedResources } from "../resources";
+import { clearSession, getRefreshToken } from "../auth/session";
+import { generatedResources } from "../resources";
 
 export function AppLayout() {
   const client = useApiClient();
@@ -13,23 +12,22 @@ export function AppLayout() {
 
   async function onLogout() {
     try {
-      {{if eq .Auth "cookie"}}await client.POST("/api/v1/auth/logout", {});
-      {{else}}const refreshToken = getRefreshToken();
+      const refreshToken = getRefreshToken();
       if (refreshToken) {
         await client.POST("/api/v1/auth/logout", { body: { refresh_token: refreshToken } });
       }
-      {{end}}} finally {
+      } finally {
       clearSession();
       navigate("/login", { replace: true });
     }
   }
 
-{{if eq .UI "mui"}}  return (
+  return (
     <Box>
       <AppBar position="static">
         <Toolbar>
-          <Typography variant="h6" component="div" sx={{"{{"}} flexGrow: 1 }}>
-            {{.Name}}
+          <Typography variant="h6" component="div" sx={{ flexGrow: 1 }}>
+            demo
           </Typography>
           <Button color="inherit" component={Link} to="/">
             Products
@@ -47,33 +45,9 @@ export function AppLayout() {
           </Button>
         </Toolbar>
       </AppBar>
-      <Box component="main" sx={{"{{"}} p: 3 }}>
+      <Box component="main" sx={{ p: 3 }}>
         <Outlet />
       </Box>
     </Box>
   );
-{{else}}  return (
-    <div>
-      <header>
-        <nav>
-          <Link to="/">Products</Link>
-          {" · "}
-          <Link to="/products/new">New product</Link>
-          {generatedResources.map((resource) => (
-            <span key={resource.slug}>
-              {" · "}
-              <Link to={resource.listPath}>{resource.title}</Link>
-            </span>
-          ))}
-          {" · "}
-          <button type="button" onClick={() => void onLogout()}>
-            Log out
-          </button>
-        </nav>
-      </header>
-      <main>
-        <Outlet />
-      </main>
-    </div>
-  );
-{{end}}}
+}

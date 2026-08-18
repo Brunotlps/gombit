@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router";
-{{if eq .UI "mui"}}
+
 import AddIcon from "@mui/icons-material/Add";
 import {
   Alert,
@@ -16,7 +16,7 @@ import {
   TableRow,
   Typography,
 } from "@mui/material";
-{{end}}
+
 import { useApiClient } from "../api/client";
 import { unwrap } from "../api/generated/client";
 import type { paths } from "../api/generated/schema";
@@ -28,8 +28,8 @@ type ProductRow = NonNullable<ListResponse["data"]>[number];
 export function ProductListPage() {
   const client = useApiClient();
   const [rows, setRows] = useState<ProductRow[]>([]);
-{{if eq .UI "mui"}}  const [loading, setLoading] = useState(true);
-{{end}}  const [status, setStatus] = useState({{if eq .UI "mui"}}""{{else}}"Loading products…"{{end}});
+  const [loading, setLoading] = useState(true);
+  const [status, setStatus] = useState("");
 
   useEffect(() => {
     let cancelled = false;
@@ -47,20 +47,20 @@ export function ProductListPage() {
           return;
         }
         setStatus(err instanceof Error ? err.message : "request failed");
-      }{{if eq .UI "mui"}} finally {
+      } finally {
         if (!cancelled) {
           setLoading(false);
         }
-      }{{end}}
+      }
     })();
     return () => {
       cancelled = true;
     };
   }, [client]);
 
-{{if eq .UI "mui"}}  return (
+  return (
     <Box>
-      <Box sx={{"{{"}} display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
+      <Box sx={{ display: "flex", justifyContent: "space-between", alignItems: "center", mb: 2 }}>
         <Typography variant="h4" component="h1">
           Products
         </Typography>
@@ -69,7 +69,7 @@ export function ProductListPage() {
         </Button>
       </Box>
       {loading ? (
-        <Box sx={{"{{"}} display: "flex", justifyContent: "center", py: 6 }}>
+        <Box sx={{ display: "flex", justifyContent: "center", py: 6 }}>
           <CircularProgress />
         </Box>
       ) : (
@@ -103,37 +103,10 @@ export function ProductListPage() {
         </TableContainer>
       )}
       {!loading && status && rows.length > 0 ? (
-        <Alert severity="error" sx={{"{{"}} mt: 2 }}>
+        <Alert severity="error" sx={{ mt: 2 }}>
           {status}
         </Alert>
       ) : null}
     </Box>
   );
-{{else}}  return (
-    <section>
-      <h1>Products</h1>
-      <p>
-        <Link to="/products/new">New product</Link>
-      </p>
-      <table>
-        <thead>
-          <tr>
-            <th>id</th>
-            <th>name</th>
-            <th>price</th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row) => (
-            <tr key={String(row.id)}>
-              <td>{String(row.id)}</td>
-              <td>{String(row.name)}</td>
-              <td>{String(row.price)}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-      {status ? <p>{status}</p> : null}
-    </section>
-  );
-{{end}}}
+}

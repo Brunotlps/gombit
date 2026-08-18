@@ -8,7 +8,7 @@ cache: memory
 # session cookies + CSRF; see docs/auth-cookie.md and .env.example for the
 # GOMBIT_AUTH_MODE / GOMBIT_COOKIE_* settings this wires.
 auth: cookie
-# Minimal/headless is the default (C4). `--ui mui` records MUI; the MUI
-# CRUD preset lands in M5-4.
+# Minimal/headless is the default (C4). `--ui mui` scaffolds the MUI CRUD
+# preset (ThemeProvider, AppBar, Table, TextField). See docs/frontend-mui.md.
 ui: minimal
 api_prefix: /api/v1
