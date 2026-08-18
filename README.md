@@ -59,6 +59,8 @@ Optional `go:embed` production is documented in [`docs/build.md`](docs/build.md)
 Bearer JWT login is documented in [`docs/auth.md`](docs/auth.md); cookie/session
 auth (`--auth cookie`) and its CSRF threat model are documented in
 [`docs/auth-cookie.md`](docs/auth-cookie.md).
+The post-v0.1 admin architecture is [ADR-013](docs/adr/013-runtime-generic-admin.md);
+see [`docs/admin.md`](docs/admin.md).
 Database runtime support is documented in [`docs/database.md`](docs/database.md).
 Cache runtime support is documented in [`docs/cache.md`](docs/cache.md).
 Runtime logging is documented in [`docs/logging.md`](docs/logging.md).
