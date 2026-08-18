@@ -15,10 +15,12 @@ import (
 var Files embed.FS
 
 // FS returns the embedded frontend tree rooted at static/.
+// If fs.Sub fails, it returns an empty embed.FS rather than Files: the SPA
+// lives under static/, so the un-subbed root would miss index.html.
 func FS() fs.FS {
 	sub, err := fs.Sub(Files, "static")
 	if err != nil {
-		return Files
+		return embed.FS{}
 	}
 	return sub
 }
