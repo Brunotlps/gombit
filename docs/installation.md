@@ -9,22 +9,6 @@ Install the `gombit` CLI, then verify it with `gombit doctor`.
 - [Troubleshooting](#troubleshooting)
 - [Upgrading and uninstalling](#upgrading-and-uninstalling)
 
-> **Pre-release note.** Until the first `v0.1.0` tag is published, a freshly
-> scaffolded app cannot resolve the framework module: `gombit new` writes
-> `require github.com/LAA-Software-Engineering/gombit v0.0.0`, which does not
-> exist on the module proxy, so `go build ./...` fails with *missing go.sum
-> entry*. Work around it by pointing the generated app at a local checkout:
->
-> ```bash
-> git clone https://github.com/LAA-Software-Engineering/gombit.git ~/src/gombit
-> cd your-app
-> go mod edit -replace github.com/LAA-Software-Engineering/gombit=$HOME/src/gombit
-> go mod tidy
-> ```
->
-> Tracked as **REL-9** in the [build plan](GOMBIT_BUILD_PLAN.md) §4; the
-> workaround goes away once a version is published and the template pins it.
-
 ## Prerequisites
 
 | Tool | Version | Required for |
@@ -180,6 +164,37 @@ ok      insecure    no issues in current config fields
 inside a generated app for the full picture. See [cli.md](cli.md).
 
 Next: [the tutorial](tutorial.md).
+
+## How generated apps find the framework
+
+`gombit new` pins the generated `go.mod` to **the same gombit version as the
+binary that generated it**, then runs `go mod tidy` to populate `go.sum`. An
+installed CLI therefore produces an app that builds immediately:
+
+```bash
+gombit new demo --database sqlite
+cd demo && go build ./...   # no replace, no manual steps
+```
+
+Two flags control this:
+
+| Flag | Use |
+| --- | --- |
+| `--framework-version` | Pin a specific framework version instead of the CLI's own |
+| `--skip-tidy` | Don't run `go mod tidy` (offline; you'll run it yourself) |
+
+**If you built the CLI from source**, it reports `dev` (or a `+dirty`
+pseudo-version), which the module proxy cannot resolve. `gombit new` says so,
+skips tidy, and pins `v0.0.0`; point the app at your checkout:
+
+```bash
+cd demo
+go mod edit -replace github.com/LAA-Software-Engineering/gombit=/path/to/gombit
+go mod tidy
+```
+
+That's the right behaviour for framework development — see
+[CONTRIBUTING.md](../CONTRIBUTING.md).
 
 ## Platform notes
 

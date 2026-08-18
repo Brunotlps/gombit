@@ -25,6 +25,19 @@ version.
 - Issue templates for bug reports, feature requests, and questions.
 - `SECURITY.md` and `CODE_OF_CONDUCT.md`.
 
+### Fixed
+
+- **Scaffolded apps now build with no manual steps.** `gombit new` wrote
+  `require github.com/LAA-Software-Engineering/gombit v0.0.0` — a version that
+  has never existed on the module proxy — so `go build ./...` in a fresh tree
+  failed with *missing go.sum entry*. The generated `go.mod` is now pinned to
+  the version of the binary that scaffolded it (release tag or
+  pseudo-version), and `go mod tidy` runs to populate `go.sum`. New
+  `--framework-version` and `--skip-tidy` flags override each half. A CLI built
+  from source still reports `dev`, which is unresolvable by design: the command
+  explains that and prints the `replace` recipe instead of emitting a broken
+  tree.
+
 ### Changed
 
 - README rewritten: badges, positioning, feature list, quickstart, architecture

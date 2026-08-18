@@ -3,6 +3,7 @@ package scaffold
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -609,4 +610,173 @@ func readFile(t *testing.T, path string) string {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return string(data)
+}
+
+func TestGeneratePinsResolvableFrameworkVersion(t *testing.T) {
+	workDir := t.TempDir()
+	stderr := new(bytes.Buffer)
+	err := Generate(context.Background(), Options{
+		Name:             "demo",
+		Database:         "sqlite",
+		FrameworkVersion: "v0.1.0",
+		WorkDir:          workDir,
+		Stdout:           new(bytes.Buffer),
+		Stderr:           stderr,
+	})
+	if err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+
+	gomod := readFile(t, filepath.Join(workDir, "demo", "go.mod"))
+	want := "require github.com/LAA-Software-Engineering/gombit v0.1.0"
+	if !strings.Contains(gomod, want) {
+		t.Errorf("go.mod = %q, want it to contain %q", gomod, want)
+	}
+	if stderr.Len() != 0 {
+		t.Errorf("a resolvable version must not warn, got %q", stderr.String())
+	}
+}
+
+func TestGenerateWarnsWhenFrameworkVersionIsUnresolvable(t *testing.T) {
+	workDir := t.TempDir()
+	stderr := new(bytes.Buffer)
+	err := Generate(context.Background(), Options{
+		Name:             "demo",
+		Database:         "sqlite",
+		FrameworkVersion: "dev",
+		WorkDir:          workDir,
+		Stdout:           new(bytes.Buffer),
+		Stderr:           stderr,
+	})
+	if err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+
+	gomod := readFile(t, filepath.Join(workDir, "demo", "go.mod"))
+	want := "require github.com/LAA-Software-Engineering/gombit " + FallbackFrameworkVersion
+	if !strings.Contains(gomod, want) {
+		t.Errorf("go.mod = %q, want it to contain %q", gomod, want)
+	}
+	// The opaque failure this replaces is "missing go.sum entry", so the
+	// warning has to name the fix.
+	for _, fragment := range []string{"go mod edit -replace", "will not build", "@latest"} {
+		if !strings.Contains(stderr.String(), fragment) {
+			t.Errorf("warning = %q, want it to mention %q", stderr.String(), fragment)
+		}
+	}
+}
+
+// stubGoModTidy replaces the tidy shell-out for one test. Scaffold tests must
+// never reach the network.
+func stubGoModTidy(t *testing.T, fn func(ctx context.Context, dir string) ([]byte, error)) {
+	t.Helper()
+	prev := goModTidy
+	goModTidy = fn
+	t.Cleanup(func() { goModTidy = prev })
+}
+
+func TestGenerateRunsTidyForResolvableVersion(t *testing.T) {
+	var gotDir string
+	calls := 0
+	stubGoModTidy(t, func(_ context.Context, dir string) ([]byte, error) {
+		calls++
+		gotDir = dir
+		return nil, nil
+	})
+
+	workDir := t.TempDir()
+	stdout := new(bytes.Buffer)
+	err := Generate(context.Background(), Options{
+		Name:             "demo",
+		Database:         "sqlite",
+		FrameworkVersion: "v0.1.0",
+		Tidy:             true,
+		WorkDir:          workDir,
+		Stdout:           stdout,
+		Stderr:           new(bytes.Buffer),
+	})
+	if err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("go mod tidy ran %d times, want 1", calls)
+	}
+	if want := filepath.Join(workDir, "demo"); gotDir != want {
+		t.Errorf("tidy dir = %q, want %q", gotDir, want)
+	}
+	if !strings.Contains(stdout.String(), "go mod tidy") {
+		t.Errorf("stdout = %q, want it to report the tidy step", stdout.String())
+	}
+}
+
+func TestGenerateSkipsTidyWhenVersionIsUnresolvable(t *testing.T) {
+	stubGoModTidy(t, func(context.Context, string) ([]byte, error) {
+		t.Fatal("go mod tidy must not run for an unresolvable version")
+		return nil, nil
+	})
+
+	err := Generate(context.Background(), Options{
+		Name:             "demo",
+		Database:         "sqlite",
+		FrameworkVersion: "dev",
+		Tidy:             true,
+		WorkDir:          t.TempDir(),
+		Stdout:           new(bytes.Buffer),
+		Stderr:           new(bytes.Buffer),
+	})
+	if err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+}
+
+func TestGenerateSkipsTidyOnDryRun(t *testing.T) {
+	stubGoModTidy(t, func(context.Context, string) ([]byte, error) {
+		t.Fatal("go mod tidy must not run for --dry-run")
+		return nil, nil
+	})
+
+	err := Generate(context.Background(), Options{
+		Name:             "demo",
+		Database:         "sqlite",
+		FrameworkVersion: "v0.1.0",
+		Tidy:             true,
+		DryRun:           true,
+		WorkDir:          t.TempDir(),
+		Stdout:           new(bytes.Buffer),
+		Stderr:           new(bytes.Buffer),
+	})
+	if err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+}
+
+func TestGenerateTidyFailureIsNotFatal(t *testing.T) {
+	stubGoModTidy(t, func(context.Context, string) ([]byte, error) {
+		return []byte("dial tcp: lookup proxy.golang.org: no such host"), errors.New("exit status 1")
+	})
+
+	workDir := t.TempDir()
+	stderr := new(bytes.Buffer)
+	err := Generate(context.Background(), Options{
+		Name:             "demo",
+		Database:         "sqlite",
+		FrameworkVersion: "v0.1.0",
+		Tidy:             true,
+		WorkDir:          workDir,
+		Stdout:           new(bytes.Buffer),
+		Stderr:           stderr,
+	})
+	// The tree is already written and correct; an offline machine must still
+	// get a usable scaffold.
+	if err != nil {
+		t.Fatalf("Generate() error = %v, want tidy failure to be non-fatal", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(workDir, "demo", "go.mod")); statErr != nil {
+		t.Fatalf("go.mod missing after tidy failure: %v", statErr)
+	}
+	for _, fragment := range []string{"go mod tidy failed", "no such host", "cd demo && go mod tidy"} {
+		if !strings.Contains(stderr.String(), fragment) {
+			t.Errorf("warning = %q, want it to mention %q", stderr.String(), fragment)
+		}
+	}
 }

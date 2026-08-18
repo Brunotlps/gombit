@@ -17,11 +17,8 @@ gombit new tasks --database sqlite --auth cookie --ui mui
 cd tasks && gombit dev
 ```
 
-> **Status: pre-1.0, pre-first-release.** M0–M5 and ADMIN-1..3 are complete and
-> CI-gated across SQLite, PostgreSQL, and MySQL. APIs may still change between
-> minor versions. Until `v0.1.0` is published, a scaffolded app needs a one-line
-> `replace` to resolve the framework — see
-> [installation.md](docs/installation.md) (tracked as REL-9).
+> **Status: pre-1.0.** M0–M5 and ADMIN-1..3 are complete and CI-gated across
+> SQLite, PostgreSQL, and MySQL. APIs may still change between minor versions.
 
 ## Why Gombit
 

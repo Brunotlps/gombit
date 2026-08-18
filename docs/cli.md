@@ -62,21 +62,36 @@ gombit new demo --database sqlite
 ```
 
 That writes a compiling app under `./demo`. The default Go module path is
-`github.com/example/demo`. Override it with `--module`. After scaffolding,
-pin the framework version:
+`github.com/example/demo`. Override it with `--module`.
 
 ```sh
 cd demo
-go get github.com/LAA-Software-Engineering/gombit@latest
-go mod tidy
 go run ./cmd/server
 ```
 
-When developing against a local checkout of Gombit, add a replace in the
-generated `go.mod` (do not commit a machine-specific path):
+No `go get` step: the generated `go.mod` requires **the same gombit version as
+the binary that scaffolded it**, and `gombit new` then runs `go mod tidy` to
+populate `go.sum`. An installed release therefore produces a tree that builds
+immediately.
 
-```
-replace github.com/LAA-Software-Engineering/gombit => /path/to/gombit
+Version resolution follows `gombit version` (see below) and falls back to
+`v0.0.0` — which the proxy cannot resolve — when the CLI reports something
+unpublishable:
+
+| CLI build | Requirement written | Tidy |
+| --- | --- | --- |
+| Release binary (ldflags) | that tag, e.g. `v0.1.0` | runs |
+| `go install ...@latest` | the module version, e.g. a pseudo-version | runs |
+| `go build` / `go run` from a checkout (`dev`, `+dirty`) | `v0.0.0` | skipped |
+| `--framework-version vX.Y.Z` | that version | runs |
+
+In the fallback case the command prints why, and the app needs a replace
+pointing at your checkout (never commit a machine-specific path):
+
+```sh
+cd demo
+go mod edit -replace github.com/LAA-Software-Engineering/gombit=/path/to/gombit
+go mod tidy
 ```
 
 ### Flags
@@ -88,6 +103,8 @@ replace github.com/LAA-Software-Engineering/gombit => /path/to/gombit
 | `--auth` | `jwt`, `cookie`, `none` | `jwt` |
 | `--ui` | `minimal`, `mui` | `minimal` |
 | `--module` | Go module path | `github.com/example/<name>` |
+| `--framework-version` | gombit version the generated `go.mod` requires | this binary's version |
+| `--skip-tidy` | | do not run `go mod tidy` (offline) |
 | `--dry-run` | | print the file list without writing |
 | `--force` | | required to write into a non-empty destination |
 

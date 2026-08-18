@@ -4,18 +4,6 @@ Maintainer runbook. Gombit is an importable Go module, so **every tag is a
 permanent public API version** on pkg.go.dev — tags are cut deliberately, never
 automatically on merge.
 
-## Before the *first* release
-
-One-time, and it blocks the documented quickstart:
-`scaffold/templates/go.mod.tmpl` pins `require
-github.com/LAA-Software-Engineering/gombit v0.0.0`, which has never existed on
-the module proxy. Until it points at a real published version, `go build ./...`
-in a fresh `gombit new` tree fails with *missing go.sum entry*.
-
-Sequence: tag `v0.1.0` → land **REL-9** (template requires the published
-version) → verify `gombit new` + `go build ./...` on a clean machine with no
-`replace` → cut `v0.1.1`. Don't announce before that round trip passes.
-
 ## Before you tag
 
 1. **`main` is green**, including the full matrix in
@@ -119,6 +107,21 @@ cross-compiling job.
    [the new version](https://pkg.go.dev/github.com/LAA-Software-Engineering/gombit).
 4. **Smoke-test the quickstart** from the README in a clean directory with the
    released binary — `gombit new`, `gombit dev`, `gombit doctor`.
+
+   The important assertion is that a scaffolded app builds with **no manual
+   steps**: `gombit new` pins `go.mod` to the CLI's own version and runs
+   `go mod tidy`, so a released binary must produce a tree that compiles
+   straight away.
+
+   ```bash
+   cd "$(mktemp -d)"
+   gombit new smoke --database sqlite
+   cd smoke
+   grep gombit go.mod          # must show the tag you just published
+   go build ./...              # must succeed with no replace directive
+   ```
+
+   If this fails, the release is not usable — fix forward and cut a patch.
 5. **Open a `[Unreleased]` section** in the changelog for the next cycle.
 
 ## If a release goes wrong

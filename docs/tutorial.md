@@ -82,12 +82,13 @@ is a worked example — delete it once you've read it.
 go build ./...
 ```
 
-Compiles with no output.
+Compiles with no output. `gombit new` pinned `go.mod` to its own framework
+version and ran `go mod tidy`, so there is nothing to wire up by hand.
 
-> **Pre-release:** until `v0.1.0` is published, this step fails with *missing
-> go.sum entry* — the generated `go.mod` requires a framework version that
-> isn't on the module proxy yet. Apply the `replace` workaround in
-> [installation.md](installation.md#prerequisites) and re-run, then continue.
+> Building the CLI from source instead of installing it? Then it reports `dev`,
+> which the module proxy can't resolve, and `gombit new` tells you to add a
+> `replace` — see
+> [installation.md](installation.md#how-generated-apps-find-the-framework).
 
 ---
 

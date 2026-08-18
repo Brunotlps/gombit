@@ -16,7 +16,7 @@ func TestRunMakeCommandGreetRunnable(t *testing.T) {
 	workDir := t.TempDir()
 	chdir(t, workDir)
 
-	if err := run(context.Background(), []string{"new", "demo", "--database", "sqlite"}, ioDiscard{}, ioDiscard{}); err != nil {
+	if err := run(context.Background(), []string{"new", "demo", "--database", "sqlite", "--skip-tidy"}, ioDiscard{}, ioDiscard{}); err != nil {
 		t.Fatalf("gombit new: %v", err)
 	}
 	dest := filepath.Join(workDir, "demo")
@@ -97,7 +97,7 @@ func TestRunMakeCommandInResourcePackageCompiles(t *testing.T) {
 	workDir := t.TempDir()
 	chdir(t, workDir)
 
-	if err := run(context.Background(), []string{"new", "demo", "--database", "sqlite"}, ioDiscard{}, ioDiscard{}); err != nil {
+	if err := run(context.Background(), []string{"new", "demo", "--database", "sqlite", "--skip-tidy"}, ioDiscard{}, ioDiscard{}); err != nil {
 		t.Fatalf("gombit new: %v", err)
 	}
 	dest := filepath.Join(workDir, "demo")

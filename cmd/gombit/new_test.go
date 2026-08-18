@@ -67,7 +67,7 @@ func TestRunNewRequiresForceForNonEmptyDest(t *testing.T) {
 		t.Fatalf("write: %v", err)
 	}
 
-	err := run(context.Background(), []string{"new", "demo", "--database", "sqlite"}, ioDiscard{}, ioDiscard{})
+	err := run(context.Background(), []string{"new", "demo", "--database", "sqlite", "--skip-tidy"}, ioDiscard{}, ioDiscard{})
 	if err == nil {
 		t.Fatal("run() error = nil, want non-empty destination")
 	}
@@ -75,7 +75,7 @@ func TestRunNewRequiresForceForNonEmptyDest(t *testing.T) {
 		t.Fatalf("run() error = %q, want --force", err)
 	}
 
-	err = run(context.Background(), []string{"new", "demo", "--database", "sqlite", "--force"}, ioDiscard{}, ioDiscard{})
+	err = run(context.Background(), []string{"new", "demo", "--database", "sqlite", "--force", "--skip-tidy"}, ioDiscard{}, ioDiscard{})
 	if err != nil {
 		t.Fatalf("run(--force) error = %v", err)
 	}
@@ -113,7 +113,7 @@ func TestRunNewDemoCompiles(t *testing.T) {
 
 	stdout := new(bytes.Buffer)
 	stderr := new(bytes.Buffer)
-	err := run(context.Background(), []string{"new", "demo", "--database", "sqlite"}, stdout, stderr)
+	err := run(context.Background(), []string{"new", "demo", "--database", "sqlite", "--skip-tidy"}, stdout, stderr)
 	if err != nil {
 		t.Fatalf("run() error = %v; stderr=%q stdout=%q", err, stderr.String(), stdout.String())
 	}
