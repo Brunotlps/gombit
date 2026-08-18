@@ -94,7 +94,7 @@ func TestRunDryRunPrintsPlanWithoutWriting(t *testing.T) {
 		t.Fatalf("Run(dry-run) error = %v", err)
 	}
 	got := stdout.String()
-	for _, want := range []string{"would run:", "npm run build", "would copy:", "frontend/dist", "internal/web/static", "would compile:", "bin/server"} {
+	for _, want := range []string{"would run:", "npm install", "npm run build", "would copy:", "frontend/dist", "internal/web/static", "would compile:", "bin/server"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("dry-run stdout missing %q:\n%s", want, got)
 		}
@@ -215,6 +215,41 @@ func TestPlanFrontendPrefersPnpmLockfile(t *testing.T) {
 	}
 	if strings.Join(plan.Args, " ") != "run build" {
 		t.Fatalf("args = %v, want run build", plan.Args)
+	}
+}
+
+func TestRunDryRunOmitsInstallWhenNodeModulesPresent(t *testing.T) {
+	workDir := writeBuildApp(t)
+	writeFile(t, filepath.Join(workDir, "frontend", "node_modules", ".keep"), "")
+	stdout := new(bytes.Buffer)
+	err := Run(context.Background(), Options{
+		WorkDir: workDir,
+		Embed:   true,
+		DryRun:  true,
+		Out:     "bin/server",
+		Stdout:  stdout,
+		LookPath: func(file string) (string, error) {
+			switch file {
+			case "go", "npm":
+				return file, nil
+			default:
+				return "", errors.New("not found")
+			}
+		},
+		Command: func(name string, args ...string) *exec.Cmd {
+			t.Fatalf("dry-run must not exec %s %v", name, args)
+			return exec.Command("false")
+		},
+	})
+	if err != nil {
+		t.Fatalf("Run(dry-run) error = %v", err)
+	}
+	got := stdout.String()
+	if strings.Contains(got, "install") {
+		t.Fatalf("dry-run with node_modules mentioned install:\n%s", got)
+	}
+	if !strings.Contains(got, "npm run build") {
+		t.Fatalf("dry-run stdout missing npm run build:\n%s", got)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 	"testing"
 	"testing/fstest"
 
+	"github.com/LAA-Software-Engineering/gombit/config"
 	"github.com/LAA-Software-Engineering/gombit/contract"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/gin-gonic/gin"
@@ -105,6 +106,88 @@ func TestEmbeddedFrontendDoesNotTakeOverAPIOrProbes(t *testing.T) {
 	if strings.Contains(rec.Body.String(), embedIndexBody) {
 		t.Fatalf("GET %s served index.html, want API 404", prefix+"/missing")
 	}
+
+	rec = serveEmbed(t, app, http.MethodGet, "/docs", nil)
+	if strings.Contains(rec.Body.String(), embedIndexBody) {
+		t.Fatal("GET /docs served index.html, want Huma swagger (docs on)")
+	}
+
+	rec = serveEmbed(t, app, http.MethodGet, "/metrics", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /metrics status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), embedIndexBody) {
+		t.Fatal("GET /metrics served index.html, want metrics text")
+	}
+	if !strings.Contains(rec.Body.String(), "gombit_http") {
+		t.Fatalf("GET /metrics body = %q, want probe/metrics payload", rec.Body.String())
+	}
+}
+
+func TestEmbeddedFrontendDocsOffIsNotSPA(t *testing.T) {
+	previousMode := gin.Mode()
+	t.Cleanup(func() {
+		gin.SetMode(previousMode)
+	})
+
+	cfg := config.DefaultFor(config.EnvironmentProduction)
+	cfg.HTTP.Addr = "127.0.0.1:0"
+	if cfg.API.DocsEnabled {
+		t.Fatal("precondition: DefaultFor(production) DocsEnabled = true, want false")
+	}
+	app := newTestApp(t, WithConfig(cfg), WithEmbeddedFrontend(spaFixtureFS()))
+
+	rec := serveEmbed(t, app, http.MethodGet, "/docs", nil)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("GET /docs status = %d, want %d with docs off + embed", rec.Code, http.StatusNotFound)
+	}
+	if strings.Contains(rec.Body.String(), embedIndexBody) {
+		t.Fatal("GET /docs served index.html with DocsEnabled=false")
+	}
+
+	rec = serveEmbed(t, app, http.MethodGet, "/", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET / status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	if rec.Body.String() != embedIndexBody {
+		t.Fatalf("GET / body = %q, want SPA index.html", rec.Body.String())
+	}
+}
+
+func TestEmbeddedFrontendIndexUsesSPACSP(t *testing.T) {
+	app := newTestApp(t, WithEmbeddedFrontend(spaFixtureFS()))
+
+	rec := serveEmbed(t, app, http.MethodGet, "/", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET / status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	csp := rec.Header().Get("Content-Security-Policy")
+	if !strings.Contains(csp, "fonts.googleapis.com") {
+		t.Fatalf("GET / CSP = %q, want fonts.googleapis.com", csp)
+	}
+	style := cspDirective(csp, "style-src")
+	if style == "" || !strings.Contains(style, "'unsafe-inline'") {
+		t.Fatalf("GET / CSP = %q, want style-src with 'unsafe-inline'", csp)
+	}
+	script := cspDirective(csp, "script-src")
+	if script == "" {
+		t.Fatalf("GET / CSP = %q, want script-src 'self'", csp)
+	}
+	if strings.Contains(script, "'unsafe-inline'") {
+		t.Fatalf("GET / CSP = %q, must not put 'unsafe-inline' on script-src", csp)
+	}
+
+	rec = serveEmbed(t, app, http.MethodGet, "/readyz", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("GET /readyz status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	readyCSP := rec.Header().Get("Content-Security-Policy")
+	if readyCSP != "default-src 'self'" {
+		t.Fatalf("GET /readyz CSP = %q, want default-src 'self'", readyCSP)
+	}
+	if strings.Contains(readyCSP, "fonts.googleapis.com") {
+		t.Fatalf("GET /readyz CSP = %q, must not get SPA font hosts", readyCSP)
+	}
 }
 
 func TestEmbeddedFrontendPostUnmatchedIsNotIndex(t *testing.T) {
@@ -181,6 +264,16 @@ func TestEmbeddedFrontendRejectsDotDot(t *testing.T) {
 	if rec.Body.String() != embedIndexBody {
 		t.Fatalf("traversal escaped embed FS: %q", rec.Body.String())
 	}
+}
+
+func cspDirective(csp, name string) string {
+	for _, part := range strings.Split(csp, ";") {
+		part = strings.TrimSpace(part)
+		if part == name || strings.HasPrefix(part, name+" ") {
+			return part
+		}
+	}
+	return ""
 }
 
 func spaFixtureFS() fstest.MapFS {

@@ -96,6 +96,17 @@ func isReservedFrontendPath(urlPath, apiPrefix string) bool {
 	return false
 }
 
+// spaContentSecurityPolicy overwrites the global default-src 'self' header
+// when serving SPA index.html so --ui mui + --embed can load Roboto and
+// Emotion-injected <style> tags. script-src stays 'self' (hashed Vite
+// modules; no unsafe-inline scripts). JSON API and probe responses keep
+// the global policy.
+const spaContentSecurityPolicy = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'"
+
+func applySPAContentSecurityPolicy(c *gin.Context) {
+	c.Header("Content-Security-Policy", spaContentSecurityPolicy)
+}
+
 func serveEmbeddedFile(c *gin.Context, fsys fs.FS, name string) bool {
 	f, err := fsys.Open(name)
 	if err != nil {
@@ -106,6 +117,10 @@ func serveEmbeddedFile(c *gin.Context, fsys fs.FS, name string) bool {
 	info, err := f.Stat()
 	if err != nil || info.IsDir() {
 		return false
+	}
+
+	if name == "index.html" {
+		applySPAContentSecurityPolicy(c)
 	}
 
 	if rs, ok := f.(io.ReadSeeker); ok {
@@ -127,6 +142,7 @@ func serveIndexHTML(c *gin.Context, fsys fs.FS) {
 		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
+	applySPAContentSecurityPolicy(c)
 	c.Data(http.StatusOK, "text/html; charset=utf-8", data)
 }
 

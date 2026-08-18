@@ -43,10 +43,13 @@ func TestBuildHelpDescribesEmbed(t *testing.T) {
 		t.Fatalf("gombit build --help: %v", err)
 	}
 	out := stdout.String() + stderr.String()
-	for _, want := range []string{"--embed", "--out", "--dry-run", "Split", "collectstatic"} {
+	for _, want := range []string{"--embed", "--out", "--dry-run", "Split", "collectstatic", "required to run this command"} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("help missing %q:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "required for v0.1") {
+		t.Fatalf("help still says required for v0.1:\n%s", out)
 	}
 }
 

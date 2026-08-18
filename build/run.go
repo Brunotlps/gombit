@@ -118,11 +118,16 @@ func Run(ctx context.Context, opts Options) error {
 }
 
 func printPlan(opts Options, frontend frontendPlan, goBin, distDir, staticDir, outPath string) error {
-	lines := []string{
+	var lines []string
+	frontendDir := filepath.Join(opts.WorkDir, frontendDirRel)
+	if !frontendDepsInstalled(frontendDir) {
+		lines = append(lines, fmt.Sprintf("would run: %s install (in %s)", frontend.Manager, frontendDirRel))
+	}
+	lines = append(lines,
 		fmt.Sprintf("would run: %s %s (in %s)", frontend.Manager, joinArgs(frontend.Args), frontendDirRel),
 		fmt.Sprintf("would copy: %s -> %s", displayRel(opts.WorkDir, distDir), displayRel(opts.WorkDir, staticDir)),
 		fmt.Sprintf("would compile: %s build -o %s %s", filepath.Base(goBin), displayRel(opts.WorkDir, outPath), serverPkg),
-	}
+	)
 	for _, line := range lines {
 		if _, err := fmt.Fprintln(opts.Stdout, line); err != nil {
 			return err

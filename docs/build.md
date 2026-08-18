@@ -64,6 +64,24 @@ The compiled binary serves:
 
 Path names are cleaned; `..` cannot escape the embed FS.
 
+## SPA Content-Security-Policy
+
+Global middleware sets `Content-Security-Policy: default-src 'self'` on every
+response. When the embedded frontend serves `index.html` (GET `/` and SPA
+fallback), that header is overwritten so `--ui mui` + `--embed` can load
+Roboto and Emotion-injected `<style>` tags:
+
+- `script-src 'self'` — Vite production JS is hashed same-origin modules
+  (no `'unsafe-inline'` scripts)
+- `style-src 'self' 'unsafe-inline' https://fonts.googleapis.com` — Emotion
+  runtime styles plus the Google Fonts stylesheet
+- `font-src 'self' https://fonts.gstatic.com` — Roboto font files
+- `connect-src 'self'` — same-origin API
+- `img-src 'self' data:`
+
+JSON API, probes, and `/metrics` keep `default-src 'self'`. `/docs` (when
+enabled) keeps Huma's Swagger UI policy.
+
 ## Scaffold hook
 
 `gombit new` writes:

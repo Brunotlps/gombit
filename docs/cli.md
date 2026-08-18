@@ -235,7 +235,7 @@ The compiled binary serves Huma `/api/*`, `/openapi.json`, `/docs`,
 
 | Flag | Default | Role |
 | --- | --- | --- |
-| `--embed` | off (required for v0.1) | Opt in to collectstatic + `go:embed` |
+| `--embed` | off (required to run this command; split deploy stays the default) | Opt in to collectstatic + `go:embed` |
 | `--out` | `bin/server` | Output binary path |
 | `--dry-run` | | Print the plan without writing or compiling |
 

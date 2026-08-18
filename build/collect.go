@@ -63,6 +63,9 @@ func copyTree(srcDir, dstDir string) error {
 			}
 			return nil
 		}
+		if !d.Type().IsRegular() {
+			return nil
+		}
 		return copyFile(path, target)
 	})
 }

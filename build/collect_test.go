@@ -63,6 +63,29 @@ func TestCollectStaticRequiresIndexHTML(t *testing.T) {
 	}
 }
 
+func TestCollectStaticSkipsSymlinks(t *testing.T) {
+	root := t.TempDir()
+	src := filepath.Join(root, "dist")
+	dst := filepath.Join(root, "static")
+	secret := filepath.Join(root, "secret.txt")
+	writeFile(t, filepath.Join(src, "index.html"), "<html>ok</html>")
+	writeFile(t, secret, "outside-secret")
+	if err := os.Symlink(secret, filepath.Join(src, "leak.txt")); err != nil {
+		t.Skipf("symlink: %v", err)
+	}
+
+	if err := CollectStatic(src, dst); err != nil {
+		t.Fatalf("CollectStatic() error = %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(dst, "leak.txt")); !os.IsNotExist(err) {
+		t.Fatal("symlink leak.txt was copied into static")
+	}
+	if got := readFile(t, filepath.Join(dst, "index.html")); got != "<html>ok</html>" {
+		t.Fatalf("index.html = %q", got)
+	}
+}
+
 func TestCollectStaticDirFSServesAPIAndSPA(t *testing.T) {
 	root := t.TempDir()
 	src := filepath.Join(root, "dist")
