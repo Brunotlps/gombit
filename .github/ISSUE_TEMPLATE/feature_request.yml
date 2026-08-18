@@ -1,0 +1,91 @@
+name: Feature request
+description: Propose a capability, command, or API addition
+title: "[feature] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Gombit is built from the backlog in
+        [`docs/GOMBIT_BUILD_PLAN.md`](../blob/main/docs/GOMBIT_BUILD_PLAN.md) §4,
+        and §1–§3 record architecture decisions that are deliberately settled
+        (Huma contract layer, Atlas migrations, Cobra CLI, the runtime generic
+        admin, the `{data}` / `{error}` response envelope).
+
+        Proposals that reopen a locked decision need to argue against the ADR
+        that locked it, not just restate the alternative.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: >-
+        What are you trying to do that Gombit makes hard or impossible today?
+        Describe the situation, not the solution.
+      placeholder: >-
+        I need every list endpoint to support cursor pagination, but the
+        generated resource handler only does offset/limit.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed surface
+      description: >-
+        What would the API, command, or flag look like? Concrete signatures and
+        command lines beat prose.
+      placeholder: |
+        gombit make resource Task --pagination cursor
+
+        // or, at runtime:
+        contract.Paginate(contract.Cursor{Field: "id"})
+      render: text
+    validations:
+      required: true
+
+  - type: input
+    id: django
+    attributes:
+      label: Django (or other framework) equivalent
+      description: >-
+        Gombit's north star is Django-for-Go. If this exists elsewhere, naming
+        it is the fastest way to convey the shape you want.
+      placeholder: "Django: CursorPagination in DRF"
+
+  - type: dropdown
+    id: milestone
+    attributes:
+      label: Where do you think this belongs?
+      description: >-
+        A guess is fine — maintainers will re-bucket. "post-v0.1 battery" covers
+        jobs, events, scheduler, mail, storage, gRPC, multi-tenancy, and i18n,
+        which are explicitly out of the v0.1 CRUD loop.
+      options:
+        - runtime / framework
+        - migrations
+        - contract (OpenAPI / client)
+        - CLI / generators
+        - frontend / auth
+        - admin
+        - post-v0.1 battery
+        - not sure
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and workarounds
+      description: >-
+        What are you doing today instead? Does the `app.Router()` escape hatch
+        or a hand-written handler already cover it?
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues and the build plan §4 backlog
+          required: true

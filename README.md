@@ -1,68 +1,228 @@
 # Gombit
 
-Gombit is a Django-for-Go full-stack framework. The current repository has
-typed config, `framework.App` lifecycle, Huma contract/OpenAPI/client
-generation, Atlas-backed `gombit db` migrations, and a Cobra CLI that
-scaffolds apps with `gombit new`, runs them with `gombit dev`, and optionally
-embeds the Vite frontend with `gombit build --embed`.
+[![CI](https://github.com/LAA-Software-Engineering/gombit/actions/workflows/ci.yml/badge.svg)](https://github.com/LAA-Software-Engineering/gombit/actions/workflows/ci.yml)
+[![Release](https://github.com/LAA-Software-Engineering/gombit/actions/workflows/release.yml/badge.svg)](https://github.com/LAA-Software-Engineering/gombit/actions/workflows/release.yml)
+[![Go 1.25+](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)](https://go.dev/dl/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Go Reference](https://pkg.go.dev/badge/github.com/LAA-Software-Engineering/gombit.svg)](https://pkg.go.dev/github.com/LAA-Software-Engineering/gombit)
 
-## Development
+**A Django-for-Go full-stack framework.** One CLI scaffolds a typed Go API, its
+OpenAPI document, a matching TypeScript client, a React frontend, versioned SQL
+migrations, session auth, and a working admin — then builds the whole thing into
+a single binary.
 
-```sh
-go test ./...
-golangci-lint run
+```bash
+go install github.com/LAA-Software-Engineering/gombit/cmd/gombit@latest
+gombit new tasks --database sqlite --auth cookie --ui mui
+cd tasks && gombit dev
 ```
 
-Emit the current spike OpenAPI document:
+> **Status: pre-1.0, pre-first-release.** M0–M5 and ADMIN-1..3 are complete and
+> CI-gated across SQLite, PostgreSQL, and MySQL. APIs may still change between
+> minor versions. Until `v0.1.0` is published, a scaffolded app needs a one-line
+> `replace` to resolve the framework — see
+> [installation.md](docs/installation.md) (tracked as REL-9).
 
-```sh
-go run ./cmd/contract-spike-openapi openapi.json
+## Why Gombit
+
+Go has excellent HTTP routers. What it doesn't have is the thing Django users
+miss on day one: the **batteries**, wired together and agreeing with each other.
+
+Gombit's position is that the pieces you'd otherwise assemble by hand — schema,
+API contract, typed client, auth, admin — should be **derived from one source of
+truth** instead of hand-synchronized:
+
+- **Your handler signature is the contract.** OpenAPI 3.1 is emitted from
+  Huma-typed handlers, never hand-written, and the TypeScript client is
+  generated from that. A drift check fails CI when they disagree.
+- **Your GORM model is the schema.** Migrations are versioned SQL diffed by
+  Atlas from your models — readable, reviewable, and reversible. No
+  `AutoMigrate` in production, no hand-rolled migration DSL.
+- **Your registry is the admin.** A real Django-style admin at `/admin/`,
+  served by the framework at runtime, not generated pages you inherit and
+  maintain.
+
+And the escape hatches are real: `app.Router()` hands you the raw `*gin.Engine`,
+tested and first-class.
+
+## What's in the box
+
+| | |
+| --- | --- |
+| **Runtime** | Gin + [Huma](https://huma.rocks/) with typed handlers, `framework.App` lifecycle hooks, graceful shutdown, structured logging, typed env config with secret redaction |
+| **Data** | GORM over **SQLite, PostgreSQL, and MySQL** — all three CI-gated on every push, with a shared conformance suite |
+| **Migrations** | [Atlas](https://atlasgo.io/)-backed `gombit db makemigrations / migrate / rollback / status / seed / reset` |
+| **Contract** | OpenAPI 3.1 emitted from code, interactive `/docs`, generated TypeScript client, contract drift check |
+| **Frontend** | Vite + React + TypeScript, React Hook Form, optional Material UI CRUD preset (`--ui mui`) |
+| **Auth** | Bearer JWT with refresh rotation (token in memory, **never `localStorage`**), or first-class cookie sessions with CSRF (`--auth cookie`) |
+| **Admin** | Runtime generic admin at `/admin/` with introspection API, permissions, groups, and superuser bypass |
+| **CLI** | Cobra tree: `new`, `dev`, `build --embed`, `make resource`, `make command`, `db`, `openapi`, `client`, `routes`, `doctor`, `config`, `createsuperuser`, `version` |
+| **Deploy** | `gombit build --embed` — API, SPA, and admin in one binary |
+
+## Quick start
+
+**Prerequisites:** Go 1.25+, Node 22+, and a C toolchain (SQLite is cgo-only).
+Migrations also need [Atlas](https://atlasgo.io/):
+`curl -sSf https://atlasgo.sh | sh -s -- --community`. Full details in
+[installation.md](docs/installation.md).
+
+```bash
+# 1. Install
+go install github.com/LAA-Software-Engineering/gombit/cmd/gombit@latest
+
+# 2. Scaffold
+gombit new tasks --database sqlite --auth cookie --ui mui
+cd tasks
+
+# 3. Run the API and frontend together
+gombit dev
 ```
 
-Scaffold an application (Cobra CLI; default module `github.com/example/demo`):
+`gombit dev` serves the Go API and Vite together, proxies `/api` and
+`/openapi.json`, and regenerates the TypeScript client whenever the spec
+changes:
 
-```sh
-go run ./cmd/gombit new demo --database sqlite
+| URL | |
+| --- | --- |
+| <http://127.0.0.1:5173> | React app |
+| <http://127.0.0.1:8080/docs> | interactive API docs |
+| <http://127.0.0.1:8080/admin/> | admin SPA |
+
+### The CRUD loop
+
+```bash
+# Generate a feature package: model + Huma handler + routes + React pages.
+gombit make resource Task title:string:required done:bool
+
+# Diff your models into versioned SQL, then apply it.
+gombit db makemigrations create_tasks --model github.com/example/tasks/internal/task.Task
+gombit db migrate
+
+# Regenerate the typed client from the live spec.
+gombit client generate
+
+# Create an admin account and open /admin/.
+export GOMBIT_JWT_SECRET="$(openssl rand -hex 32)"
+gombit createsuperuser --email admin@example.com
 ```
 
-From the app directory, `gombit dev` runs the Go API and Vite frontend
-together, proxies `/api` (and `/openapi.json`, `/docs`) to the backend,
-regenerates the TypeScript client when the live spec changes, and prints a
-service table including the API docs URL. See [`docs/cli.md`](docs/cli.md).
+`make resource` edits `cmd/server/main.go` through `go/ast` — never regex — to
+register your routes and models. Generators are idempotent and additive, support
+`--dry-run` and `--force`, and never overwrite files you own.
 
-Write the live app spec (app must be serving `/openapi.json`):
+Then ship it:
 
-```sh
-go run ./cmd/gombit openapi generate --out openapi.json
+```bash
+gombit build --embed   # one binary: API + SPA + admin
 ```
 
-Interactive docs are at `/docs` when `GOMBIT_DOCS_ENABLED` is on (the local
-default). See [`docs/openapi.md`](docs/openapi.md).
+**Next:** the [tutorial](docs/tutorial.md) walks this whole loop with
+explanations, and [`examples/tutorial/`](examples/tutorial) is the finished app.
 
-The authoritative implementation backlog and architecture decisions live in
-[`docs/GOMBIT_BUILD_PLAN.md`](docs/GOMBIT_BUILD_PLAN.md).
+## Architecture
 
-The Cobra command tree, `gombit new`, `gombit dev`, `gombit build --embed`,
-`gombit make resource`,
-`gombit make command`, `gombit routes`, `gombit doctor`, and
-`gombit config show` are documented in [`docs/cli.md`](docs/cli.md).
-Accepted architecture decisions are recorded under [`docs/adr/`](docs/adr/).
-Runtime configuration is documented in [`docs/config.md`](docs/config.md).
-Application lifecycle is documented in [`docs/lifecycle.md`](docs/lifecycle.md).
-Application-owned route registration is documented in [`docs/router.md`](docs/router.md).
-Huma DTO and validation conventions are documented in [`docs/contract.md`](docs/contract.md).
-OpenAPI emission and `/docs` are documented in [`docs/openapi.md`](docs/openapi.md).
-TypeScript client generation and the contract drift check are documented in
-[`docs/client.md`](docs/client.md).
-The Vite + React skeleton is documented in [`docs/frontend.md`](docs/frontend.md).
-Optional `go:embed` production is documented in [`docs/build.md`](docs/build.md).
-Bearer JWT login is documented in [`docs/auth.md`](docs/auth.md); cookie/session
-auth (`--auth cookie`) and its CSRF threat model are documented in
-[`docs/auth-cookie.md`](docs/auth-cookie.md).
-The admin registry, introspection API, and framework-owned SPA under
-`/admin/` (ADMIN-1 + ADMIN-2) are documented in
-[`docs/admin.md`](docs/admin.md) ([ADR-013](docs/adr/013-runtime-generic-admin.md)).
-Database runtime support is documented in [`docs/database.md`](docs/database.md).
-Cache runtime support is documented in [`docs/cache.md`](docs/cache.md).
-Runtime logging is documented in [`docs/logging.md`](docs/logging.md).
-Migration generation is documented in [`docs/migrations.md`](docs/migrations.md).
+```mermaid
+flowchart LR
+  Model[GORM models] --> Atlas[Atlas diff]
+  Atlas --> SQL[(versioned SQL)]
+  Model --> Handler[Huma-typed handlers]
+  Handler --> Gin[Gin router]
+  Handler --> Spec[OpenAPI 3.1]
+  Spec --> TS[TypeScript client]
+  TS --> React[React + Vite]
+  Model --> Registry[admin registry]
+  Registry --> AdminUI["/admin/ SPA"]
+  Gin --> Binary[single binary]
+  React --> Binary
+  AdminUI --> Binary
+```
+
+Both arrows out of your model are the point: one declaration drives the schema
+and the API, and one API drives the client.
+
+The response envelope is fixed so clients can rely on it — success is
+`{"data": ..., "meta"?: ...}`, and errors carry a machine-readable code plus
+per-field detail:
+
+```json
+{
+  "error": {
+    "code": "validation_error",
+    "message": "The request contains invalid fields.",
+    "fields": {"title": ["expected length >= 1"]},
+    "request_id": "5db935cd-7c74-4ffe-a4de-0fa817451f54"
+  }
+}
+```
+
+## The admin
+
+No other Go web framework ships a real Django-style admin — not Gin, Echo,
+Fiber, or Encore. Gombit's is a **runtime** surface over an explicit registry:
+
+```go
+admin.Register(app, Task{}, admin.Options{
+	Slug:   "tasks",
+	List:   []string{"title", "done"},
+	Search: []string{"title"},
+})
+```
+
+That gives you list, detail, create, update, and delete at `/admin/`, backed by
+`GET /api/v1/admin/meta` and a generic `/api/v1/admin/resources/{slug}` data
+plane. Permissions default to `admin.{slug}.{action}`, are granted directly or
+through groups, and superusers bypass them.
+
+Registration is explicit and typed — resolved once at startup, with no
+request-time reflection over your models, and no generated admin pages for you
+to maintain. Requires cookie auth. See [admin.md](docs/admin.md) and
+[ADR-013](docs/adr/013-runtime-generic-admin.md).
+
+## Compared with
+
+| | Gombit | Gin / Echo / Fiber | Buffalo | Encore |
+| --- | --- | --- | --- | --- |
+| HTTP routing | ✅ (Gin) | ✅ | ✅ | ✅ |
+| Typed OpenAPI from code | ✅ | ➖ add-on | ➖ | ✅ |
+| Generated TS client + drift check | ✅ | ➖ | ➖ | ✅ |
+| Versioned SQL migrations | ✅ (Atlas) | ➖ | ✅ (fizz) | ✅ |
+| Scaffolding generators | ✅ AST-safe | ➖ | ✅ | ➖ |
+| Session auth + CSRF | ✅ | ➖ | ✅ | ➖ |
+| **Django-style admin** | ✅ | ➖ | ➖ | ➖ |
+| Self-hosted, no vendor runtime | ✅ | ✅ | ✅ | ➖ |
+
+Gombit is younger than all of them. If you want a minimal router, use Gin
+directly — Gombit *is* Gin underneath, and hands it back to you on request.
+
+## Documentation
+
+Start with [**installation**](docs/installation.md) and the
+[**tutorial**](docs/tutorial.md). The full index — runtime, data, contract,
+frontend, auth, admin, and ADRs — is at [**docs/README.md**](docs/README.md).
+
+Scope, locked architecture decisions, and the issue backlog live in
+[`docs/GOMBIT_BUILD_PLAN.md`](docs/GOMBIT_BUILD_PLAN.md), which is authoritative.
+
+## Roadmap
+
+**Shipped:** typed config and lifecycle (M1) · Atlas migrations (M2) · Huma
+contract, OpenAPI, and TS client (M3) · Cobra CLI and generators (M4) · React
+frontend, Bearer and cookie auth, MUI preset, embedded builds (M5) · the runtime
+admin with permissions (ADMIN-1..3).
+
+**Post-v0.1**, deliberately not here yet: background jobs and queues, events,
+scheduler, mail, storage, gRPC, multi-tenancy, i18n.
+
+## Contributing
+
+Issues and pull requests are welcome — start with
+[CONTRIBUTING.md](CONTRIBUTING.md).
+
+- [Report a bug or request a feature](https://github.com/LAA-Software-Engineering/gombit/issues/new/choose)
+- [Security policy](SECURITY.md) — report vulnerabilities privately, not as issues
+- [Code of conduct](CODE_OF_CONDUCT.md)
+- [Changelog](CHANGELOG.md)
+
+## License
+
+[MIT](LICENSE) © LAA Software Engineering

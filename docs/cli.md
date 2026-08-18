@@ -32,6 +32,7 @@ go run ./cmd/gombit --help
 | `gombit doctor` | Environment and config checks | M4-4 |
 | `gombit config show` | Print typed config with secrets redacted | M4-4 |
 | `gombit createsuperuser` | Create a superuser (admin) account | M4-6 |
+| `gombit version` | Print version and build metadata | REL-4 |
 
 ## Generator golden tests
 
@@ -484,6 +485,48 @@ tests, pipes), the missing flags are a hard error instead of a hang.
 `createsuperuser` sets `auth.User.IsSuperuser`; ADMIN-3 treats that flag as
 a bypass for all direct and group permission checks. See
 [admin.md](admin.md).
+
+## `gombit version`
+
+```sh
+gombit version
+gombit version --short
+gombit --version
+```
+
+```text
+gombit:   v0.1.0
+commit:   9abb3c6ecc8c1bf93419aa43c4d4f1ae3de97a2b
+built:    2026-08-18T19:33:15Z
+go:       go1.25.7
+platform: linux/amd64
+```
+
+Include this output when filing a bug report — the issue form asks for it.
+
+Version resolution has three tiers, in order:
+
+1. **ldflags.** Release binaries are stamped by
+   `.github/workflows/release.yml` with
+   `-X github.com/LAA-Software-Engineering/gombit/cli.Version=<tag>` (plus
+   `Commit` and `BuildDate`).
+2. **Module build info.** A binary from
+   `go install github.com/LAA-Software-Engineering/gombit/cmd/gombit@v0.1.0`
+   carries no ldflags, so the version comes from
+   `runtime/debug.ReadBuildInfo()`. `commit` and `built` come from the
+   embedded `vcs.revision` / `vcs.time` settings when the build had them.
+3. **`dev`.** A local `go run ./cmd/gombit` or a build from a checkout
+   reports `dev` rather than Go's `(devel)`, with `unknown` for the fields
+   that have no source.
+
+`--short` prints the bare version string and nothing else, which is what you
+want in scripts:
+
+```sh
+test "$(gombit version --short)" = "v0.1.0"
+```
+
+See [installation.md](installation.md) and [releasing.md](releasing.md).
 
 ## `gombit openapi` and `gombit client`
 

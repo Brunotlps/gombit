@@ -1,0 +1,125 @@
+name: Bug report
+description: Something in the framework, CLI, or a generated app behaves incorrectly
+title: "[bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Please fill in enough for someone to reproduce
+        this without guessing.
+
+        **Found a security vulnerability?** Do not open an issue — see
+        [SECURITY.md](../blob/main/SECURITY.md) for private reporting.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: What happened
+      description: What did you observe, and what did you expect instead?
+      placeholder: |
+        `gombit db migrate` reports success but the revision table stays empty.
+        I expected the applied revision to be recorded.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: >-
+        Exact commands from a clean state. Start from `gombit new` where you
+        can — a reproduction we can paste into a shell gets fixed much faster.
+      placeholder: |
+        1. gombit new demo --database sqlite
+        2. cd demo
+        3. gombit db makemigrations initial --model internal/task.Task
+        4. gombit db migrate
+        5. gombit db status  # shows the migration as pending
+      render: shell
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: gombit version
+      description: "Output of `gombit version --short` (or `dev` if built from a checkout)."
+      placeholder: v0.1.0
+    validations:
+      required: true
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: >-
+        Paste the full output of `gombit version`. If the bug involves a
+        database, migrations, or config, `gombit doctor` output helps too.
+      render: text
+    validations:
+      required: true
+
+  - type: dropdown
+    id: database
+    attributes:
+      label: Database
+      description: Which driver does this reproduce on?
+      multiple: true
+      options:
+        - sqlite
+        - postgres
+        - mysql
+        - not database related
+    validations:
+      required: true
+
+  - type: dropdown
+    id: auth
+    attributes:
+      label: Auth mode
+      description: "`--auth` value of the app, if relevant."
+      options:
+        - jwt (Bearer, default)
+        - cookie (session + CSRF)
+        - none
+        - not auth related
+    validations:
+      required: true
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Where does the problem appear?
+      multiple: true
+      options:
+        - CLI / generators
+        - runtime (framework.App, routing, lifecycle)
+        - contract (Huma, OpenAPI, TypeScript client)
+        - migrations (Atlas)
+        - database / GORM
+        - auth
+        - admin
+        - frontend (Vite / React)
+        - docs
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or output
+      description: Relevant command output, stack traces, or request/response bodies.
+      render: text
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues for a duplicate
+          required: true
+        - label: This reproduces on the latest release or on `main`
+          required: false

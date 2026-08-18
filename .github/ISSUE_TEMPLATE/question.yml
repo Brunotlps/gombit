@@ -1,0 +1,52 @@
+name: Question
+description: Ask how to do something with Gombit
+title: "[question] "
+labels:
+  - question
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Questions are welcome. If the answer turns out to be missing from the
+        docs, that is a docs bug and we'll treat it as one.
+
+  - type: textarea
+    id: goal
+    attributes:
+      label: What are you trying to do?
+      description: The end goal, not just the step you're stuck on.
+      placeholder: >-
+        I want the admin to show a read-only computed column for each task's
+        age, without adding a database column.
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you tried?
+      description: Commands, code, and what happened.
+      render: text
+
+  - type: checkboxes
+    id: docs
+    attributes:
+      label: Which docs have you already read?
+      description: So nobody sends you back to a page you've seen.
+      options:
+        - label: "[Tutorial](../blob/main/docs/tutorial.md)"
+        - label: "[Installation](../blob/main/docs/installation.md)"
+        - label: "[CLI reference](../blob/main/docs/cli.md)"
+        - label: "[Configuration](../blob/main/docs/config.md)"
+        - label: "[Contract / OpenAPI](../blob/main/docs/contract.md)"
+        - label: "[Migrations](../blob/main/docs/migrations.md)"
+        - label: "[Auth](../blob/main/docs/auth.md) / [cookie auth](../blob/main/docs/auth-cookie.md)"
+        - label: "[Admin](../blob/main/docs/admin.md)"
+        - label: "[Docs index](../blob/main/docs/README.md)"
+
+  - type: input
+    id: version
+    attributes:
+      label: gombit version
+      description: "Output of `gombit version --short`."
+      placeholder: v0.1.0
