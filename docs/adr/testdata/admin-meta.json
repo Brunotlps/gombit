@@ -53,6 +53,12 @@
           "create": "admin.products.create",
           "update": "admin.products.update",
           "delete": "admin.products.delete"
+        },
+        "can": {
+          "view": true,
+          "create": false,
+          "update": false,
+          "delete": false
         }
       },
       {
@@ -90,6 +96,12 @@
           "create": "admin.categories.create",
           "update": "admin.categories.update",
           "delete": "admin.categories.delete"
+        },
+        "can": {
+          "view": true,
+          "create": false,
+          "update": false,
+          "delete": false
         }
       }
     ]
@@ -97,7 +109,7 @@
   "meta": {
     "auth": {
       "mode": "cookie",
-      "bootstrap": "is_superuser"
+      "bootstrap": "permissions"
     }
   }
 }

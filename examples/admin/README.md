@@ -1,4 +1,4 @@
-# Admin example (ADMIN-1 + ADMIN-2)
+# Admin example (ADMIN-1 through ADMIN-3)
 
 Minimal `framework.App` with `Config.Auth.Mode = config.AuthModeCookie`,
 SQLite, and an explicit `admin.Register` of a small `widget.Widget` model.
@@ -20,6 +20,12 @@ Sign in with the seeded superuser
 `admin@example.com` / `correct-horse-battery-staple`. The widgets screen
 appears because `widget.RegisterAdmin` called `admin.Register` — there is
 no per-model React file.
+
+The example also seeds `viewer@example.com` with the same password and adds
+that user to a `viewers` group containing only `admin.widgets.view`. The
+viewer can open the widget list and detail screens. The API returns 403 for
+create, update, and delete, and the SPA hides those buttons. The superuser
+sees every enabled action without needing permission rows.
 
 Interactive docs: [http://127.0.0.1:8082/docs](http://127.0.0.1:8082/docs).
 
@@ -61,10 +67,10 @@ curl -sS -c "$JAR" -b "$JAR" -X DELETE "http://127.0.0.1:8082/api/v1/admin/resou
 rm -f "$JAR"
 ```
 
-Anonymous calls return D10 `authentication` (401). A normal registered user
-(not a superuser) gets D10 `authorization` (403). Unknown slugs/ids are
-`not_found`. A disabled action is `authorization` for an authenticated
-superuser.
+Anonymous calls return D10 `authentication` (401). An authenticated user
+without the registered action permission gets D10 `authorization` (403).
+Unknown slugs/ids are `not_found`. A disabled action is `authorization`
+even for a superuser.
 
 ## Create a superuser against a file DSN
 

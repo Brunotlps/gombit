@@ -40,6 +40,7 @@ type metaModel struct {
 	Ordering    []string          `json:"ordering"`
 	Actions     metaActions       `json:"actions"`
 	Permissions map[string]string `json:"permissions"`
+	Can         metaCapabilities  `json:"can"`
 }
 
 type metaField struct {
@@ -59,6 +60,13 @@ type metaRelated struct {
 type metaActions struct {
 	List   bool `json:"list"`
 	Detail bool `json:"detail"`
+	Create bool `json:"create"`
+	Update bool `json:"update"`
+	Delete bool `json:"delete"`
+}
+
+type metaCapabilities struct {
+	View   bool `json:"view"`
 	Create bool `json:"create"`
 	Update bool `json:"update"`
 	Delete bool `json:"delete"`
@@ -87,8 +95,8 @@ func TestAdminMetaFixtureUnmarshal(t *testing.T) {
 	if env.Meta.Auth.Mode != "cookie" {
 		t.Errorf("meta.auth.mode = %q, want %q", env.Meta.Auth.Mode, "cookie")
 	}
-	if env.Meta.Auth.Bootstrap != "is_superuser" {
-		t.Errorf("meta.auth.bootstrap = %q, want %q", env.Meta.Auth.Bootstrap, "is_superuser")
+	if env.Meta.Auth.Bootstrap != "permissions" {
+		t.Errorf("meta.auth.bootstrap = %q, want %q", env.Meta.Auth.Bootstrap, "permissions")
 	}
 
 	products := env.Data.Models[0]
@@ -103,6 +111,9 @@ func TestAdminMetaFixtureUnmarshal(t *testing.T) {
 	}
 	if got := products.Permissions["view"]; got != "admin.products.view" {
 		t.Errorf("models[0].permissions.view = %q, want %q", got, "admin.products.view")
+	}
+	if !products.Can.View || products.Can.Create || products.Can.Update || products.Can.Delete {
+		t.Errorf("models[0].can = %+v, want view-only", products.Can)
 	}
 
 	var relation *metaField

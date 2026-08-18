@@ -37,14 +37,15 @@ The other locked constraints this ADR must encode, not reopen:
   `AuthModeCookie`) is first-class and a **hard prerequisite** of the admin.
   The admin UI uses HttpOnly session cookies + CSRF (M5-3). Superuser
   (`User.IsSuperuser`, seeded by M4-6 `gombit createsuperuser`) is the
-  bootstrap admin; groups/permissions land in ADMIN-3.
+  bootstrap admin; groups/permissions are provided by ADMIN-3.
 - **C4:** the default generated app UI stays minimal/headless. `--ui mui` is
   an opt-in preset for **application** screens, not the admin.
 - **M5-5:** optional `go:embed` + SPA fallback is the pattern for serving a
   framework- or app-owned React bundle from Gin without putting those routes
   in OpenAPI.
 - **Scope guard:** jobs, events, scheduler, mail, storage, gRPC, multi-tenancy,
-  and i18n stay out. This ADR does not implement ADMIN-1, ADMIN-2, or ADMIN-3.
+  and i18n stay out. This decision did not itself implement ADMIN-1,
+  ADMIN-2, or ADMIN-3.
 
 M5-3 (issue #30) is done, so the session/CSRF prerequisite is met. ADMIN-0's
 job is to lock the registry/introspection contract and the "framework-owned
@@ -93,8 +94,7 @@ func RegisterAdmin(app *framework.App) {
         Actions: admin.Actions{
             List: true, Detail: true, Create: true, Update: true, Delete: true,
         },
-        // Permission keys are declared here; ADMIN-3 enforces them.
-        // Until then the runtime gates on User.IsSuperuser only.
+        // Permission keys are declared here and enforced by ADMIN-3.
         Permissions: admin.Permissions{
             View:   "admin.products.view",
             Create: "admin.products.create",
@@ -118,7 +118,7 @@ the generic data plane expose:
 | `Filter` | Fields the list may filter on. |
 | `Ordering` | Fields the list may order by. |
 | `Actions` | Which of list / detail / create / update / delete are enabled. |
-| `Permissions` | String keys for ADMIN-3. ADMIN-1 stores them on the registry and echoes them in meta; it does not invent a groups table. |
+| `Permissions` | Stable keys enforced by ADMIN-3. ADMIN-1 stores them on the registry and echoes them in meta. |
 
 Closed field-type set for v1 of the admin (ADMIN-1 may add members with a
 docs bump, not a parallel type system):
@@ -158,10 +158,12 @@ Mounted on `app.API()` as Huma operations under `config.API.Prefix`
 | `GET` | `/api/v1/admin/meta` | `{ "data": { "models": [ ... ] }, "meta"?: { ... } }` |
 | `GET` | `/api/v1/admin/meta/{slug}` | `{ "data": { /* one model */ } }` — 404 D10 `not_found` if unknown |
 
-Both require a cookie session (C3). Until ADMIN-3, they also require
-`IsSuperuser`. Unauthenticated → D10 `authentication` (401). Authenticated
-non-superuser → D10 `authorization` (403). Mutating admin routes additionally
-go through the existing M5-3 CSRF middleware (`X-CSRF-Token`).
+Both require a cookie session (C3). ADMIN-3 enforces the registered model's
+view/create/update/delete keys through direct or group grants.
+`User.IsSuperuser` bypasses every permission check. Unauthenticated → D10
+`authentication` (401). Authenticated without the required permission → D10
+`authorization` (403). Mutating admin routes additionally go through the
+existing M5-3 CSRF middleware (`X-CSRF-Token`).
 
 Catalog `data` sketch (normative field names for ADMIN-1; see
 [`testdata/admin-meta.json`](testdata/admin-meta.json)):
@@ -202,19 +204,26 @@ Catalog `data` sketch (normative field names for ADMIN-1; see
           "create": "admin.products.create",
           "update": "admin.products.update",
           "delete": "admin.products.delete"
+        },
+        "can": {
+          "view": true,
+          "create": false,
+          "update": false,
+          "delete": false
         }
       }
     ]
   },
   "meta": {
-    "auth": {"mode": "cookie", "bootstrap": "is_superuser"}
+    "auth": {"mode": "cookie", "bootstrap": "permissions"}
   }
 }
 ```
 
-`meta.auth` on the catalog tells the SPA which bootstrap rule is in force
-before ADMIN-3 lands groups. ADMIN-1 may omit `meta` if it has nothing to
-add; `data.models` is required (empty array when nothing is registered).
+`meta.auth` on the catalog tells the SPA which authorization rule is in
+force. ADMIN-3 adds per-user `can` flags and filters the catalog to models
+the caller may view. A regular user with no view permission receives 403;
+a superuser may still receive an empty catalog when nothing is registered.
 
 Raw `*gin.Engine` (`app.Router()`) is **not** used for these endpoints. The
 escape hatch is reserved for the admin SPA static files and `/admin/`
@@ -326,8 +335,8 @@ is already mutually exclusive with JWT mode (M5-3). Apps that want admin use
   the data plane touches the DB).
 - ADMIN-2 implements the framework-owned React app, `embed.FS` serving under
   `/admin/`, and screens driven only by meta + the generic data plane.
-- ADMIN-3 enforces groups/permissions using the keys stored on the registry.
-  Until then, `IsSuperuser` is the only admin principal. `/auth/register`
+- ADMIN-3 enforces direct and group permissions using the keys stored on the
+  registry. `IsSuperuser` bypasses every permission check. `/auth/register`
   still never sets `IsSuperuser`.
 - Generated `frontend/` and `--ui mui` are unchanged by this ADR. No golden
   template updates belong in ADMIN-0.

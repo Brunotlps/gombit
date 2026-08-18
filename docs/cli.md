@@ -481,9 +481,9 @@ prompts interactively (password entry is hidden). If stdin is not a TTY (CI,
 tests, pipes), the missing flags are a hard error instead of a hang.
 `--no-input` skips TTY detection entirely.
 
-`IsSuperuser` is the only identity flag `auth.User` gains for this issue.
-ADMIN-1 gates the admin introspection and data plane on that flag until
-ADMIN-3 adds groups/permissions. See [admin.md](admin.md).
+`createsuperuser` sets `auth.User.IsSuperuser`; ADMIN-3 treats that flag as
+a bypass for all direct and group permission checks. See
+[admin.md](admin.md).
 
 ## `gombit openapi` and `gombit client`
 

@@ -6,7 +6,7 @@ a generated React+TypeScript frontend, Atlas-backed migrations. Module path
 
 ## Current state
 
-This repo has completed M0–M5 and **ADMIN-1 + ADMIN-2**. It has typed
+This repo has completed M0–M5 and **ADMIN-1 through ADMIN-3**. It has typed
 `config.Config`, `framework.App` lifecycle and routing, Huma contract/OpenAPI/
 TypeScript client generation, Atlas-backed migrations, a Cobra `gombit`
 command tree (`new`, `dev`, `build --embed`, `make resource`, `make command`,
@@ -17,7 +17,8 @@ command tree (`new`, `dev`, `build --embed`, `make resource`, `make command`,
 `admin.Register`, `GET /api/v1/admin/meta`, and the generic
 `/api/v1/admin/resources/{slug}` data plane, and **ADMIN-2** ships the
 framework-owned SPA under `/admin/` (`internal/adminui`, cookie-only embed).
-ADMIN-3 (groups/permissions) and other M6 batteries are not here yet.
+ADMIN-3 adds direct/group permission enforcement with a superuser bypass.
+Other M6 batteries are not here yet.
 Don't assume generated apps are committed in-tree; `gombit new` writes them
 on demand. Check `git log` / `ls` before describing "how the code works."
 

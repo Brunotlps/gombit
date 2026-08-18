@@ -19,5 +19,11 @@ func OpenDatabase(cfg config.DatabaseConfig) (*database.DB, error) {
 // and gombit db makemigrations collect every AutoMigrate argument as
 // the entire desired Atlas schema.
 func AutoMigrate(db *database.DB) error {
-	return db.AutoMigrate(&auth.User{}, &auth.RefreshToken{}, &product.Product{})
+	return db.AutoMigrate(
+		&auth.User{},
+		&auth.RefreshToken{},
+		&auth.Group{},
+		&auth.Permission{},
+		&product.Product{},
+	)
 }
