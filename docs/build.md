@@ -62,7 +62,10 @@ The compiled binary serves:
 | GET `/`, `/login`, `/products/new`, other missing frontend paths | `index.html` (SPA fallback) |
 | Non-GET unmatched routes | 404 — not `index.html` |
 
-Path names are cleaned; `..` cannot escape the embed FS.
+Path names are cleaned; `..` cannot escape the embed FS. Application
+`NoRoute` does not serve `/admin/` — that prefix is reserved for the
+framework-owned admin SPA (ADMIN-2), which uses explicit Gin routes and
+only mounts in cookie mode. See [admin.md](admin.md).
 
 ## SPA Content-Security-Policy
 

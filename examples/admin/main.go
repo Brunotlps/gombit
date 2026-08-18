@@ -60,7 +60,7 @@ func main() {
 		return db.Close()
 	})
 
-	log.Printf("admin example listening on http://%s (docs http://127.0.0.1:8082/docs)", cfg.HTTP.Addr)
+	log.Printf("admin example listening on http://%s (admin http://127.0.0.1:8082/admin/ docs http://127.0.0.1:8082/docs)", cfg.HTTP.Addr)
 	log.Printf("seeded superuser admin@example.com / correct-horse-battery-staple")
 	if err := framework.Run(app); err != nil {
 		log.Fatal(err)

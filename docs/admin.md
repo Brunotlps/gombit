@@ -1,39 +1,74 @@
-# Admin (ADMIN-1)
+# Admin (ADMIN-1 + ADMIN-2)
 
 Gombit's Django-style admin is a **runtime generic admin** over an explicit
-model registry and a Huma introspection + data-plane API
-([ADR-013](adr/013-runtime-generic-admin.md)). This issue ships the registry
-and HTTP contract. The framework-owned React SPA under `/admin/` is ADMIN-2
-and is **not** in this tree yet.
+model registry, a Huma introspection + data-plane API, and a
+framework-owned React SPA under `/admin/`
+([ADR-013](adr/013-runtime-generic-admin.md)). Feature packages call
+`admin.Register` only — there is **zero** per-model frontend code.
 
 | Issue | What it ships |
 | --- | --- |
 | ADMIN-0 (#33) | ADR-013. Done. |
 | ADMIN-1 (#34) | `admin.Register` + `GET /api/v1/admin/meta` + generic `/api/v1/admin/resources/{slug}` |
-| ADMIN-2 | Framework-owned SPA under `/admin/` — not here |
+| ADMIN-2 (#35) | Framework-owned SPA under `/admin/` (this tree) |
 | ADMIN-3 | Groups/permissions on top of `IsSuperuser` — not here |
 
 ## When routes mount
 
-`framework.New` mounts empty admin Huma routes **only** when cookie session
-auth is on (`cfg.Auth.Mode == cookie` / `AuthModeCookie`) and a database is
-attached. JWT-only apps do not get `/api/v1/admin/…` (they 404; the paths
-are absent from OpenAPI). Dual Bearer-API + cookie-admin in one process is
-not introduced here.
+`framework.New` mounts admin Huma routes **and** the `/admin/` SPA **only**
+when cookie session auth is on (`cfg.Auth.Mode == cookie` /
+`AuthModeCookie`) and a database is attached. JWT-only apps do not get
+`/api/v1/admin/…` or `/admin/` (they 404; the SPA paths are absent from
+OpenAPI). Dual Bearer-API + cookie-admin in one process is not introduced
+here.
 
-Session is required. Until ADMIN-3, `auth.User.IsSuperuser` is the only
-admin principal (`gombit createsuperuser`). `/auth/register` never sets
-that flag.
+Session is required for the API. Until ADMIN-3, `auth.User.IsSuperuser`
+is the only admin principal (`gombit createsuperuser`). `/auth/register`
+never sets that flag. The SPA itself is public HTML (anonymous
+`GET /admin/` returns the shell and redirects to `/admin/login`).
 
-| Caller | Result |
+| Caller | Admin API result |
 | --- | --- |
 | Anonymous | D10 `authentication` (401) |
-| Authenticated non-superuser | D10 `authorization` (403) |
+| Authenticated non-superuser | D10 `authorization` (403) — SPA shows a forbidden page |
 | Superuser, disabled action | D10 `authorization` (403) |
 | Superuser, unknown slug or id | D10 `not_found` (404) |
 
 CSRF on POST/PATCH/DELETE is the existing M5-3 global middleware
 (`X-CSRF-Token`). See [auth-cookie.md](auth-cookie.md).
+
+## Admin SPA (`/admin/`)
+
+The UI lives in `internal/adminui` and is versioned with the Gombit module.
+`framework.New` embeds the production `dist/` (`//go:embed all:dist`) and
+registers explicit Gin GET/HEAD routes for `/admin` and `/admin/*filepath`
+so they win over Huma and over an application `WithEmbeddedFrontend`
+NoRoute. Those routes stay **out of OpenAPI**. If `dist/` has no
+`index.html`, the SPA is not mounted (same placeholder rule as M5-5).
+
+Open http://127.0.0.1:8082/admin/ after `go run ./examples/admin` (cookie
+mode + seeded superuser). Screens are driven only by:
+
+- `GET /api/v1/admin/meta` and `GET /api/v1/admin/meta/{slug}`
+- `GET/POST /api/v1/admin/resources/{slug}` and
+  `GET/PATCH/DELETE /api/v1/admin/resources/{slug}/{id}`
+- cookie auth: `GET /api/v1/auth/csrf`, `POST /api/v1/auth/login`,
+  `POST /api/v1/auth/logout`, `GET /api/v1/me`
+
+Anonymous `/admin` redirects to `/admin/login`. After login the catalog
+lists `data.models` (empty catalog is a valid empty state). List/detail/
+create/edit/delete honor `actions.*`. Field widgets cover the closed
+ADMIN-1 types; `belongs_to` is an FK input; `has_many` is read-only.
+401 returns to login; 403 (non-superuser) shows a forbidden page.
+
+The SPA may use MUI internally. That is **not** a C4 violation: `--ui mui`
+remains the generated **application** preset. `gombit new` trees do not
+gain `@mui` from this package. `gombit make resource` does not grow
+`--admin`. Optional `gombit dev` Admin URL in the service table is out of
+scope (ADR-013).
+
+Rebuild: see [`internal/adminui/README.md`](../internal/adminui/README.md).
+Commit `dist/` with source changes so consumers `go get` a working embed.
 
 ## Registration
 
@@ -133,7 +168,9 @@ Paths honor `config.API.Prefix` (default `/api/v1`) and appear in OpenAPI.
 | `DELETE` | `/api/v1/admin/resources/{slug}/{id}` | `{ "data": { "ok": true } }` |
 
 `data.models` is required on the catalog (empty array when nothing is
-registered). Raw `*gin.Engine` is **not** used for these endpoints.
+registered). Raw `*gin.Engine` is **not** used for these endpoints. It
+**is** used for `/admin/` static files and SPA fallback, which must not
+appear in OpenAPI.
 
 List query parameters:
 
@@ -154,14 +191,17 @@ routes. Admin does not replace them.
 ## Example
 
 [`examples/admin`](../examples/admin) — cookie mode + SQLite +
-`admin.Register` of `widget.Widget`, plus curl for meta and one CRUD
-cycle. Superuser is seeded with `auth.Service.CreateSuperuser` (same path
-as `gombit createsuperuser`).
+`admin.Register` of `widget.Widget`, plus the `/admin/` SPA. Superuser is
+seeded with `auth.Service.CreateSuperuser` (same path as
+`gombit createsuperuser`). Curl for meta and one CRUD cycle is still in
+that README.
 
 ## Out of scope
 
-- ADMIN-2 React SPA / `/admin/` embed
-- Groups/permissions tables (ADMIN-3); permission **keys** only
-- `--admin` generator / golden template changes
+- Groups/permissions tables (ADMIN-3); permission **keys** only; action
+  flags are the ADMIN-2 permission story
+- `--admin` generator / golden template changes / copying the SPA into
+  generated `frontend/`
+- `gombit dev` Admin URL in the service table
 - M6 batteries (jobs, events, scheduler, mail, storage, gRPC, multi-tenancy, i18n)
 - `localStorage` tokens
