@@ -29,6 +29,7 @@ func TestEmbedContainsIndexHTML(t *testing.T) {
 
 func TestSourceHasNoWebStorage(t *testing.T) {
 	t.Parallel()
+	var files []string
 	err := filepath.WalkDir(".", func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -43,21 +44,25 @@ func TestSourceHasNoWebStorage(t *testing.T) {
 		ext := strings.ToLower(filepath.Ext(path))
 		switch ext {
 		case ".ts", ".tsx", ".js", ".jsx", ".mjs", ".html", ".json":
-		default:
-			return nil
-		}
-		data, readErr := os.ReadFile(path)
-		if readErr != nil {
-			return readErr
-		}
-		lower := strings.ToLower(string(data))
-		if strings.Contains(lower, "localstorage") || strings.Contains(lower, "sessionstorage") {
-			t.Errorf("%s contains localStorage/sessionStorage", path)
+			files = append(files, path)
 		}
 		return nil
 	})
 	if err != nil {
 		t.Fatalf("walk source: %v", err)
+	}
+	if len(files) == 0 {
+		t.Fatal("no frontend source files under internal/adminui")
+	}
+	for _, path := range files {
+		data, readErr := os.ReadFile(path) // #nosec G304 -- committed package source collected above
+		if readErr != nil {
+			t.Fatalf("read %s: %v", path, readErr)
+		}
+		lower := strings.ToLower(string(data))
+		if strings.Contains(lower, "localstorage") || strings.Contains(lower, "sessionstorage") {
+			t.Errorf("%s contains localStorage/sessionStorage", path)
+		}
 	}
 }
 
