@@ -103,7 +103,19 @@ func TestRunMakeMigrationsUsesConfiguredDriver(t *testing.T) {
 func TestRunMakeMigrationsRequiresModel(t *testing.T) {
 	stubConfig(t, config.Default())
 
-	err := run(context.Background(), []string{
+	// db makemigrations always targets WorkDir "." — chdir into an isolated
+	// temp dir so this doesn't create database/migrations in the repo.
+	workDir := t.TempDir()
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("getwd: %v", err)
+	}
+	if err := os.Chdir(workDir); err != nil {
+		t.Fatalf("chdir: %v", err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(previous) })
+
+	err = run(context.Background(), []string{
 		"db",
 		"makemigrations",
 		"create_products",
@@ -113,7 +125,7 @@ func TestRunMakeMigrationsRequiresModel(t *testing.T) {
 	if err == nil {
 		t.Fatal("run() error = nil, want missing model error")
 	}
-	if !strings.Contains(err.Error(), "at least one model") {
+	if !strings.Contains(err.Error(), "no models to migrate") {
 		t.Fatalf("run() error = %q, want missing model message", err)
 	}
 }

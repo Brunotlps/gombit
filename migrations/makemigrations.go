@@ -25,8 +25,8 @@ var migrationNamePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]*$`)
 
 // Model identifies one GORM model type imported by the generated Atlas loader.
 type Model struct {
-	ImportPath string
-	TypeName   string
+	ImportPath string `json:"import_path"`
+	TypeName   string `json:"type_name"`
 }
 
 // Options configures MakeMigrations.
@@ -36,7 +36,16 @@ type Options struct {
 	Driver       config.DatabaseDriver
 	MigrationDir string
 	AtlasBinary  string
-	Models       []Model
+	// Models are the GORM models this invocation is declaring. They are
+	// merged with whatever is already in the persisted registry
+	// (RegistryPath) — not the entire desired schema by themselves — so a
+	// migration for one new model does not implicitly drop tables for
+	// models used in earlier migrations.
+	Models []Model
+	// ForgetModels removes models from the persisted registry (and this
+	// invocation's desired schema), the explicit way to let Atlas propose
+	// dropping a table that's genuinely going away.
+	ForgetModels []Model
 	Stdout       io.Writer
 	Stderr       io.Writer
 
@@ -94,6 +103,23 @@ func MakeMigrations(ctx context.Context, opts Options) error {
 	if !filepath.IsAbs(migrationDir) {
 		migrationDir = filepath.Join(absWorkDir, migrationDir)
 	}
+
+	// Loaded (and the "nothing to do" case rejected) before MkdirAll, so an
+	// invocation that ends up with nothing to migrate doesn't leave behind an
+	// empty migration directory as a side effect of failing.
+	registered, err := LoadRegistry(migrationDir)
+	if err != nil {
+		return err
+	}
+	// allModels, not opts.Models, is the desired schema: it also carries
+	// forward every model an earlier makemigrations call registered, so this
+	// invocation only needs to name what's new. Without this, Atlas would
+	// see anything not repeated here as schema drift and drop it (#97).
+	allModels := SubtractModels(MergeModels(registered, opts.Models), opts.ForgetModels)
+	if len(allModels) == 0 {
+		return errors.New("migrations: no models to migrate: nothing in the registry and no --model given")
+	}
+
 	if err := os.MkdirAll(migrationDir, 0o750); err != nil {
 		return fmt.Errorf("migrations: create migration dir: %w", err)
 	}
@@ -122,7 +148,7 @@ func MakeMigrations(ctx context.Context, opts Options) error {
 	if err := os.MkdirAll(loaderDir, 0o750); err != nil {
 		return fmt.Errorf("migrations: create loader dir: %w", err)
 	}
-	if err := os.WriteFile(filepath.Join(loaderDir, "main.go"), []byte(loaderSource(opts.Driver, opts.Models)), 0o600); err != nil {
+	if err := os.WriteFile(filepath.Join(loaderDir, "main.go"), []byte(loaderSource(opts.Driver, allModels)), 0o600); err != nil {
 		return fmt.Errorf("migrations: write loader: %w", err)
 	}
 
@@ -157,6 +183,9 @@ func MakeMigrations(ctx context.Context, opts Options) error {
 	}
 	if err := opts.runner.Run(ctx, absWorkDir, opts.AtlasBinary, args, opts.Stdout, opts.Stderr); err != nil {
 		return fmt.Errorf("migrations: atlas migrate diff: %w", err)
+	}
+	if err := SaveRegistry(migrationDir, allModels); err != nil {
+		return err
 	}
 	return nil
 }
@@ -195,13 +224,26 @@ func validateOptions(opts Options) error {
 	default:
 		return fmt.Errorf("migrations: unsupported driver %q", opts.Driver)
 	}
-	if len(opts.Models) == 0 {
-		return errors.New("migrations: at least one model is required")
-	}
+	// A migration can validly carry zero --model flags when the persisted
+	// registry already has entries (this run only picks up field changes on
+	// already-known models), so "no models at all" is checked later against
+	// the merged set, not here.
 	for _, model := range opts.Models {
-		if strings.TrimSpace(model.ImportPath) == "" || !goIdentifierPattern.MatchString(model.TypeName) {
-			return fmt.Errorf("migrations: invalid model %#v", model)
+		if err := validateModel(model); err != nil {
+			return err
 		}
+	}
+	for _, model := range opts.ForgetModels {
+		if err := validateModel(model); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateModel(model Model) error {
+	if strings.TrimSpace(model.ImportPath) == "" || !goIdentifierPattern.MatchString(model.TypeName) {
+		return fmt.Errorf("migrations: invalid model %#v", model)
 	}
 	return nil
 }

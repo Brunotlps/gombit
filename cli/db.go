@@ -67,13 +67,17 @@ func newMakeMigrationsCommand(stdout io.Writer, stderr io.Writer) *cobra.Command
 			if err != nil {
 				return err
 			}
-			models := make([]migrations.Model, 0, len(modelValues))
-			for _, value := range modelValues {
-				model, err := migrations.ParseModel(value)
-				if err != nil {
-					return err
-				}
-				models = append(models, model)
+			models, err := parseModels(modelValues)
+			if err != nil {
+				return err
+			}
+			forgetValues, err := cmd.Flags().GetStringArray("forget-model")
+			if err != nil {
+				return err
+			}
+			forgetModels, err := parseModels(forgetValues)
+			if err != nil {
+				return err
 			}
 			return migrations.MakeMigrations(cmd.Context(), migrations.Options{
 				WorkDir:      ".",
@@ -82,6 +86,7 @@ func newMakeMigrationsCommand(stdout io.Writer, stderr io.Writer) *cobra.Command
 				MigrationDir: migrationDir,
 				AtlasBinary:  atlasBin,
 				Models:       models,
+				ForgetModels: forgetModels,
 				Stdout:       stdout,
 				Stderr:       stderr,
 			})
@@ -90,8 +95,21 @@ func newMakeMigrationsCommand(stdout io.Writer, stderr io.Writer) *cobra.Command
 	cmd.Flags().String("driver", "", "database driver: sqlite, postgres, or mysql")
 	cmd.Flags().String("dir", "database/migrations", "migration directory")
 	cmd.Flags().String("atlas-bin", "atlas", "Atlas CLI binary path")
-	cmd.Flags().StringArray("model", nil, "GORM model import path and type, e.g. github.com/acme/app/internal/product.Product; repeat for multiple models")
+	cmd.Flags().StringArray("model", nil, "GORM model import path and type, e.g. github.com/acme/app/internal/product.Product; repeat for multiple models. Merged with models already registered from earlier makemigrations runs — you don't need to repeat them.")
+	cmd.Flags().StringArray("forget-model", nil, "GORM model import path and type to stop tracking, proposing a DROP for its table; repeat for multiple models")
 	return cmd
+}
+
+func parseModels(values []string) ([]migrations.Model, error) {
+	models := make([]migrations.Model, 0, len(values))
+	for _, value := range values {
+		model, err := migrations.ParseModel(value)
+		if err != nil {
+			return nil, err
+		}
+		models = append(models, model)
+	}
+	return models, nil
 }
 
 func newMigrateCommand(stdout io.Writer, stderr io.Writer) *cobra.Command {

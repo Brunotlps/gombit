@@ -242,6 +242,106 @@ func TestMakeMigrationsRunsAtlasCLISQLiteWhenAvailable(t *testing.T) {
 	}
 }
 
+// TestMakeMigrationsSecondModelDoesNotDropTheFirst is the regression test for
+// #97: a migration that names one new model must not propose dropping the
+// table an earlier migration created for a model this invocation doesn't
+// repeat.
+func TestMakeMigrationsSecondModelDoesNotDropTheFirst(t *testing.T) {
+	atlasBin := os.Getenv("ATLAS_BINARY")
+	if atlasBin == "" {
+		var err error
+		atlasBin, err = exec.LookPath("atlas")
+		if err != nil {
+			t.Skip("Atlas CLI not found; set ATLAS_BINARY to run the real SQLite makemigrations smoke test")
+		}
+	}
+
+	migrationDir := t.TempDir()
+	ctx := context.Background()
+	root := projectRoot(t)
+
+	// Migration 1 names only Product, exactly like a single-feature app.
+	err := MakeMigrations(ctx, Options{
+		WorkDir:      root,
+		Name:         "create_products",
+		Driver:       config.DatabaseDriverSQLite,
+		MigrationDir: migrationDir,
+		AtlasBinary:  atlasBin,
+		Models: []Model{
+			{ImportPath: "github.com/LAA-Software-Engineering/gombit/migrations/testmodels", TypeName: "Product"},
+		},
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+	})
+	if err != nil {
+		t.Fatalf("MakeMigrations() [1] error = %v, want nil", err)
+	}
+
+	registered, err := LoadRegistry(migrationDir)
+	if err != nil {
+		t.Fatalf("LoadRegistry() after migration 1: %v", err)
+	}
+	if len(registered) != 1 || registered[0].TypeName != "Product" {
+		t.Fatalf("registry after migration 1 = %#v, want just Product", registered)
+	}
+
+	// Migration 2 names only Account — a second feature added later, the way
+	// the tutorial's own chapter 3 teaches. It must NOT drop products.
+	err = MakeMigrations(ctx, Options{
+		WorkDir:      root,
+		Name:         "create_accounts",
+		Driver:       config.DatabaseDriverSQLite,
+		MigrationDir: migrationDir,
+		AtlasBinary:  atlasBin,
+		Models: []Model{
+			{ImportPath: "github.com/LAA-Software-Engineering/gombit/migrations/testmodels", TypeName: "Account"},
+		},
+		Stdout: io.Discard,
+		Stderr: io.Discard,
+	})
+	if err != nil {
+		t.Fatalf("MakeMigrations() [2] error = %v, want nil", err)
+	}
+
+	files, err := filepath.Glob(filepath.Join(migrationDir, "*.sql"))
+	if err != nil {
+		t.Fatalf("glob migration files: %v", err)
+	}
+	if len(files) != 2 {
+		t.Fatalf("migration files = %v, want two SQL migrations", files)
+	}
+
+	var secondMigration string
+	for _, f := range files {
+		if strings.Contains(f, "create_accounts") {
+			secondMigration = f
+		}
+	}
+	if secondMigration == "" {
+		t.Fatalf("migration files = %v, want one named create_accounts", files)
+	}
+	// #nosec G304 -- secondMigration comes from filepath.Glob over migrationDir
+	data, err := os.ReadFile(secondMigration)
+	if err != nil {
+		t.Fatalf("read migration file: %v", err)
+	}
+	content := string(data)
+	if strings.Contains(strings.ToUpper(content), "DROP TABLE") {
+		t.Fatalf("migration 2 = %q, must not drop the products table from migration 1 (#97)", content)
+	}
+	if !strings.Contains(content, "accounts") {
+		t.Fatalf("migration 2 = %q, want it to create the accounts table", content)
+	}
+
+	registered, err = LoadRegistry(migrationDir)
+	if err != nil {
+		t.Fatalf("LoadRegistry() after migration 2: %v", err)
+	}
+	if len(registered) != 2 {
+		t.Fatalf("registry after migration 2 = %#v, want both Product and Account", registered)
+	}
+}
+
 func TestMakeMigrationsValidatesOptions(t *testing.T) {
 	tests := []struct {
 		name string
@@ -257,10 +357,36 @@ func TestMakeMigrationsValidatesOptions(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if err := MakeMigrations(context.Background(), tt.opts); err == nil {
+			opts := tt.opts
+			// "missing models" is only rejected once the persisted registry
+			// is consulted and found empty too — give it a real, isolated
+			// WorkDir regardless, so no case can touch the package directory.
+			opts.WorkDir = t.TempDir()
+			if err := MakeMigrations(context.Background(), opts); err == nil {
 				t.Fatal("MakeMigrations() error = nil, want error")
 			}
 		})
+	}
+}
+
+// TestMakeMigrationsNoModelsDoesNotCreateMigrationDir guards against a
+// regression where rejecting "nothing to migrate" would still leave behind
+// an empty database/migrations/ as a side effect of checking.
+func TestMakeMigrationsNoModelsDoesNotCreateMigrationDir(t *testing.T) {
+	workDir := t.TempDir()
+	err := MakeMigrations(context.Background(), Options{
+		WorkDir: workDir,
+		Name:    "create_products",
+		Driver:  config.DatabaseDriverSQLite,
+	})
+	if err == nil {
+		t.Fatal("MakeMigrations() error = nil, want error")
+	}
+	if !strings.Contains(err.Error(), "no models to migrate") {
+		t.Fatalf("error = %q, want it to explain there's nothing to migrate", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(workDir, "database", "migrations")); !os.IsNotExist(statErr) {
+		t.Fatalf("database/migrations was created despite MakeMigrations() failing: stat err = %v", statErr)
 	}
 }
 

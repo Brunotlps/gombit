@@ -21,25 +21,38 @@ supplied with `--atlas-bin`:
 curl -sSf https://atlasgo.sh | sh -s -- --community
 ```
 
-Repeat `--model` for every GORM model that should be part of the desired
-schema:
+You only need to name what's new. `gombit db makemigrations` persists every
+model it's ever seen for a given `--dir` in `database/migrations/models.json`
+and merges new `--model` flags into that set — it is not the entire desired
+schema by itself, just what this invocation is adding. Adding a second
+feature later only needs its own model:
 
 ```sh
 gombit db makemigrations create_accounts \
   --driver postgres \
-  --model github.com/acme/shop/internal/account.Account \
-  --model github.com/acme/shop/internal/product.Product
+  --model github.com/acme/shop/internal/account.Account
 ```
 
-> **Known issue:** each invocation's `--model` list is the *entire* desired
-> schema, not an addition to previous migrations. If an earlier migration
-> covered `Account` and a later `makemigrations` call for a new feature only
-> lists `Product`, Atlas treats `Account`'s table as no longer wanted and
-> writes a migration that **drops it** — there is no persisted registry of
-> previously-migrated models yet. Always repeat every model that should still
-> exist, including ones from earlier migrations, in every
-> `gombit db makemigrations` call. Read the generated SQL before running
-> `gombit db migrate`; an unexpected `DROP TABLE` is the symptom.
+`product.Product` from the first migration is carried forward automatically;
+this does not generate a `DROP TABLE product`. Commit `models.json` alongside
+the SQL files it describes — like `atlas.sum`, it's part of the migration
+history, not build output. Atlas itself ignores it (only `*.sql` and
+`atlas.sum` are meaningful to `atlas migrate diff`/`apply`), and `gombit db
+status`/`migrate` skip it the same way they already skip `atlas.sum`.
+
+To retire a model — the table is genuinely going away — say so explicitly
+instead of just omitting it, so Atlas proposes the drop on purpose:
+
+```sh
+gombit db makemigrations drop_legacy_widget \
+  --driver postgres \
+  --forget-model github.com/acme/shop/internal/widget.Widget
+```
+
+`--forget-model` removes the entry from `models.json` and from this
+invocation's desired schema, so the generated migration is the intentional
+`DROP TABLE` — the only way to get one, now that the registry means a model
+is never dropped by accident just because a later call didn't repeat it.
 
 The command writes a temporary Atlas Program Mode loader under `.gombit`,
 passes all supplied model types to `gormschema.New(driver).Load(...)`, writes
@@ -232,9 +245,11 @@ same three drivers.
 
 ## Model Registration
 
-M2-1 keeps model enumeration explicit. Generated apps should pass feature
-package models from `internal/<feature>` using repeated `--model` flags until
-later generator work adds an application-owned registry.
+M2-1 keeps model enumeration explicit: pass feature package models from
+`internal/<feature>` with `--model` flags, one per `gombit db makemigrations`
+call for whatever's new. `database/migrations/models.json` is the persisted
+registry of every model named so far (see [Generate A
+Migration](#generate-a-migration)) — you don't repeat earlier ones.
 
 The model spec format is:
 
