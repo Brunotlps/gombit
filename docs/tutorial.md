@@ -164,13 +164,15 @@ gombit db status
 `status` lists applied and pending revisions. `gombit db rollback` undoes the
 last batch.
 
-`gombit new` already seeded one migration ahead of yours: a `bootstrap`
-migration for the framework's own auth tables (see
-[migrations.md](migrations.md#the-bootstrap-migration)). `gombit db migrate`
-applies both in this batch — that's expected, not a second copy of `tasks`.
+`gombit new` already seeded *and applied* one migration ahead of yours: a
+`bootstrap` migration for the framework's own auth tables (see
+[migrations.md](migrations.md#the-bootstrap-migration)) — check
+`gombit db status` right now and you'll see it there already, in batch 1,
+before you've touched `db migrate` yourself. Your `create_tasks` migration
+lands in its own batch.
 
-**✅ Checkpoint** — `gombit db status` shows `bootstrap` and `create_tasks` as
-applied.
+**✅ Checkpoint** — `gombit db status` shows `bootstrap` (batch 1) and
+`create_tasks` (batch 2) as applied.
 
 > If you get `atlas: executable file not found in $PATH`, install Atlas
 > Community Edition (see [installation.md](installation.md)). The GORM model is
