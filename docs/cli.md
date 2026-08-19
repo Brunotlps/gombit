@@ -74,6 +74,12 @@ the binary that scaffolded it**, and `gombit new` then runs `go mod tidy` to
 populate `go.sum`. An installed release therefore produces a tree that builds
 immediately.
 
+Once `go mod tidy` succeeds, `gombit new` also seeds an initial `bootstrap`
+migration under `database/migrations/` for the framework's own auth tables —
+requires Atlas on `PATH`; prints the equivalent `gombit db makemigrations`
+command instead of failing when it isn't. See
+[migrations.md](migrations.md#the-bootstrap-migration) for why this exists.
+
 Version resolution follows `gombit version` (see below) and falls back to
 `v0.0.0` — which the proxy cannot resolve — when the CLI reports something
 unpublishable:
@@ -104,7 +110,7 @@ go mod tidy
 | `--ui` | `minimal`, `mui` | `minimal` |
 | `--module` | Go module path | `github.com/example/<name>` |
 | `--framework-version` | gombit version the generated `go.mod` requires | this binary's version |
-| `--skip-tidy` | | do not run `go mod tidy` (offline) |
+| `--skip-tidy` | | do not run `go mod tidy` (offline); also skips seeding the bootstrap migration, which needs a tidied module |
 | `--dry-run` | | print the file list without writing |
 | `--force` | | required to write into a non-empty destination |
 
@@ -137,7 +143,7 @@ demo/
 │   ├── platform/
 │   ├── product/          # model, handler.go, routes.go, commands.go
 │   └── web/              # go:embed hook (static/.keep placeholder; no index.html)
-├── database/migrations/
+├── database/migrations/  # a bootstrap_*.sql migration + models.json are seeded here (Tidy + Atlas)
 ├── database/seeds/
 ├── config/
 ├── frontend/             # Vite + React skeleton (main.tsx, router, generated client)
