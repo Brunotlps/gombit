@@ -98,7 +98,7 @@ export function LoginPage() {
           <Controller
             name="email"
             control={control}
-            rules={{ required: true }}
+            rules={{ required: "Email is required" }}
             render={({ field, fieldState }) => (
               <TextField
                 {...field}
@@ -115,7 +115,7 @@ export function LoginPage() {
           <Controller
             name="password"
             control={control}
-            rules={{ required: true }}
+            rules={{ required: "Password is required" }}
             render={({ field, fieldState }) => (
               <TextField
                 {...field}

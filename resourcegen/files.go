@@ -513,7 +513,7 @@ func renderFormField(field Field) string {
 	case FieldText:
 		b.WriteString("          <textarea {...register(\"" + field.JSONName + "\"")
 		if field.Required {
-			b.WriteString(", { required: true }")
+			b.WriteString(", { required: \"" + field.GoName + " is required\" }")
 		}
 		b.WriteString(")} />\n")
 	case FieldBool:
@@ -523,7 +523,7 @@ func renderFormField(field Field) string {
 	default:
 		b.WriteString("          <input type=\"text\" {...register(\"" + field.JSONName + "\"")
 		if field.Required {
-			b.WriteString(", { required: true }")
+			b.WriteString(", { required: \"" + field.GoName + " is required\" }")
 		}
 		b.WriteString(")} />\n")
 	}
@@ -752,7 +752,7 @@ func renderMUIFormField(field Field) string {
 	var b strings.Builder
 	rules := ""
 	if field.Required && field.Type != FieldBool {
-		rules = " rules={{ required: true }}"
+		rules = " rules={{ required: \"" + field.GoName + " is required\" }}"
 	}
 	b.WriteString("          <Controller\n")
 	b.WriteString("            name=\"" + field.JSONName + "\"\n")

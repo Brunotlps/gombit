@@ -110,6 +110,12 @@ func TestGenerateBookFeaturePackage(t *testing.T) {
 	if !strings.Contains(formTS, "applyContractErrors") || !strings.Contains(formTS, "setError") {
 		t.Fatal("form.tsx does not map D10 field errors through applyContractErrors")
 	}
+	if strings.Contains(formTS, "required: true") {
+		t.Fatal("form.tsx required rule has no message; submitting an empty field will show no error text")
+	}
+	if !strings.Contains(formTS, `required: "Title is required"`) {
+		t.Fatalf("form.tsx missing a required-field error message:\n%s", formTS)
+	}
 	resources := readFile(t, filepath.Join(appDir, "frontend", "src", "resources.tsx"))
 	if !strings.Contains(resources, "generatedResourceRoutes") || !strings.Contains(resources, "BookListPage") {
 		t.Fatal("resources.tsx missing React Router registry for Book")
@@ -393,6 +399,12 @@ func TestGenerateMUIResourcePages(t *testing.T) {
 		if !strings.Contains(formTS, want) {
 			t.Fatalf("MUI form.tsx missing %q", want)
 		}
+	}
+	if strings.Contains(formTS, "required: true") {
+		t.Fatal("MUI form.tsx required rule has no message; submitting an empty field will show no error text")
+	}
+	if !strings.Contains(formTS, `required: "Title is required"`) {
+		t.Fatalf("MUI form.tsx missing a required-field error message:\n%s", formTS)
 	}
 }
 

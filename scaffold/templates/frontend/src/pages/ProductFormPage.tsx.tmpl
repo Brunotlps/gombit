@@ -56,7 +56,7 @@ export function ProductFormPage() {
           <Controller
             name="name"
             control={control}
-            rules={{"{{"}} required: true }}
+            rules={{"{{"}} required: "Name is required" }}
             render={({ field, fieldState }) => (
               <TextField
                 {...field}
@@ -108,7 +108,7 @@ export function ProductFormPage() {
       <form onSubmit={handleSubmit(onSubmit)}>
         <label>
           Name
-          <input type="text" {...register("name", { required: true })} />
+          <input type="text" {...register("name", { required: "Name is required" })} />
         </label>
         {errors.name?.message ? <p>{errors.name.message}</p> : null}
         <label>
