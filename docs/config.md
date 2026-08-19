@@ -28,7 +28,13 @@ shape with environment-derived `/docs` and cache namespace. Mutating
 ## Environment
 
 `config.Load()` reads the process environment and validates the resulting
-configuration. The M1-1 boundary recognizes:
+configuration. Before that, it applies a `.env` file from the current working
+directory if one exists — `gombit new` writes one with a per-project random
+`GOMBIT_JWT_SECRET`, and `.env` values never override a variable the process
+environment already sets. A real deployment sets configuration through its
+own environment and does not ship a `.env` file (it is gitignored by every
+`gombit new` scaffold), so this is a no-op in production. The M1-1 boundary
+recognizes:
 
 | Variable | Field | Default |
 | --- | --- | --- |
