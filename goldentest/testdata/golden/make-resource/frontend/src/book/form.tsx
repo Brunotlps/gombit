@@ -59,7 +59,7 @@ export function BookFormPage() {
       <form onSubmit={handleSubmit(onSubmit)}>
         <label>
           Title
-          <input type="text" {...register("title", { required: true })} />
+          <input type="text" {...register("title", { required: "Title is required" })} />
         </label>
         {errors.title?.message ? <p>{errors.title.message}</p> : null}
         <button type="submit" disabled={isSubmitting}>

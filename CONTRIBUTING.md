@@ -83,7 +83,7 @@ CLI smoke checks:
 ```bash
 go run ./cmd/gombit --help
 go run ./cmd/gombit make --help
-go run ./cmd/gombit client check
+go run ./cmd/gombit client check --spec examples/client/openapi.json --out examples/client/frontend/src/api/generated
 go run ./cmd/gombit doctor
 go run ./cmd/gombit config show
 go run ./cmd/gombit routes
@@ -150,11 +150,17 @@ Any API change must regenerate the OpenAPI document and the TypeScript client
 **in the same PR**:
 
 ```bash
-go run ./cmd/gombit client check --write
+go run ./cmd/gombit client check --write --spec examples/client/openapi.json --out examples/client/frontend/src/api/generated
 ```
 
 CI fails if `examples/client/openapi.json` or
 `examples/client/frontend/src/api/generated` would change.
+
+`gombit client check`'s bare defaults (`openapi.json` /
+`frontend/src/api/generated`) target a generated app, not this repository —
+outside this repository it also needs `--url` to fetch a live spec, since a
+separately compiled `gombit` binary has no Go-level `huma.API` to compare
+against. See [`docs/client.md`](docs/client.md).
 
 ### Admin UI
 

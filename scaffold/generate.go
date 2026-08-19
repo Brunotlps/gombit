@@ -290,6 +290,25 @@ func newJWTSecret() (string, error) {
 	return hex.EncodeToString(buf), nil
 }
 
+// envExampleJWTComment is the comment block .env.example carries above its
+// GOMBIT_JWT_SECRET line. It is accurate there: DevelopmentJWTPlaceholder
+// really is shorter than MinProductionJWTSecretLength. withGeneratedDotEnv
+// swaps it for dotEnvJWTComment in the generated .env, where the value is a
+// full-length random secret instead, so the same claim would be false.
+const envExampleJWTComment = "" +
+	"# HMAC secret shared by Bearer access JWTs and (in cookie mode) the CSRF\n" +
+	"# double-submit signature. This development placeholder is shorter than 32\n" +
+	"# characters and is rejected in production (Appendix C). `gombit new` also\n" +
+	"# writes a gitignored `.env` with a per-project random secret. Never put\n" +
+	"# this in VITE_*.\n"
+
+// dotEnvJWTComment replaces envExampleJWTComment in the generated .env.
+const dotEnvJWTComment = "" +
+	"# HMAC secret shared by Bearer access JWTs and (in cookie mode) the CSRF\n" +
+	"# double-submit signature. gombit new generated this as a random,\n" +
+	"# per-project secret — do not commit it or reuse it across environments.\n" +
+	"# Never put this in VITE_*.\n"
+
 func withGeneratedDotEnv(files []renderedFile, secret string) ([]renderedFile, error) {
 	var example []byte
 	for _, file := range files {
@@ -306,7 +325,11 @@ func withGeneratedDotEnv(files []renderedFile, secret string) ([]renderedFile, e
 	if bytes.Equal(replaced, example) {
 		return nil, errors.New("scaffold: JWT placeholder missing from .env.example")
 	}
-	files = append(files, renderedFile{relPath: ".env", content: replaced})
+	commentReplaced := bytes.Replace(replaced, []byte(envExampleJWTComment), []byte(dotEnvJWTComment), 1)
+	if bytes.Equal(commentReplaced, replaced) {
+		return nil, errors.New("scaffold: JWT comment block missing from .env.example")
+	}
+	files = append(files, renderedFile{relPath: ".env", content: commentReplaced})
 	sort.Slice(files, func(i, j int) bool {
 		return files[i].relPath < files[j].relPath
 	})

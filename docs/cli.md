@@ -143,6 +143,7 @@ demo/
 ├── frontend/             # Vite + React skeleton (main.tsx, router, generated client)
 ├── gombit.yaml
 ├── .air.toml
+├── .env                  # gitignored; per-project random GOMBIT_JWT_SECRET, loaded automatically
 ├── .env.example
 ├── go.mod
 └── README.md

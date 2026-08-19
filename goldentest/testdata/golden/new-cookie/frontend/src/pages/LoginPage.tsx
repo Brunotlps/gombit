@@ -73,12 +73,12 @@ export function LoginPage() {
       >
         <label>
           Email
-          <input type="email" autoComplete="username" {...register("email", { required: true })} />
+          <input type="email" autoComplete="username" {...register("email", { required: "Email is required" })} />
         </label>
         {errors.email?.message ? <p>{errors.email.message}</p> : null}
         <label>
           Password
-          <input type="password" autoComplete="current-password" {...register("password", { required: true })} />
+          <input type="password" autoComplete="current-password" {...register("password", { required: "Password is required" })} />
         </label>
         {errors.password?.message ? <p>{errors.password.message}</p> : null}
         <button type="submit" disabled={isSubmitting}>

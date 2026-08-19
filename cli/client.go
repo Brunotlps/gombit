@@ -79,8 +79,18 @@ func newClientGenerateCommand(stdout io.Writer, stderr io.Writer) *cobra.Command
 func newClientCheckCommand(stdout io.Writer, stderr io.Writer) *cobra.Command {
 	cmd := silence(&cobra.Command{
 		Use:   "check",
-		Short: "Fail when the committed TypeScript client drifts from the live contract",
-		Args:  cobra.ArbitraryArgs,
+		Short: "Fail when the committed TypeScript client drifts from the contract",
+		Long: `Fail when the committed TypeScript client drifts from the contract.
+
+Without --url, the comparison source is an in-process huma.API (the
+framework's own SampleApp by default), which only exists inside this
+repository — that mode backs the framework's own CI check against
+examples/client/. Generated apps have no Go-level access to their API from
+a separately compiled gombit binary, so pass --url to fetch the live
+/openapi.json from a running app instead:
+
+  gombit client check --url http://127.0.0.1:8080/openapi.json`,
+		Args: cobra.ArbitraryArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) != 0 {
 				return fmt.Errorf("gombit client check: unexpected argument %q", args[0])
@@ -101,7 +111,11 @@ func newClientCheckCommand(stdout io.Writer, stderr io.Writer) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return client.CheckDrift(cmd.Context(), client.DriftOptions{
+			rawURL, err := cmd.Flags().GetString("url")
+			if err != nil {
+				return err
+			}
+			opts := client.DriftOptions{
 				WorkDir:   ".",
 				SpecPath:  spec,
 				OutDir:    out,
@@ -109,12 +123,21 @@ func newClientCheckCommand(stdout io.Writer, stderr io.Writer) *cobra.Command {
 				NPXBinary: npx,
 				Stdout:    stdout,
 				Stderr:    stderr,
-			})
+			}
+			if rawURL != "" {
+				specBytes, err := fetchOpenAPI(cmd.Context(), rawURL)
+				if err != nil {
+					return err
+				}
+				opts.SpecBytes = specBytes
+			}
+			return client.CheckDrift(cmd.Context(), opts)
 		},
 	})
-	cmd.Flags().String("spec", client.SampleSpecPath, "committed OpenAPI 3.1 document path")
-	cmd.Flags().String("out", client.SampleOutDir, "committed generated TypeScript directory")
+	cmd.Flags().String("spec", client.DefaultSpecPath, "committed OpenAPI 3.1 document path")
+	cmd.Flags().String("out", client.DefaultOutDir, "committed generated TypeScript directory")
 	cmd.Flags().Bool("write", false, "rewrite committed fixtures instead of reporting drift")
 	cmd.Flags().String("npx", "npx", "npx binary used to run openapi-typescript")
+	cmd.Flags().String("url", "", "URL of a live /openapi.json to compare against instead of an in-process API (required outside this repository)")
 	return cmd
 }

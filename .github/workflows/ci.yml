@@ -97,7 +97,7 @@ jobs:
           node-version: "22"
 
       - name: Regenerate sample spec and client
-        run: go run ./cmd/gombit client check --write
+        run: go run ./cmd/gombit client check --write --spec examples/client/openapi.json --out examples/client/frontend/src/api/generated
 
       - name: Fail on contract drift
         run: git diff --exit-code -- examples/client/openapi.json examples/client/frontend/src/api/generated

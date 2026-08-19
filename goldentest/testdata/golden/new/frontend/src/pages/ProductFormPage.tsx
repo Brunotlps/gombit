@@ -49,7 +49,7 @@ export function ProductFormPage() {
       <form onSubmit={handleSubmit(onSubmit)}>
         <label>
           Name
-          <input type="text" {...register("name", { required: true })} />
+          <input type="text" {...register("name", { required: "Name is required" })} />
         </label>
         {errors.name?.message ? <p>{errors.name.message}</p> : null}
         <label>

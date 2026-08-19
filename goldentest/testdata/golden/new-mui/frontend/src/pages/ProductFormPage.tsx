@@ -55,7 +55,7 @@ export function ProductFormPage() {
           <Controller
             name="name"
             control={control}
-            rules={{ required: true }}
+            rules={{ required: "Name is required" }}
             render={({ field, fieldState }) => (
               <TextField
                 {...field}

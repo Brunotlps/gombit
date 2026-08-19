@@ -354,7 +354,11 @@ func ApplyEnvironmentDefaults(cfg Config) Config {
 }
 
 // Load reads configuration from the process environment and validates it.
+// It first applies .env from the current working directory, if one exists,
+// without overwriting variables the process environment already sets — see
+// loadDotEnv.
 func Load() (Config, error) {
+	loadDotEnv()
 	return LoadFromEnv(os.LookupEnv)
 }
 

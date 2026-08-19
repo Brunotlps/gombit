@@ -134,6 +134,8 @@ Contributors run the CLI directly with `go run ./cmd/gombit …` — see
 gombit version
 ```
 
+A release archive (Option 2) is stamped with build metadata:
+
 ```text
 gombit:   v0.1.0
 commit:   9abb3c6ecc8c1bf93419aa43c4d4f1ae3de97a2b
@@ -141,6 +143,11 @@ built:    2026-08-18T19:33:15Z
 go:       go1.25.7
 platform: linux/amd64
 ```
+
+`go install` (Option 1) and a plain `go build` from source (Option 3) carry
+no ldflags, so `commit` and `built` read `unknown` instead — only `gombit`
+(the module version) and the `go`/`platform` fields are populated. That's
+expected, not a broken install.
 
 Then check the whole environment:
 
