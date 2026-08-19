@@ -53,6 +53,10 @@ type Options struct {
 	Dest    string
 	DryRun  bool
 	Force   bool
+	// skipAtlas bypasses the initial bootstrap migration in tests that stub
+	// go.sum population without a real go.mod/go.sum, mirroring resourcegen's
+	// own skipAtlas seam.
+	skipAtlas        bool
 	Stdin            io.Reader
 	Stdout           io.Writer
 	Stderr           io.Writer

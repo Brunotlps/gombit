@@ -107,8 +107,17 @@ func Generate(ctx context.Context, opts Options) error {
 	// fails with "missing go.sum entry" rather than fetching. Only worth
 	// attempting when the pin is resolvable.
 	if opts.Tidy && !opts.DryRun && fallbackReason == "" {
-		if err := tidyModule(ctx, opts); err != nil {
+		tidied, err := tidyModule(ctx, opts)
+		if err != nil {
 			return err
+		}
+		// The bootstrap migration shells out to `go run` on a loader that
+		// imports the module's own dependencies; without a tidied go.sum
+		// that fails, so only attempt it once the module actually resolves.
+		if tidied && !opts.skipAtlas {
+			if err := seedBootstrapMigration(ctx, opts); err != nil {
+				return err
+			}
 		}
 	}
 	return nil
@@ -125,21 +134,22 @@ var goModTidy = func(ctx context.Context, dir string) ([]byte, error) {
 // tidyModule populates go.sum so the generated app builds as-is. A failure
 // here (no network, no toolchain) is reported but not fatal: the tree is
 // already written and correct, and the user can rerun the command themselves.
-func tidyModule(ctx context.Context, opts Options) error {
+// The returned bool reports whether go.sum is now actually usable.
+func tidyModule(ctx context.Context, opts Options) (bool, error) {
 	if _, err := fmt.Fprintln(opts.Stdout, "go mod tidy"); err != nil {
-		return err
+		return false, err
 	}
 	output, err := goModTidy(ctx, opts.Dest)
 	if err == nil {
-		return nil
+		return true, nil
 	}
 	if ctxErr := ctx.Err(); ctxErr != nil {
-		return ctxErr
+		return false, ctxErr
 	}
 	_, writeErr := fmt.Fprintf(opts.Stderr,
 		"warning: go mod tidy failed: %v\n%s  %s will not build until you run it yourself:\n    cd %s && go mod tidy\n",
 		err, indentOutput(output), opts.Module, opts.Name)
-	return writeErr
+	return false, writeErr
 }
 
 func indentOutput(output []byte) string {

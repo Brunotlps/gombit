@@ -164,7 +164,13 @@ gombit db status
 `status` lists applied and pending revisions. `gombit db rollback` undoes the
 last batch.
 
-**✅ Checkpoint** — `gombit db status` shows your migration as applied.
+`gombit new` already seeded one migration ahead of yours: a `bootstrap`
+migration for the framework's own auth tables (see
+[migrations.md](migrations.md#the-bootstrap-migration)). `gombit db migrate`
+applies both in this batch — that's expected, not a second copy of `tasks`.
+
+**✅ Checkpoint** — `gombit db status` shows `bootstrap` and `create_tasks` as
+applied.
 
 > If you get `atlas: executable file not found in $PATH`, install Atlas
 > Community Edition (see [installation.md](installation.md)). The GORM model is

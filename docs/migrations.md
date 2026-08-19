@@ -4,6 +4,28 @@ M2 introduces `gombit db` migration commands as a thin wrapper around Atlas
 versioned migrations and `ariga.io/atlas-provider-gorm` Program Mode. Gombit
 does not define its own migration DSL.
 
+## The bootstrap migration
+
+`gombit new` seeds `database/migrations/<timestamp>_bootstrap.sql` (and the
+`models.json` registry entry for it — see [Generate A
+Migration](#generate-a-migration)) covering every model
+`internal/platform/database.go`'s `AutoMigrate` call registers — the
+framework's own auth tables (`users`, `permissions`, `groups`,
+`refresh_tokens`, their join tables) plus the `product/` example — when Atlas
+is on `PATH` and `go mod tidy` succeeded. If Atlas isn't installed yet,
+`gombit new` prints the equivalent `gombit db makemigrations bootstrap
+--model ...` command to run once it is.
+
+This exists because `AutoMigrate` also runs at every app startup
+(`app.OnStart`), creating those tables directly through GORM. Without a
+migration for them from the start, Atlas's tracked history never learns they
+exist, and the model registry has nothing to merge new models into — so the
+first later diff that names a model not yet tracked would "discover" the
+`AutoMigrate` tables as missing too and try to `CREATE` tables that already
+exist, and `gombit db migrate` would fail with `table users already exists`.
+Run `gombit db migrate` right after `gombit new` to apply the bootstrap
+migration before anything else is added.
+
 ## Generate A Migration
 
 Run the command from the application module root:

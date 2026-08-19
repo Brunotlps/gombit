@@ -342,6 +342,104 @@ func TestMakeMigrationsSecondModelDoesNotDropTheFirst(t *testing.T) {
 	}
 }
 
+// TestMakeMigrationsFullListAfterIncrementalCallsIsNoop is the regression
+// test for #96: gombit make resource always diffs the *entire* AutoMigrate
+// model list (resourcegen.CollectAutoMigrateModels), not just the resource
+// being generated. Before the bootstrap migration (seeded by gombit new)
+// and the model registry (#97) existed together, a full-list call like that
+// would "discover" AutoMigrate-created tables the registry had never heard
+// of and try to CREATE them again, and applying that migration failed with
+// "table already exists" because AutoMigrate had already created them live.
+//
+// With bootstrap migration + registry both in place, a later call that
+// names every currently-registered model (exactly what resourcegen does)
+// must be a no-op: nothing left to create, so Atlas writes no new
+// migration file at all.
+func TestMakeMigrationsFullListAfterIncrementalCallsIsNoop(t *testing.T) {
+	atlasBin := os.Getenv("ATLAS_BINARY")
+	if atlasBin == "" {
+		var err error
+		atlasBin, err = exec.LookPath("atlas")
+		if err != nil {
+			t.Skip("Atlas CLI not found; set ATLAS_BINARY to run the real SQLite makemigrations smoke test")
+		}
+	}
+
+	migrationDir := t.TempDir()
+	ctx := context.Background()
+	root := projectRoot(t)
+	const testmodelsPkg = "github.com/LAA-Software-Engineering/gombit/migrations/testmodels"
+
+	// "bootstrap": Product only, the way gombit new would seed it.
+	err := MakeMigrations(ctx, Options{
+		WorkDir:      root,
+		Name:         "bootstrap",
+		Driver:       config.DatabaseDriverSQLite,
+		MigrationDir: migrationDir,
+		AtlasBinary:  atlasBin,
+		Models:       []Model{{ImportPath: testmodelsPkg, TypeName: "Product"}},
+		Stdout:       io.Discard,
+		Stderr:       io.Discard,
+	})
+	if err != nil {
+		t.Fatalf("MakeMigrations() [bootstrap] error = %v, want nil", err)
+	}
+
+	// chapter 3's own pattern: a single new model, not repeating Product.
+	err = MakeMigrations(ctx, Options{
+		WorkDir:      root,
+		Name:         "create_accounts",
+		Driver:       config.DatabaseDriverSQLite,
+		MigrationDir: migrationDir,
+		AtlasBinary:  atlasBin,
+		Models:       []Model{{ImportPath: testmodelsPkg, TypeName: "Account"}},
+		Stdout:       io.Discard,
+		Stderr:       io.Discard,
+	})
+	if err != nil {
+		t.Fatalf("MakeMigrations() [create_accounts] error = %v, want nil", err)
+	}
+
+	before, err := filepath.Glob(filepath.Join(migrationDir, "*.sql"))
+	if err != nil {
+		t.Fatalf("glob migration files before: %v", err)
+	}
+	if len(before) != 2 {
+		t.Fatalf("migration files before = %v, want two", before)
+	}
+
+	// resourcegen's own call shape: every currently-registered model, not
+	// just the one being added — both are already tracked, so this must not
+	// try to CREATE anything, since AutoMigrate would already have made
+	// both tables live and Atlas now knows about them too.
+	stdout := new(bytes.Buffer)
+	err = MakeMigrations(ctx, Options{
+		WorkDir:      root,
+		Name:         "create_accounts", // resourcegen names it after the new resource, same as chapter 4
+		Driver:       config.DatabaseDriverSQLite,
+		MigrationDir: migrationDir,
+		AtlasBinary:  atlasBin,
+		Models: []Model{
+			{ImportPath: testmodelsPkg, TypeName: "Product"},
+			{ImportPath: testmodelsPkg, TypeName: "Account"},
+		},
+		Stdout: stdout,
+		Stderr: io.Discard,
+	})
+	if err != nil {
+		t.Fatalf("MakeMigrations() [full list] error = %v, want nil (this is #96 if it fails)", err)
+	}
+
+	after, err := filepath.Glob(filepath.Join(migrationDir, "*.sql"))
+	if err != nil {
+		t.Fatalf("glob migration files after: %v", err)
+	}
+	if len(after) != len(before) {
+		t.Fatalf("migration files after full-list call = %v, want no new file (got %d, had %d): %s",
+			after, len(after), len(before), stdout.String())
+	}
+}
+
 func TestMakeMigrationsValidatesOptions(t *testing.T) {
 	tests := []struct {
 		name string

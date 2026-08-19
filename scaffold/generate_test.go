@@ -6,10 +6,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
 	"github.com/LAA-Software-Engineering/gombit/config"
+	"github.com/LAA-Software-Engineering/gombit/migrations"
 )
 
 func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
@@ -726,6 +728,7 @@ func TestGenerateRunsTidyForResolvableVersion(t *testing.T) {
 		WorkDir:          workDir,
 		Stdout:           stdout,
 		Stderr:           new(bytes.Buffer),
+		skipAtlas:        true, // this test only cares about the tidy step
 	})
 	if err != nil {
 		t.Fatalf("Generate() error = %v", err)
@@ -810,5 +813,137 @@ func TestGenerateTidyFailureIsNotFatal(t *testing.T) {
 		if !strings.Contains(stderr.String(), fragment) {
 			t.Errorf("warning = %q, want it to mention %q", stderr.String(), fragment)
 		}
+	}
+}
+
+func stubScaffoldLookPath(t *testing.T, fn func(name string) (string, error)) {
+	t.Helper()
+	prev := scaffoldLookPath
+	scaffoldLookPath = fn
+	t.Cleanup(func() { scaffoldLookPath = prev })
+}
+
+func stubScaffoldMakeMigrations(t *testing.T, fn func(ctx context.Context, opts migrations.Options) error) {
+	t.Helper()
+	prev := scaffoldMakeMigrations
+	scaffoldMakeMigrations = fn
+	t.Cleanup(func() { scaffoldMakeMigrations = prev })
+}
+
+// TestGenerateSeedsBootstrapMigrationForResolvableVersion guards the fix for
+// #96: gombit new must seed an initial migration covering every model
+// internal/platform/database.go.tmpl registers for AutoMigrate, so Atlas's
+// tracked history matches what AutoMigrate creates at every app startup
+// from the very first run.
+func TestGenerateSeedsBootstrapMigrationForResolvableVersion(t *testing.T) {
+	stubGoModTidy(t, func(context.Context, string) ([]byte, error) { return nil, nil })
+	stubScaffoldLookPath(t, func(string) (string, error) { return "/usr/bin/atlas", nil })
+
+	var got migrations.Options
+	calls := 0
+	stubScaffoldMakeMigrations(t, func(_ context.Context, opts migrations.Options) error {
+		calls++
+		got = opts
+		return nil
+	})
+
+	workDir := t.TempDir()
+	err := Generate(context.Background(), Options{
+		Name:             "demo",
+		Module:           "github.com/example/demo",
+		Database:         "postgres",
+		FrameworkVersion: "v0.1.0",
+		Tidy:             true,
+		WorkDir:          workDir,
+		Stdout:           new(bytes.Buffer),
+		Stderr:           new(bytes.Buffer),
+	})
+	if err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("bootstrap migration ran %d times, want 1", calls)
+	}
+	if got.Name != "bootstrap" {
+		t.Errorf("migration name = %q, want bootstrap", got.Name)
+	}
+	if got.Driver != config.DatabaseDriverPostgres {
+		t.Errorf("migration driver = %q, want postgres", got.Driver)
+	}
+	if got.WorkDir != filepath.Join(workDir, "demo") {
+		t.Errorf("migration workdir = %q, want %q", got.WorkDir, filepath.Join(workDir, "demo"))
+	}
+	wantModels := []migrations.Model{
+		{ImportPath: "github.com/LAA-Software-Engineering/gombit/auth", TypeName: "User"},
+		{ImportPath: "github.com/LAA-Software-Engineering/gombit/auth", TypeName: "RefreshToken"},
+		{ImportPath: "github.com/LAA-Software-Engineering/gombit/auth", TypeName: "Group"},
+		{ImportPath: "github.com/LAA-Software-Engineering/gombit/auth", TypeName: "Permission"},
+		{ImportPath: "github.com/example/demo/internal/product", TypeName: "Product"},
+	}
+	if !reflect.DeepEqual(got.Models, wantModels) {
+		t.Errorf("migration models = %#v, want %#v", got.Models, wantModels)
+	}
+}
+
+func TestGenerateWithoutAtlasHintsBootstrapMigration(t *testing.T) {
+	stubGoModTidy(t, func(context.Context, string) ([]byte, error) { return nil, nil })
+	stubScaffoldLookPath(t, func(string) (string, error) { return "", errors.New("not found") })
+	stubScaffoldMakeMigrations(t, func(context.Context, migrations.Options) error {
+		t.Fatal("makemigrations must not run when atlas is missing")
+		return nil
+	})
+
+	stdout := new(bytes.Buffer)
+	err := Generate(context.Background(), Options{
+		Name:             "demo",
+		Database:         "sqlite",
+		FrameworkVersion: "v0.1.0",
+		Tidy:             true,
+		WorkDir:          t.TempDir(),
+		Stdout:           stdout,
+		Stderr:           new(bytes.Buffer),
+	})
+	if err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+	if !strings.Contains(stdout.String(), "gombit db makemigrations bootstrap") {
+		t.Fatalf("stdout = %q, want a makemigrations hint", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "--model github.com/LAA-Software-Engineering/gombit/auth.User") {
+		t.Fatalf("stdout = %q, want auth models in hint", stdout.String())
+	}
+}
+
+// TestGenerateBootstrapMigrationFailureHintsInsteadOfFailing guards a real
+// deployment risk: --database postgres/mysql need a running Docker daemon
+// for Atlas's dev-database (see devURL in migrations/makemigrations.go),
+// which gombit new never required before this feature existed. A user with
+// atlas installed but no Docker running must still get a working scaffold
+// out of `gombit new --database postgres`, not a fatal error.
+func TestGenerateBootstrapMigrationFailureHintsInsteadOfFailing(t *testing.T) {
+	stubGoModTidy(t, func(context.Context, string) ([]byte, error) { return nil, nil })
+	stubScaffoldLookPath(t, func(string) (string, error) { return "/usr/bin/atlas", nil })
+	stubScaffoldMakeMigrations(t, func(context.Context, migrations.Options) error {
+		return errors.New("atlas migrate diff: docker: command not found")
+	})
+
+	stdout := new(bytes.Buffer)
+	err := Generate(context.Background(), Options{
+		Name:             "demo",
+		Database:         "postgres",
+		FrameworkVersion: "v0.1.0",
+		Tidy:             true,
+		WorkDir:          t.TempDir(),
+		Stdout:           stdout,
+		Stderr:           new(bytes.Buffer),
+	})
+	if err != nil {
+		t.Fatalf("Generate() error = %v, want bootstrap migration failure to be non-fatal", err)
+	}
+	if !strings.Contains(stdout.String(), "gombit db makemigrations bootstrap") {
+		t.Fatalf("stdout = %q, want a makemigrations hint", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "docker: command not found") {
+		t.Fatalf("stdout = %q, want the underlying atlas error surfaced", stdout.String())
 	}
 }
