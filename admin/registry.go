@@ -96,8 +96,8 @@ func (m *registered) columnFor(name string) (string, bool) {
 	return "", false
 }
 
-func (m *registered) toRow(inst any) map[string]any {
-	out := make(map[string]any, len(m.fields)+len(m.implicit))
+func (m *registered) toRow(inst any) row {
+	out := make(row, len(m.fields)+len(m.implicit))
 	for i := range m.fields {
 		f := &m.fields[i]
 		out[f.Name] = f.get(inst)

@@ -3,6 +3,7 @@ package admin_test
 import (
 	"encoding/json"
 	"net/http"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -13,6 +14,8 @@ import (
 	"github.com/LAA-Software-Engineering/gombit/config"
 	"github.com/LAA-Software-Engineering/gombit/framework"
 	"github.com/gin-gonic/gin"
+	"github.com/pb33f/libopenapi"
+	openapivalidator "github.com/pb33f/libopenapi-validator"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 )
@@ -295,5 +298,59 @@ func TestAdminRoutesAppearInOpenAPI(t *testing.T) {
 		if !strings.Contains(body, path) {
 			t.Fatalf("openapi.json missing %s", path)
 		}
+	}
+}
+
+// TestAdminOpenAPISchemaNamesAreValid is the regression test for #100: the
+// admin data plane's generic responses used map[string]any directly as a
+// generic type parameter (contract.Data[map[string]any], contract.DataMeta
+// [[]map[string]any, contract.PageMeta]). map[string]any has no
+// reflect.Type.Name(), so Huma's DefaultSchemaNamer fell back to Go's
+// unnamed-type string ("map[string]interface {}"), and that literal space
+// and braces survived into the OpenAPI component name — e.g.
+// "DataMetaListMapStringInterface {}PageMeta" — which fails OpenAPI 3.1
+// validation (component names must match ^[a-zA-Z0-9._-]+$).
+//
+// No admin.Register call is needed to reproduce this: the admin data-plane
+// routes (and their response schemas) are mounted unconditionally under
+// cookie auth, per newCookieApp.
+func TestAdminOpenAPISchemaNamesAreValid(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	app := newCookieApp(t)
+	rec := doRequest(app, nil, http.MethodGet, "/openapi.json", "")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("openapi status = %d", rec.Code)
+	}
+
+	var doc struct {
+		Components struct {
+			Schemas map[string]json.RawMessage `json:"schemas"`
+		} `json:"components"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
+		t.Fatalf("decode openapi.json: %v", err)
+	}
+	if len(doc.Components.Schemas) == 0 {
+		t.Fatal("openapi.json has no component schemas to check")
+	}
+
+	validName := regexp.MustCompile(`^[a-zA-Z0-9._-]+$`)
+	for name := range doc.Components.Schemas {
+		if !validName.MatchString(name) {
+			t.Errorf("schema component name %q does not match OpenAPI 3.1's ^[a-zA-Z0-9._-]+$ pattern", name)
+		}
+	}
+
+	document, err := libopenapi.NewDocument(rec.Body.Bytes())
+	if err != nil {
+		t.Fatalf("parse OpenAPI document: %v", err)
+	}
+	validator, validatorErrs := openapivalidator.NewValidator(document)
+	if len(validatorErrs) > 0 {
+		t.Fatalf("create OpenAPI validator: %v", validatorErrs)
+	}
+	valid, documentErrs := validator.ValidateDocument()
+	if !valid || len(documentErrs) > 0 {
+		t.Fatalf("validate OpenAPI 3.1 document: valid=%v errors=%v", valid, documentErrs)
 	}
 }
