@@ -244,7 +244,10 @@ curl -s http://127.0.0.1:8080/api/v1/tasks
 {"data":[],"meta":{"page":1,"per_page":20,"total":0}}
 ```
 
-That shape is the D10 envelope: success is `{"data": ..., "meta"?: ...}`.
+That shape is the D10 envelope: success is `{"data": ..., "meta"?: ...}`. Your
+own response also carries a `$schema` field pointing at its JSON Schema
+(Huma's doing, on every response) — every JSON example in this tutorial
+omits it for brevity.
 
 ---
 
@@ -295,10 +298,12 @@ Errors are constructed with `contract` helpers rather than raw status codes:
 return nil, contract.WithContext(ctx, contract.NotFound("task not found"))
 ```
 
-Inspect what you've mounted:
+Inspect what you've mounted. Bare `gombit routes` only prints framework
+routes (`/livez`, `/docs`, and so on) — pass `--url` to see the feature
+routes `gombit dev` is actually serving:
 
 ```bash
-gombit routes
+gombit routes --url http://127.0.0.1:8080
 gombit openapi generate --out openapi.json
 ```
 
@@ -323,12 +328,16 @@ overwritten.
 The important command is the drift check:
 
 ```bash
-gombit client check
+gombit client check --url http://127.0.0.1:8080/openapi.json
 ```
 
-It fails if the committed client no longer matches the spec. Wire it into your
-own CI: it's what stops a backend change from silently breaking the frontend.
-`gombit dev` regenerates the client automatically while it's running.
+It fails if the committed client no longer matches the live contract. `gombit`
+is a separately compiled binary, so outside the framework's own repository it
+has no Go-level access to your API — `--url` fetches the live `/openapi.json`
+from a running app (`gombit dev` or your deployed API) instead. Wire it into
+your own CI against a running instance of your app: it's what stops a backend
+change from silently breaking the frontend. `gombit dev` regenerates the
+client automatically while it's running.
 
 **✅ Checkpoint** — `frontend/src/api/generated/schema.ts` contains a task
 type with `title` and `done`.
@@ -348,13 +357,21 @@ TypeScript error rather than a runtime surprise.
 
 **Server validation maps into the form.** The `fields` object from the D10
 error envelope is fed into React Hook Form, so field errors from Go render next
-to the right inputs — one validation source of truth, not two.
+to the right inputs — one validation source of truth, not two. Required
+fields also get a client-side rule with its own message (`"Title is
+required"`), so an empty submit shows text immediately, before round-tripping
+to the server at all.
 
 > **No secrets in frontend source.** Anything under `VITE_*` is compiled into
 > the bundle and is public. Treat it that way.
 
-**✅ Checkpoint** — the task list renders at <http://127.0.0.1:5173>, and
-submitting an empty title shows an inline error from the server.
+You scaffolded with `--auth cookie`, so `RequireAuth` guards every route
+except `/login` — visiting `/tasks` right now redirects there. The next
+chapter sets up a login; come back and finish this checkpoint after it.
+
+**✅ Checkpoint** — once you can log in (chapter 8), the task list renders at
+<http://127.0.0.1:5173>, and submitting an empty title shows a "Title is
+required" inline error next to the field.
 
 ---
 
@@ -364,16 +381,22 @@ You scaffolded with `--auth cookie`, so sessions are HttpOnly cookies plus CSRF
 double-submit. (The API default, `--auth jwt`, keeps the access token **in
 memory — never `localStorage`**.)
 
-Create an admin account:
+`gombit new` already wrote a random `GOMBIT_JWT_SECRET` into `.env` (cookie
+mode signs its CSRF token with the same secret), and every `gombit` command
+run from this directory — including the `gombit dev` you started in chapter
+2 — loads `.env` automatically. Create an admin account:
 
 ```bash
-export GOMBIT_JWT_SECRET="$(openssl rand -hex 32)"
 gombit createsuperuser --email admin@example.com
 ```
 
-The secret is required: without it Bearer auth is unmounted and nobody could
-log in. `createsuperuser` prompts for the password when you leave `--password`
-off — better than putting it in your shell history.
+The secret is required: without it Bearer auth stays unmounted and nobody
+could log in. `createsuperuser` prompts for the password when you leave
+`--password` off — better than putting it in your shell history.
+
+> `.env` is gitignored and never read outside this directory. A real
+> deployment has no `.env` file and sets `GOMBIT_JWT_SECRET` through its own
+> environment instead — see [Ship it](#11-ship-it).
 
 Under cookie auth, **every state-changing request needs a CSRF token**. The
 full flow:
@@ -525,20 +548,24 @@ Details: [admin.md](admin.md) and [ADR-013](adr/013-runtime-generic-admin.md).
 Django's `manage.py` equivalent:
 
 ```bash
-gombit make command backfill_done
+gombit make command backfill_done --package task
 ```
 
-This writes a Cobra command into your feature package and registers it on
-**your** CLI at `cmd/gombit`, again via `go/ast`. Run it:
+`--package task` writes into your existing feature package
+(`internal/task/`) instead of the default `internal/commands/`, and
+registers the command on **your** CLI at `cmd/gombit`, again via `go/ast`.
+The command name is normalized to kebab-case for the CLI regardless of how
+you typed it, so `backfill_done` becomes the runnable `backfill-done`. Run
+it:
 
 ```bash
-go run ./cmd/gombit backfill_done
+go run ./cmd/gombit backfill-done
 ```
 
 Your binary keeps the whole framework tree — `db`, `routes`, `doctor`,
 `createsuperuser` — plus your own commands.
 
-**✅ Checkpoint** — `go run ./cmd/gombit --help` lists `backfill_done`.
+**✅ Checkpoint** — `go run ./cmd/gombit --help` lists `backfill-done`.
 
 ---
 

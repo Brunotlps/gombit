@@ -31,6 +31,16 @@ gombit db makemigrations create_accounts \
   --model github.com/acme/shop/internal/product.Product
 ```
 
+> **Known issue:** each invocation's `--model` list is the *entire* desired
+> schema, not an addition to previous migrations. If an earlier migration
+> covered `Account` and a later `makemigrations` call for a new feature only
+> lists `Product`, Atlas treats `Account`'s table as no longer wanted and
+> writes a migration that **drops it** — there is no persisted registry of
+> previously-migrated models yet. Always repeat every model that should still
+> exist, including ones from earlier migrations, in every
+> `gombit db makemigrations` call. Read the generated SQL before running
+> `gombit db migrate`; an unexpected `DROP TABLE` is the symptom.
+
 The command writes a temporary Atlas Program Mode loader under `.gombit`,
 passes all supplied model types to `gormschema.New(driver).Load(...)`, writes
 the generated SQL schema to a temporary `schema.sql`, and then runs:
