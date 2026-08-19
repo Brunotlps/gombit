@@ -132,6 +132,12 @@ func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
 	if config.IsInsecureJWTSecret(secret) {
 		t.Fatal(".env JWT secret is a known insecure placeholder")
 	}
+	if strings.Contains(dotenv, "shorter than 32") {
+		t.Fatal(".env JWT comment must not claim the generated secret is shorter than 32 characters")
+	}
+	if !strings.Contains(dotenv, "gombit new generated this as a random") {
+		t.Fatalf(".env JWT comment was not swapped for the per-project-secret version:\n%s", dotenv)
+	}
 	if !strings.Contains(stdout.String(), "create demo/go.mod") {
 		t.Fatalf("stdout = %q, want created file list", stdout.String())
 	}
@@ -228,6 +234,19 @@ func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
 	}
 	if strings.Contains(strings.ToLower(loginPage), "localstorage") {
 		t.Fatal("LoginPage.tsx uses localStorage")
+	}
+	if strings.Contains(loginPage, "required: true") {
+		t.Fatal("LoginPage.tsx required rule has no message; submitting an empty field will show no error text")
+	}
+	if !strings.Contains(loginPage, `required: "Email is required"`) || !strings.Contains(loginPage, `required: "Password is required"`) {
+		t.Fatalf("LoginPage.tsx missing required-field error messages:\n%s", loginPage)
+	}
+	productFormPage := readFile(t, filepath.Join(dest, "frontend", "src", "pages", "ProductFormPage.tsx"))
+	if strings.Contains(productFormPage, "required: true") {
+		t.Fatal("ProductFormPage.tsx required rule has no message")
+	}
+	if !strings.Contains(productFormPage, `required: "Name is required"`) {
+		t.Fatalf("ProductFormPage.tsx missing required-field error message:\n%s", productFormPage)
 	}
 	appClient := readFile(t, filepath.Join(dest, "frontend", "src", "api", "client.ts"))
 	if !strings.Contains(appClient, "refreshInFlight") {
@@ -423,6 +442,19 @@ func TestGenerateRecordsAuthAndUIChoices(t *testing.T) {
 	}
 	if strings.Contains(strings.ToLower(login), "localstorage") {
 		t.Fatal("cookie + mui LoginPage.tsx uses localStorage")
+	}
+	if strings.Contains(login, "required: true") {
+		t.Fatal("cookie + mui LoginPage.tsx required rule has no message")
+	}
+	if !strings.Contains(login, `required: "Email is required"`) || !strings.Contains(login, `required: "Password is required"`) {
+		t.Fatalf("cookie + mui LoginPage.tsx missing required-field error messages:\n%s", login)
+	}
+	productForm := readFile(t, filepath.Join(workDir, "shop", "frontend", "src", "pages", "ProductFormPage.tsx"))
+	if strings.Contains(productForm, "required: true") {
+		t.Fatal("cookie + mui ProductFormPage.tsx required rule has no message")
+	}
+	if !strings.Contains(productForm, `required: "Name is required"`) {
+		t.Fatalf("cookie + mui ProductFormPage.tsx missing required-field error message:\n%s", productForm)
 	}
 	client := readFile(t, filepath.Join(workDir, "shop", "frontend", "src", "api", "client.ts"))
 	if !strings.Contains(client, "X-CSRF-Token") {
