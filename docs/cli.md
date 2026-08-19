@@ -328,9 +328,11 @@ that file are not preserved.
 Gombit does not invent a migration DSL. The generated GORM model is
 Atlas-loader ready. If the `atlas` binary is on `PATH`, `make resource`
 attempts `migrations.MakeMigrations` with every `&pkg.Type{}` already
-registered in `internal/platform` AutoMigrate plus the new model — Atlas
-migrate diff treats that slice as the entire desired schema, so omitting
-existing tables would emit DROP. If Atlas is missing from `PATH`, SQL is
+registered in `internal/platform` AutoMigrate plus the new model, merged with
+`database/migrations/models.json` (see
+[migrations.md](migrations.md#generate-a-migration)) — so a model that isn't
+in the `AutoMigrate` list for some reason but is still tracked in the
+registry isn't dropped either. If Atlas is missing from `PATH`, SQL is
 skipped and the command prints:
 
 ```sh
