@@ -36,8 +36,13 @@ type DriftOptions struct {
 	// OutDir is the committed generated-client directory, relative to WorkDir unless absolute.
 	// Default: SampleOutDir.
 	OutDir string
-	// API is the Huma API to emit. Nil means SampleApp().
+	// API is the Huma API to emit. Nil and SpecBytes nil means SampleApp().
 	API huma.API
+	// SpecBytes is a pre-fetched OpenAPI document (e.g. from a live /openapi.json
+	// URL) to treat as the current contract. Takes precedence over API. Callers
+	// outside this module — generated apps have no Go-level huma.API to pass —
+	// use this to check their own contract instead of the framework's SampleApp.
+	SpecBytes []byte
 	// Write regenerates committed fixtures instead of comparing them.
 	Write bool
 	// NPXBinary is the npx executable used by Generate. Default: npx.
@@ -46,35 +51,48 @@ type DriftOptions struct {
 	Stderr    io.Writer
 }
 
-// CheckDrift regenerates the sample OpenAPI document and TypeScript client and
+// CheckDrift regenerates the OpenAPI document and TypeScript client and
 // reports whether committed artifacts would change.
 //
 // The spec is compared semantically via encoding/json, so whitespace-only
 // differences are not drift. Generated TypeScript is compared byte-for-byte.
-// Generation is in-process from SampleApp (or opts.API) and does not fetch a
-// live /openapi.json URL.
 //
-// When Write is true, fixtures are rewritten in place with contract.WriteOpenAPI
-// and Generate.
+// The document used for comparison comes from, in order: opts.SpecBytes (a
+// pre-fetched live spec), opts.API (an in-process huma.API — this module's
+// own tests and go:generate directive use this to compare examples/client/
+// against SampleApp), or SampleApp() itself. Generated apps have neither a
+// Go-level huma.API nor a reason to compare against the framework's sample
+// widget API, so the CLI's `gombit client check --url` path fetches the
+// live spec over HTTP and passes it as SpecBytes.
+//
+// When Write is true, fixtures are rewritten in place.
 func CheckDrift(ctx context.Context, opts DriftOptions) error {
 	if ctx == nil {
 		return errors.New("client: nil context")
 	}
 	opts = normalizeDriftOptions(opts)
 
-	api := opts.API
-	if api == nil {
-		app, err := SampleApp()
-		if err != nil {
-			return fmt.Errorf("client: sample app: %w", err)
+	spec := opts.SpecBytes
+	if spec == nil {
+		api := opts.API
+		if api == nil {
+			app, err := SampleApp()
+			if err != nil {
+				return fmt.Errorf("client: sample app: %w", err)
+			}
+			api = app.API()
 		}
-		api = app.API()
+		var err error
+		spec, err = contract.OpenAPIJSON(api)
+		if err != nil {
+			return err
+		}
 	}
 
 	if opts.Write {
-		return writeSampleFixtures(ctx, opts, api)
+		return writeSampleFixtures(ctx, opts, spec)
 	}
-	return compareSampleFixtures(ctx, opts, api)
+	return compareSampleFixtures(ctx, opts, spec)
 }
 
 func normalizeDriftOptions(opts DriftOptions) DriftOptions {
@@ -106,9 +124,9 @@ func resolvePath(workDir, path string) string {
 	return filepath.Join(workDir, path)
 }
 
-func writeSampleFixtures(ctx context.Context, opts DriftOptions, api huma.API) error {
+func writeSampleFixtures(ctx context.Context, opts DriftOptions, spec []byte) error {
 	specPath := resolvePath(opts.WorkDir, opts.SpecPath)
-	if err := contract.WriteOpenAPI(specPath, api); err != nil {
+	if err := contract.WriteOpenAPIFile(specPath, spec); err != nil {
 		return err
 	}
 	if _, err := fmt.Fprintf(opts.Stdout, "wrote %s\n", displayPath(opts.WorkDir, specPath)); err != nil {
@@ -124,7 +142,7 @@ func writeSampleFixtures(ctx context.Context, opts DriftOptions, api huma.API) e
 	})
 }
 
-func compareSampleFixtures(ctx context.Context, opts DriftOptions, api huma.API) error {
+func compareSampleFixtures(ctx context.Context, opts DriftOptions, generatedSpec []byte) error {
 	tmpDir, err := os.MkdirTemp("", "gombit-drift-*")
 	if err != nil {
 		return fmt.Errorf("client: temp dir: %w", err)
@@ -132,13 +150,8 @@ func compareSampleFixtures(ctx context.Context, opts DriftOptions, api huma.API)
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	generatedSpecPath := filepath.Join(tmpDir, "openapi.json")
-	if err := contract.WriteOpenAPI(generatedSpecPath, api); err != nil {
+	if err := contract.WriteOpenAPIFile(generatedSpecPath, generatedSpec); err != nil {
 		return err
-	}
-	// #nosec G304 -- generatedSpecPath is created in this function
-	generatedSpec, err := os.ReadFile(generatedSpecPath)
-	if err != nil {
-		return fmt.Errorf("client: read generated spec: %w", err)
 	}
 
 	specPath := resolvePath(opts.WorkDir, opts.SpecPath)

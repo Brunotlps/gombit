@@ -13,6 +13,7 @@ import (
 
 	"github.com/LAA-Software-Engineering/gombit/contract"
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/adapters/humagin"
 	"github.com/gin-gonic/gin"
 )
 
@@ -167,6 +168,73 @@ func TestCheckDriftWriteRegeneratesFixtures(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("CheckDrift() after write error = %v, want nil", err)
+	}
+}
+
+// TestCheckDriftUsesSpecBytesOverSampleApp models the `gombit client check
+// --url` path a generated app uses: it has no Go-level huma.API to pass, so
+// the CLI fetches a live spec over HTTP and hands it in as SpecBytes. That
+// must take precedence over the API/SampleApp fallback and never touch
+// SampleApp's own contract.
+func TestCheckDriftUsesSpecBytesOverSampleApp(t *testing.T) {
+	requireNode(t)
+
+	router := gin.New()
+	api := humagin.New(router, contract.HumaConfig("drift-spec-bytes-test", "0.0.0"))
+	huma.Register(api, huma.Operation{
+		OperationID: "list-widgets-from-url",
+		Method:      http.MethodGet,
+		Path:        "/api/v1/widgets",
+		Summary:     "List widgets",
+	}, func(ctx context.Context, input *struct{}) (*struct {
+		Body contract.Data[[]string]
+	}, error) {
+		return &struct {
+			Body contract.Data[[]string]
+		}{Body: contract.Data[[]string]{Data: []string{"widget-1"}}}, nil
+	})
+	specBytes, err := contract.OpenAPIJSON(api)
+	if err != nil {
+		t.Fatalf("contract.OpenAPIJSON() error = %v", err)
+	}
+
+	workDir := t.TempDir()
+	stdout := new(bytes.Buffer)
+	err = CheckDrift(context.Background(), DriftOptions{
+		WorkDir:   workDir,
+		SpecPath:  "openapi.json",
+		OutDir:    "frontend/src/api/generated",
+		SpecBytes: specBytes,
+		Write:     true,
+		Stdout:    stdout,
+		Stderr:    ioDiscard{},
+	})
+	if err != nil {
+		t.Fatalf("CheckDrift(SpecBytes, write) error = %v", err)
+	}
+
+	// #nosec G304 -- test-controlled path under t.TempDir()
+	written, err := os.ReadFile(filepath.Join(workDir, "openapi.json"))
+	if err != nil {
+		t.Fatalf("read written spec: %v", err)
+	}
+	if !strings.Contains(string(written), "list-widgets-from-url") {
+		t.Fatalf("written spec = %s, want it to come from SpecBytes, not SampleApp", written)
+	}
+	if strings.Contains(string(written), "SampleApp") {
+		t.Fatal("written spec unexpectedly contains SampleApp content")
+	}
+
+	// A subsequent check against the same SpecBytes must report no drift.
+	err = CheckDrift(context.Background(), DriftOptions{
+		WorkDir:   workDir,
+		SpecPath:  "openapi.json",
+		OutDir:    "frontend/src/api/generated",
+		SpecBytes: specBytes,
+		Stderr:    ioDiscard{},
+	})
+	if err != nil {
+		t.Fatalf("CheckDrift(SpecBytes) after write error = %v, want nil", err)
 	}
 }
 

@@ -75,25 +75,41 @@ generated client. See that README to typecheck it.
 
 ## Contract drift check
 
-`gombit client check` rebuilds the sample widget API with `client.SampleApp()`,
-writes the spec with `contract.WriteOpenAPI`, regenerates the TypeScript client
-with `client.Generate`, and fails if committed artifacts would change. It does
-not fetch a live `/openapi.json` URL.
+`gombit client check` regenerates the OpenAPI document and TypeScript client
+and fails if committed artifacts would change. The document it compares
+against comes from, in order: `--url` (fetched over HTTP), an in-process
+`huma.API` (only available to Go callers inside this repository, such as
+`client.SampleApp()`), or `client.SampleApp()` itself. `--spec` and `--out`
+default to `openapi.json` and `frontend/src/api/generated` — the same
+defaults as `client generate` — so a bare `gombit client check --url ...` is
+meant to run inside a **generated app**, not this repository.
 
-From the repository root:
+**In a generated app**, with the API running (`gombit dev` or a deployed
+instance):
 
 ```sh
-go run ./cmd/gombit client check
-go run ./cmd/gombit client check --write
+gombit client check --url http://127.0.0.1:8080/openapi.json
 ```
 
-`--write` rewrites `examples/client/openapi.json` and
-`examples/client/frontend/src/api/generated`. CI runs `--write` and then
-`git diff --exit-code` on those paths, so a Huma handler change that is not
-regenerated fails the job. Spec comparison in `CheckDrift` is semantic
+`gombit` is a separately compiled binary there, so it has no Go-level
+`huma.API` to compare against — `--url` is required.
+
+**In this repository**, the drift check instead guards
+`examples/client/openapi.json` and `examples/client/frontend/src/api/generated`
+against `client.SampleApp()`, so it needs explicit paths:
+
+```sh
+go run ./cmd/gombit client check --spec examples/client/openapi.json --out examples/client/frontend/src/api/generated
+go run ./cmd/gombit client check --write --spec examples/client/openapi.json --out examples/client/frontend/src/api/generated
+```
+
+`--write` rewrites those two paths. CI runs the `--write` form and then
+`git diff --exit-code` on them, so a Huma handler change to `SampleApp` that
+is not regenerated fails the job. Spec comparison in `CheckDrift` is semantic
 (`encoding/json`); whitespace-only JSON is not drift.
 
-`go generate ./client` runs the same rewrite as `--write`.
+`go generate ./client` runs the same rewrite as the explicit-path `--write`
+form above.
 
 ## React skeleton
 

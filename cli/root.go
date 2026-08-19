@@ -123,7 +123,7 @@ func usage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "  db <subcommand>   see gombit db")
 	_, _ = fmt.Fprintln(w, "  openapi generate [--out openapi.json] [--url http://127.0.0.1:8080/openapi.json]")
 	_, _ = fmt.Fprintln(w, "  client generate [--spec openapi.json] [--out frontend/src/api/generated] [--dry-run] [--force]")
-	_, _ = fmt.Fprintln(w, "  client check [--write] [--spec examples/client/openapi.json] [--out examples/client/frontend/src/api/generated]")
+	_, _ = fmt.Fprintln(w, "  client check [--write] [--spec openapi.json] [--out frontend/src/api/generated] [--url http://127.0.0.1:8080/openapi.json]")
 	_, _ = fmt.Fprintln(w, "  routes [--url http://127.0.0.1:8080]")
 	_, _ = fmt.Fprintln(w, "  doctor [--dir database/migrations]")
 	_, _ = fmt.Fprintln(w, "  config show")
@@ -149,7 +149,7 @@ func openapiUsage(w io.Writer) {
 func clientUsage(w io.Writer) {
 	_, _ = fmt.Fprintln(w, "available client subcommands:")
 	_, _ = fmt.Fprintln(w, "  generate [--spec openapi.json] [--out frontend/src/api/generated] [--dry-run] [--force] [--npx npx]")
-	_, _ = fmt.Fprintln(w, "  check [--write] [--spec examples/client/openapi.json] [--out examples/client/frontend/src/api/generated] [--npx npx]")
+	_, _ = fmt.Fprintln(w, "  check [--write] [--spec openapi.json] [--out frontend/src/api/generated] [--url http://127.0.0.1:8080/openapi.json] [--npx npx]")
 }
 
 func configUsage(w io.Writer) {
