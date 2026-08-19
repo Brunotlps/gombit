@@ -75,9 +75,12 @@ populate `go.sum`. An installed release therefore produces a tree that builds
 immediately.
 
 Once `go mod tidy` succeeds, `gombit new` also seeds an initial `bootstrap`
-migration under `database/migrations/` for the framework's own auth tables —
-requires Atlas on `PATH`; prints the equivalent `gombit db makemigrations`
-command instead of failing when it isn't. See
+migration under `database/migrations/` for the framework's own auth tables,
+and applies it immediately for `--database sqlite` (the default) —
+`db status` shows it applied before you've run `db migrate` yourself.
+Requires Atlas on `PATH`; prints the equivalent `gombit db makemigrations` /
+`gombit db migrate` command instead of failing when it isn't (or when the
+driver isn't sqlite yet). See
 [migrations.md](migrations.md#the-bootstrap-migration) for why this exists.
 
 Version resolution follows `gombit version` (see below) and falls back to
@@ -143,7 +146,7 @@ demo/
 │   ├── platform/
 │   ├── product/          # model, handler.go, routes.go, commands.go
 │   └── web/              # go:embed hook (static/.keep placeholder; no index.html)
-├── database/migrations/  # a bootstrap_*.sql migration + models.json are seeded here (Tidy + Atlas)
+├── database/migrations/  # a bootstrap_*.sql migration + models.json are seeded (and, for sqlite, applied) here
 ├── database/seeds/
 ├── config/
 ├── frontend/             # Vite + React skeleton (main.tsx, router, generated client)

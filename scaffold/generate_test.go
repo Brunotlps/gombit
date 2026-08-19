@@ -830,6 +830,13 @@ func stubScaffoldMakeMigrations(t *testing.T, fn func(ctx context.Context, opts 
 	t.Cleanup(func() { scaffoldMakeMigrations = prev })
 }
 
+func stubScaffoldMigrate(t *testing.T, fn func(ctx context.Context, opts migrations.ApplyOptions) error) {
+	t.Helper()
+	prev := scaffoldMigrate
+	scaffoldMigrate = fn
+	t.Cleanup(func() { scaffoldMigrate = prev })
+}
+
 // TestGenerateSeedsBootstrapMigrationForResolvableVersion guards the fix for
 // #96: gombit new must seed an initial migration covering every model
 // internal/platform/database.go.tmpl registers for AutoMigrate, so Atlas's
@@ -945,5 +952,121 @@ func TestGenerateBootstrapMigrationFailureHintsInsteadOfFailing(t *testing.T) {
 	}
 	if !strings.Contains(stdout.String(), "docker: command not found") {
 		t.Fatalf("stdout = %q, want the underlying atlas error surfaced", stdout.String())
+	}
+}
+
+// TestGenerateAppliesBootstrapMigrationForSQLite is the regression test for
+// #102: gombit new must not just write the bootstrap migration, it must
+// apply it — otherwise the AutoMigrate call in the very first `gombit dev`
+// (chapter 2, before the reader ever reaches chapter 3's own
+// `gombit db migrate`) creates the same tables live first, and applying the
+// bootstrap migration afterward fails with "table already exists".
+func TestGenerateAppliesBootstrapMigrationForSQLite(t *testing.T) {
+	stubGoModTidy(t, func(context.Context, string) ([]byte, error) { return nil, nil })
+	stubScaffoldLookPath(t, func(string) (string, error) { return "/usr/bin/atlas", nil })
+	stubScaffoldMakeMigrations(t, func(context.Context, migrations.Options) error { return nil })
+
+	var got migrations.ApplyOptions
+	calls := 0
+	stubScaffoldMigrate(t, func(_ context.Context, opts migrations.ApplyOptions) error {
+		calls++
+		got = opts
+		return nil
+	})
+
+	workDir := t.TempDir()
+	err := Generate(context.Background(), Options{
+		Name:             "demo",
+		Database:         "sqlite",
+		FrameworkVersion: "v0.1.0",
+		Tidy:             true,
+		WorkDir:          workDir,
+		Stdout:           new(bytes.Buffer),
+		Stderr:           new(bytes.Buffer),
+	})
+	if err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+	if calls != 1 {
+		t.Fatalf("bootstrap migration apply ran %d times, want 1", calls)
+	}
+	dest := filepath.Join(workDir, "demo")
+	if got.WorkDir != dest {
+		t.Errorf("apply workdir = %q, want %q", got.WorkDir, dest)
+	}
+	if got.Database.Driver != config.DatabaseDriverSQLite {
+		t.Errorf("apply driver = %q, want sqlite", got.Database.Driver)
+	}
+	wantDSN := "file:" + filepath.Join(dest, "gombit.db") + "?cache=shared&_fk=1"
+	if got.Database.DSN != wantDSN {
+		t.Errorf("apply DSN = %q, want absolute path %q (not the app's own relative DSN, which resolves against gombit's process cwd here, not the app dir)", got.Database.DSN, wantDSN)
+	}
+}
+
+// TestGenerateSkipsApplyForNonSQLite guards --database postgres/mysql: their
+// DSN from gombit new is a USER:PASSWORD placeholder until the reader edits
+// .env, so there's nothing reachable to apply against yet. Attempting it
+// anyway would just be a guaranteed-to-fail connection attempt on every
+// postgres/mysql scaffold.
+func TestGenerateSkipsApplyForNonSQLite(t *testing.T) {
+	stubGoModTidy(t, func(context.Context, string) ([]byte, error) { return nil, nil })
+	stubScaffoldLookPath(t, func(string) (string, error) { return "/usr/bin/atlas", nil })
+	stubScaffoldMakeMigrations(t, func(context.Context, migrations.Options) error { return nil })
+	stubScaffoldMigrate(t, func(context.Context, migrations.ApplyOptions) error {
+		t.Fatal("migrate must not run for postgres/mysql; the DSN is a placeholder")
+		return nil
+	})
+
+	stdout := new(bytes.Buffer)
+	err := Generate(context.Background(), Options{
+		Name:             "demo",
+		Database:         "postgres",
+		FrameworkVersion: "v0.1.0",
+		Tidy:             true,
+		WorkDir:          t.TempDir(),
+		Stdout:           stdout,
+		Stderr:           new(bytes.Buffer),
+	})
+	if err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+	if !strings.Contains(stdout.String(), "credentials in .env") {
+		t.Fatalf("stdout = %q, want a hint about .env credentials", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "gombit db migrate") {
+		t.Fatalf("stdout = %q, want a gombit db migrate hint", stdout.String())
+	}
+}
+
+// TestGenerateBootstrapApplyFailureHintsInsteadOfFailing mirrors
+// TestGenerateBootstrapMigrationFailureHintsInsteadOfFailing for the apply
+// step: a real deployment risk (e.g. the SQLite file can't be created for
+// some environment-specific reason) must not fail gombit new outright.
+func TestGenerateBootstrapApplyFailureHintsInsteadOfFailing(t *testing.T) {
+	stubGoModTidy(t, func(context.Context, string) ([]byte, error) { return nil, nil })
+	stubScaffoldLookPath(t, func(string) (string, error) { return "/usr/bin/atlas", nil })
+	stubScaffoldMakeMigrations(t, func(context.Context, migrations.Options) error { return nil })
+	stubScaffoldMigrate(t, func(context.Context, migrations.ApplyOptions) error {
+		return errors.New("migrations: open database: permission denied")
+	})
+
+	stdout := new(bytes.Buffer)
+	err := Generate(context.Background(), Options{
+		Name:             "demo",
+		Database:         "sqlite",
+		FrameworkVersion: "v0.1.0",
+		Tidy:             true,
+		WorkDir:          t.TempDir(),
+		Stdout:           stdout,
+		Stderr:           new(bytes.Buffer),
+	})
+	if err != nil {
+		t.Fatalf("Generate() error = %v, want bootstrap apply failure to be non-fatal", err)
+	}
+	if !strings.Contains(stdout.String(), "gombit db migrate") {
+		t.Fatalf("stdout = %q, want a gombit db migrate hint", stdout.String())
+	}
+	if !strings.Contains(stdout.String(), "permission denied") {
+		t.Fatalf("stdout = %q, want the underlying error surfaced", stdout.String())
 	}
 }

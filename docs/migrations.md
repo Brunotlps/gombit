@@ -12,19 +12,24 @@ Migration](#generate-a-migration)) covering every model
 `internal/platform/database.go`'s `AutoMigrate` call registers — the
 framework's own auth tables (`users`, `permissions`, `groups`,
 `refresh_tokens`, their join tables) plus the `product/` example — when Atlas
-is on `PATH` and `go mod tidy` succeeded. If Atlas isn't installed yet,
-`gombit new` prints the equivalent `gombit db makemigrations bootstrap
---model ...` command to run once it is.
+is on `PATH` and `go mod tidy` succeeded. For `--database sqlite` (the
+default), `gombit new` also **applies** it immediately, so
+`gombit db status` shows it already applied before you've run `db migrate`
+yourself. `--database postgres`/`mysql` get a placeholder DSN until you edit
+`.env` with real credentials, so those are seeded but left for you to apply
+with `gombit db migrate` once configured — same as always. If Atlas isn't
+installed at all, `gombit new` prints the equivalent
+`gombit db makemigrations bootstrap --model ...` command to run once it is.
 
 This exists because `AutoMigrate` also runs at every app startup
-(`app.OnStart`), creating those tables directly through GORM. Without a
-migration for them from the start, Atlas's tracked history never learns they
-exist, and the model registry has nothing to merge new models into — so the
-first later diff that names a model not yet tracked would "discover" the
-`AutoMigrate` tables as missing too and try to `CREATE` tables that already
-exist, and `gombit db migrate` would fail with `table users already exists`.
-Run `gombit db migrate` right after `gombit new` to apply the bootstrap
-migration before anything else is added.
+(`app.OnStart`), creating those tables directly through GORM — including the
+very first `gombit dev`, which the tutorial has you start before you ever
+touch migrations yourself. Without the bootstrap migration **applied** before
+that first run, `AutoMigrate` creates the tables live first, and applying the
+migration afterward fails with `table users already exists`. Seeding it
+without applying it isn't enough on its own: Atlas's tracked history has to
+actually match the live database, not just have a migration file on disk
+describing what it should eventually look like.
 
 ## Generate A Migration
 
