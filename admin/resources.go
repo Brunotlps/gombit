@@ -40,12 +40,22 @@ type patchInput struct {
 	Body map[string]any `doc:"Writable field values keyed by registered field names"`
 }
 
+// row is a registered model's field values keyed by field name. It exists
+// so the admin data plane's generic responses have a named type: an
+// anonymous map[string]any as a generic type parameter has no
+// reflect.Type.Name(), so Huma's DefaultSchemaNamer falls back to Go's
+// unnamed-type string ("map[string]interface {}") and that literal space
+// and braces survive into the OpenAPI component name — producing e.g.
+// "DataMetaListMapStringInterface {}PageMeta", which fails OpenAPI 3.1
+// validation (component names must match ^[a-zA-Z0-9._-]+$).
+type row map[string]any
+
 type rowOutput struct {
-	Body contract.Data[map[string]any]
+	Body contract.Data[row]
 }
 
 type listOutput struct {
-	Body contract.DataMeta[[]map[string]any, contract.PageMeta]
+	Body contract.DataMeta[[]row, contract.PageMeta]
 }
 
 type deleteResult struct {
@@ -112,12 +122,12 @@ func (h *handlers) listResources(ctx context.Context, input *listInput) (*listOu
 		return nil, contract.WithContext(ctx, contract.Internal("list resources"))
 	}
 
-	rows := make([]map[string]any, 0)
+	rows := make([]row, 0)
 	m.forEach(slice, func(item any) {
 		rows = append(rows, m.toRow(item))
 	})
 	return &listOutput{
-		Body: contract.DataMeta[[]map[string]any, contract.PageMeta]{
+		Body: contract.DataMeta[[]row, contract.PageMeta]{
 			Data: rows,
 			Meta: &contract.PageMeta{Page: page, PerPage: perPage, Total: total},
 		},
@@ -145,7 +155,7 @@ func (h *handlers) createResource(ctx context.Context, input *writeInput) (*rowO
 	if err := db.WithContext(ctx).Create(inst).Error; err != nil {
 		return nil, mapDBError(ctx, err)
 	}
-	return &rowOutput{Body: contract.Data[map[string]any]{Data: m.toRow(inst)}}, nil
+	return &rowOutput{Body: contract.Data[row]{Data: m.toRow(inst)}}, nil
 }
 
 func (h *handlers) getResource(ctx context.Context, input *itemInput) (*rowOutput, error) {
@@ -162,7 +172,7 @@ func (h *handlers) getResource(ctx context.Context, input *itemInput) (*rowOutpu
 	if err != nil {
 		return nil, err
 	}
-	return &rowOutput{Body: contract.Data[map[string]any]{Data: m.toRow(inst)}}, nil
+	return &rowOutput{Body: contract.Data[row]{Data: m.toRow(inst)}}, nil
 }
 
 func (h *handlers) updateResource(ctx context.Context, input *patchInput) (*rowOutput, error) {
@@ -189,7 +199,7 @@ func (h *handlers) updateResource(ctx context.Context, input *patchInput) (*rowO
 	if err := db.WithContext(ctx).Save(inst).Error; err != nil {
 		return nil, mapDBError(ctx, err)
 	}
-	return &rowOutput{Body: contract.Data[map[string]any]{Data: m.toRow(inst)}}, nil
+	return &rowOutput{Body: contract.Data[row]{Data: m.toRow(inst)}}, nil
 }
 
 func (h *handlers) deleteResource(ctx context.Context, input *itemInput) (*deleteOutput, error) {
