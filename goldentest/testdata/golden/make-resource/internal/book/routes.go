@@ -4,8 +4,8 @@ package book
 import (
 	"net/http"
 
-	"github.com/gombit-dev/gombit/framework"
 	"github.com/danielgtaylor/huma/v2"
+	"github.com/gombit-dev/gombit/framework"
 )
 
 // Register mounts book Huma routes. Called explicitly from main; Gombit
