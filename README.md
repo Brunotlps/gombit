@@ -222,4 +222,4 @@ Issues and pull requests are welcome — start with
 
 ## License
 
-[MIT](LICENSE) © LAA Software Engineering
+[MIT](LICENSE) © Gombit
