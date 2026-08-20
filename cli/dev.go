@@ -5,7 +5,7 @@ import (
 	"io"
 	"time"
 
-	"github.com/LAA-Software-Engineering/gombit/dev"
+	"github.com/gombit-dev/gombit/dev"
 	"github.com/spf13/cobra"
 )
 

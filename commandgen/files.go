@@ -18,7 +18,7 @@ func renderCommandFile(name CommandName) ([]byte, error) {
 	b.WriteString("package " + name.Package + "\n\n")
 	b.WriteString("import (\n")
 	b.WriteString("\t\"fmt\"\n\n")
-	b.WriteString("\t\"github.com/LAA-Software-Engineering/gombit/cli\"\n")
+	b.WriteString("\t\"github.com/gombit-dev/gombit/cli\"\n")
 	b.WriteString(")\n\n")
 	b.WriteString("// " + name.Constructor + " returns the " + name.Use + " management command.\n")
 	b.WriteString("// Attach it with cli.AddCommand from RegisterCommands (D13 / ADR-014).\n")
@@ -38,7 +38,7 @@ func renderCommandFile(name CommandName) ([]byte, error) {
 func renderCommandsFile(pkg string) ([]byte, error) {
 	var b strings.Builder
 	b.WriteString("package " + pkg + "\n\n")
-	b.WriteString("import \"github.com/LAA-Software-Engineering/gombit/cli\"\n\n")
+	b.WriteString("import \"github.com/gombit-dev/gombit/cli\"\n\n")
 	b.WriteString("// RegisterCommands attaches this feature-package's management commands to the\n")
 	b.WriteString("// app-owned gombit Cobra tree. Called explicitly from cmd/gombit; Gombit does\n")
 	b.WriteString("// not discover commands by reflection. Use cli.AddCommand (D13 / ADR-014).\n")

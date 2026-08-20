@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/gombit/config"
-	"github.com/LAA-Software-Engineering/gombit/migrations"
+	"github.com/gombit-dev/gombit/config"
+	"github.com/gombit-dev/gombit/migrations"
 )
 
 func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
@@ -87,7 +87,7 @@ func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
 	if !strings.Contains(goMod, "module github.com/example/demo") {
 		t.Fatalf("go.mod module = %q, want github.com/example/demo", goMod)
 	}
-	if !strings.Contains(goMod, "github.com/LAA-Software-Engineering/gombit") {
+	if !strings.Contains(goMod, "github.com/gombit-dev/gombit") {
 		t.Fatalf("go.mod missing gombit require:\n%s", goMod)
 	}
 	if strings.Contains(goMod, "replace ") {
@@ -662,7 +662,7 @@ func TestGeneratePinsResolvableFrameworkVersion(t *testing.T) {
 	}
 
 	gomod := readFile(t, filepath.Join(workDir, "demo", "go.mod"))
-	want := "require github.com/LAA-Software-Engineering/gombit v0.1.0"
+	want := "require github.com/gombit-dev/gombit v0.1.0"
 	if !strings.Contains(gomod, want) {
 		t.Errorf("go.mod = %q, want it to contain %q", gomod, want)
 	}
@@ -687,7 +687,7 @@ func TestGenerateWarnsWhenFrameworkVersionIsUnresolvable(t *testing.T) {
 	}
 
 	gomod := readFile(t, filepath.Join(workDir, "demo", "go.mod"))
-	want := "require github.com/LAA-Software-Engineering/gombit " + FallbackFrameworkVersion
+	want := "require github.com/gombit-dev/gombit " + FallbackFrameworkVersion
 	if !strings.Contains(gomod, want) {
 		t.Errorf("go.mod = %q, want it to contain %q", gomod, want)
 	}
@@ -881,10 +881,10 @@ func TestGenerateSeedsBootstrapMigrationForResolvableVersion(t *testing.T) {
 		t.Errorf("migration workdir = %q, want %q", got.WorkDir, filepath.Join(workDir, "demo"))
 	}
 	wantModels := []migrations.Model{
-		{ImportPath: "github.com/LAA-Software-Engineering/gombit/auth", TypeName: "User"},
-		{ImportPath: "github.com/LAA-Software-Engineering/gombit/auth", TypeName: "RefreshToken"},
-		{ImportPath: "github.com/LAA-Software-Engineering/gombit/auth", TypeName: "Group"},
-		{ImportPath: "github.com/LAA-Software-Engineering/gombit/auth", TypeName: "Permission"},
+		{ImportPath: "github.com/gombit-dev/gombit/auth", TypeName: "User"},
+		{ImportPath: "github.com/gombit-dev/gombit/auth", TypeName: "RefreshToken"},
+		{ImportPath: "github.com/gombit-dev/gombit/auth", TypeName: "Group"},
+		{ImportPath: "github.com/gombit-dev/gombit/auth", TypeName: "Permission"},
 		{ImportPath: "github.com/example/demo/internal/product", TypeName: "Product"},
 	}
 	if !reflect.DeepEqual(got.Models, wantModels) {
@@ -916,7 +916,7 @@ func TestGenerateWithoutAtlasHintsBootstrapMigration(t *testing.T) {
 	if !strings.Contains(stdout.String(), "gombit db makemigrations bootstrap") {
 		t.Fatalf("stdout = %q, want a makemigrations hint", stdout.String())
 	}
-	if !strings.Contains(stdout.String(), "--model github.com/LAA-Software-Engineering/gombit/auth.User") {
+	if !strings.Contains(stdout.String(), "--model github.com/gombit-dev/gombit/auth.User") {
 		t.Fatalf("stdout = %q, want auth models in hint", stdout.String())
 	}
 }

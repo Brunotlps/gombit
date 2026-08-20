@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/LAA-Software-Engineering/gombit/internal/contractspike"
+	"github.com/gombit-dev/gombit/internal/contractspike"
 )
 
 func main() {

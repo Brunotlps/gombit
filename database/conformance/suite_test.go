@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LAA-Software-Engineering/gombit/database"
-	"github.com/LAA-Software-Engineering/gombit/database/conformance/models"
+	"github.com/gombit-dev/gombit/database"
+	"github.com/gombit-dev/gombit/database/conformance/models"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )

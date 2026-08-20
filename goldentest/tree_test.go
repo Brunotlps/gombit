@@ -14,11 +14,11 @@ import (
 	"testing"
 )
 
-var gombitRequirePattern = regexp.MustCompile(`(?m)^(require\s+github\.com/LAA-Software-Engineering/gombit\s+)v\S+`)
+var gombitRequirePattern = regexp.MustCompile(`(?m)^(require\s+github\.com/gombit-dev/gombit\s+)v\S+`)
 
 const (
 	goldenRoot     = "testdata/golden"
-	gombitModule   = "github.com/LAA-Software-Engineering/gombit"
+	gombitModule   = "github.com/gombit-dev/gombit"
 	fixtureName    = "demo"
 	fixtureModule  = "github.com/example/demo"
 	fixtureBook    = "Book"

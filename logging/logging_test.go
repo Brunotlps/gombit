@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/gombit/config"
+	"github.com/gombit-dev/gombit/config"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 	"go.uber.org/zap/zaptest/observer"

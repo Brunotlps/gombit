@@ -10,8 +10,8 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/LAA-Software-Engineering/gombit/config"
-	"github.com/LAA-Software-Engineering/gombit/framework"
+	"github.com/gombit-dev/gombit/config"
+	"github.com/gombit-dev/gombit/framework"
 	"github.com/gin-gonic/gin"
 	"github.com/spf13/cobra"
 	"go.uber.org/zap"

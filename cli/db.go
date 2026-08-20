@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/LAA-Software-Engineering/gombit/config"
-	"github.com/LAA-Software-Engineering/gombit/migrations"
+	"github.com/gombit-dev/gombit/config"
+	"github.com/gombit-dev/gombit/migrations"
 	"github.com/spf13/cobra"
 )
 

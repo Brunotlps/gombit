@@ -8,7 +8,7 @@ import (
 )
 
 // frameworkModulePath is the module a generated app requires.
-const frameworkModulePath = "github.com/LAA-Software-Engineering/gombit"
+const frameworkModulePath = "github.com/gombit-dev/gombit"
 
 // FallbackFrameworkVersion is written into a generated go.mod when the CLI
 // cannot report a version that the module proxy could resolve — a `go run

@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/gombit/config"
+	"github.com/gombit-dev/gombit/config"
 	"github.com/danielgtaylor/huma/v2"
 	"gorm.io/gorm"
 )

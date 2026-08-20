@@ -6,7 +6,7 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/gombit/auth"
+	"github.com/gombit-dev/gombit/auth"
 	"gorm.io/gorm/schema"
 )
 

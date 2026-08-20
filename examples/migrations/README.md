@@ -8,7 +8,7 @@ first (`curl -sSf https://atlasgo.sh | sh -s -- --community`).
 ```sh
 gombit db makemigrations create_products \
   --driver sqlite \
-  --model github.com/LAA-Software-Engineering/gombit/examples/migrations/internal/product.Product
+  --model github.com/gombit-dev/gombit/examples/migrations/internal/product.Product
 ```
 
 This demonstrates the feature-package model path used by the temporary Atlas

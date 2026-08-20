@@ -6,7 +6,7 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/gombit/config"
+	"github.com/gombit-dev/gombit/config"
 )
 
 var mysqlTCPPattern = regexp.MustCompile(`^(?:([^:@]+)?(?::([^@]*))?@)?tcp\(([^)]+)\)/([^?]*)(\?.*)?$`)

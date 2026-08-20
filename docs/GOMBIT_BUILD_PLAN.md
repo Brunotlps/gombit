@@ -17,7 +17,7 @@
 4. §4 is the **issue backlog** — each entry maps 1:1 to a GitHub issue.
 5. §5 is the **agent working agreement** — the definition of done. Put this in `CONTRIBUTING.md` and reference it from every issue.
 
-Framework identity is fully decided: **Gombit**, `github.com/LAA-Software-Engineering/gombit`. Nothing left blocking repo creation — M0 issue #1 can be opened.
+Framework identity is fully decided: **Gombit**, `github.com/gombit-dev/gombit`. Nothing left blocking repo creation — M0 issue #1 can be opened.
 
 ---
 
@@ -38,8 +38,8 @@ If any of C1–C6 is wrong for you, say which — each has a cluster of issues h
 
 ## 2. Locked decisions (closes original §57)
 
-- **D1 — Name: DECIDED — `Gombit`.** Module path `github.com/LAA-Software-Engineering/gombit`, CLI binary `gombit`. Fully closed.
-- **D2 — Repo/org:** New dedicated public repo `LAA-Software-Engineering/gombit`, not a fork of the template. License **MIT** (matches existing repo). Governance: BDFL/solo for now.
+- **D1 — Name: DECIDED — `Gombit`.** Module path `github.com/gombit-dev/gombit`, CLI binary `gombit`. Fully closed.
+- **D2 — Repo/org:** New dedicated public repo `gombit-dev/gombit`, not a fork of the template. License **MIT** (matches existing repo). Governance: BDFL/solo for now.
 - **D3 — Migration representation:** **Wrap Atlas, don't hand-roll a DSL.** `gombit db makemigrations` invokes the Apache-2.0 `ariga.io/atlas-provider-gorm` (Program Mode, so it reads GORM models spread across feature-packages) + `atlas migrate diff` to generate **versioned SQL migrations from model changes** — Django's `makemigrations` for Go+GORM. `gombit db migrate` applies them. This **replaces** the earlier fluent `migration.Schema` builder. Same rationale as C1/Huma: don't build a diff engine that already exists (§55.4). Locked, pending the licensing check in the ADR (M2-0). Escape hatch: hand-written SQL/HCL migrations remain droppable into the migration dir.
 - **D4 — Migration metadata:** Track `version, name, batch, applied_at`. **No checksums** — they are near-useless for Go-source migrations (formatting/comments change the hash without changing schema). Locked.
 - **D5 — OpenAPI → TS toolchain:** Go side emits OpenAPI 3.1 via Huma. TS side uses **`openapi-typescript`** (types) + **`openapi-fetch`** (client). Both are low-magic and generation-only. Locked.
@@ -130,7 +130,7 @@ Milestones are dependency-ordered; do not start Mn+1 issues that depend on unfin
 
 ### M0 — Bootstrap + Contract Spike (the gate)
 
-- **[M0-1] Create repo, module path, CI skeleton** — new repo, `go.mod` with `github.com/LAA-Software-Engineering/gombit`, MIT license, golangci-lint, GitHub Actions running `go test ./...` + lint. AC: green CI on an empty package; branch protection on `main`. deps: D1. size: S. labels: `infra`.
+- **[M0-1] Create repo, module path, CI skeleton** — new repo, `go.mod` with `github.com/gombit-dev/gombit`, MIT license, golangci-lint, GitHub Actions running `go test ./...` + lint. AC: green CI on an empty package; branch protection on `main`. deps: D1. size: S. labels: `infra`.
 - **[M0-2] Contract-layer spike: Huma over Gin** — wire Huma to a Gin engine; implement two handlers: one Huma-typed resource (`GET/POST /widgets`) that appears in the emitted OpenAPI, and one raw `*gin.Engine` route (`/raw/ping`) that does not. Emit `openapi.json`. AC: OpenAPI 3.1 validates; typed handler shows request/response schema; raw route works and is absent from the spec; a short latency benchmark vs plain Gin recorded. **This issue is a go/no-go gate.** deps: M0-1. size: M. labels: `spike`, `contract`.
 - **[M0-3] ADR-011: Contract layer = Huma** — record the decision, the escape-hatch pattern, and the benchmark. If M0-2 fails the escape-hatch test, this ADR instead records the fallback (bespoke `Bind` + emission) and M3 issues are rewritten. deps: M0-2. size: S. labels: `adr`.
 
@@ -223,7 +223,7 @@ Everything needed to hand Gombit to someone who has never seen it: discoverable 
 - **[REL-6] Tutorial** — `docs/tutorial.md` building a tasks app across the whole v0.1 loop: scaffold, model, migration, resource, contract, client, frontend, auth, admin, management command, embedded build. AC: every command runs in order from an empty dir. deps: REL-5. size: L. labels: `devx`.
 - **[REL-7] Tutorial example app** — `examples/tutorial/` committed and built in CI so the tutorial cannot rot. AC: `go build ./examples/...` is a CI step. deps: REL-6. size: M. labels: `devx`, `tests`.
 - **[REL-8] Docs index, changelog, release runbook** — `docs/README.md`, `CHANGELOG.md` (Keep a Changelog), `docs/releasing.md`. AC: every `docs/*.md` appears exactly once in the index. deps: REL-6. size: S. labels: `devx`.
-- **[REL-9] Scaffolded apps must resolve a published framework version** — `scaffold/templates/go.mod.tmpl` hardcoded `require github.com/LAA-Software-Engineering/gombit v0.0.0`, a version that does not exist, so `go build ./...` in a fresh `gombit new` tree failed with "missing go.sum entry" unless the user added a local `replace`; `goldentest` only passed because it injects one into a temp copy. This blocked the documented quickstart. Fixed by pinning the generated `go.mod` to the scaffolding binary's own version (`ResolveFrameworkVersion`, accepting release tags and pseudo-versions, rejecting `dev` / `+dirty` / v2-without-path-suffix) and running `go mod tidy` to populate `go.sum` — a version pin alone is not enough, since `go build` will not write `go.sum` itself. `--framework-version` and `--skip-tidy` override both halves; unresolvable versions warn with the `replace` recipe instead of emitting a broken tree. Goldens unchanged. AC: after `gombit new`, `go build ./...` succeeds with no manual edits. deps: REL-4. size: M. labels: `cli`, `generator`, `devx`. — **done**
+- **[REL-9] Scaffolded apps must resolve a published framework version** — `scaffold/templates/go.mod.tmpl` hardcoded `require github.com/gombit-dev/gombit v0.0.0`, a version that does not exist, so `go build ./...` in a fresh `gombit new` tree failed with "missing go.sum entry" unless the user added a local `replace`; `goldentest` only passed because it injects one into a temp copy. This blocked the documented quickstart. Fixed by pinning the generated `go.mod` to the scaffolding binary's own version (`ResolveFrameworkVersion`, accepting release tags and pseudo-versions, rejecting `dev` / `+dirty` / v2-without-path-suffix) and running `go mod tidy` to populate `go.sum` — a version pin alone is not enough, since `go build` will not write `go.sum` itself. `--framework-version` and `--skip-tidy` override both halves; unresolvable versions warn with the `replace` recipe instead of emitting a broken tree. Goldens unchanged. AC: after `gombit new`, `go build ./...` succeeds with no manual edits. deps: REL-4. size: M. labels: `cli`, `generator`, `devx`. — **done**
 
 ### M6 — Deferred batteries (POST-v0.1, not on the critical path)
 
@@ -258,7 +258,7 @@ Labels: `infra`, `runtime`, `config`, `lifecycle`, `http`, `database`, `cache`, 
 ## 7. Critical-path summary
 
 ```
-M0-1 (github.com/LAA-Software-Engineering/gombit) → M0-2/M0-3 (Huma GATE) → M1 (extraction)
+M0-1 (github.com/gombit-dev/gombit) → M0-2/M0-3 (Huma GATE) → M1 (extraction)
                                                   ↓
                               M2-0 (Atlas GATE) → M2 (migrations)
                                                   ↓

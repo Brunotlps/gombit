@@ -12,11 +12,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/gombit/cli"
-	clientpkg "github.com/LAA-Software-Engineering/gombit/client"
-	"github.com/LAA-Software-Engineering/gombit/config"
-	"github.com/LAA-Software-Engineering/gombit/contract"
-	"github.com/LAA-Software-Engineering/gombit/framework"
+	"github.com/gombit-dev/gombit/cli"
+	clientpkg "github.com/gombit-dev/gombit/client"
+	"github.com/gombit-dev/gombit/config"
+	"github.com/gombit-dev/gombit/contract"
+	"github.com/gombit-dev/gombit/framework"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/gin-gonic/gin"
 )
@@ -43,7 +43,7 @@ func TestRunMakeMigrationsInvokesAtlasAndWritesMigration(t *testing.T) {
 		"--atlas-bin",
 		atlas,
 		"--model",
-		"github.com/LAA-Software-Engineering/gombit/migrations/testmodels.Product",
+		"github.com/gombit-dev/gombit/migrations/testmodels.Product",
 	}, stdout, stderr)
 	if err != nil {
 		t.Fatalf("run() error = %v, want nil; stderr=%q", err, stderr.String())
@@ -83,7 +83,7 @@ func TestRunMakeMigrationsUsesConfiguredDriver(t *testing.T) {
 		"--atlas-bin",
 		atlas,
 		"--model",
-		"github.com/LAA-Software-Engineering/gombit/migrations/testmodels.Product",
+		"github.com/gombit-dev/gombit/migrations/testmodels.Product",
 	}, ioDiscard{}, ioDiscard{})
 	if err != nil {
 		t.Fatalf("run() error = %v, want nil", err)

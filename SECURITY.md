@@ -6,7 +6,7 @@
 
 Report privately through GitHub Security Advisories:
 
-> [Report a vulnerability](https://github.com/LAA-Software-Engineering/gombit/security/advisories/new)
+> [Report a vulnerability](https://github.com/gombit-dev/gombit/security/advisories/new)
 
 If you can't use that form, email **leonardo.aa88@gmail.com** with `gombit
 security` in the subject.

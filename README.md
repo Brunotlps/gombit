@@ -1,10 +1,10 @@
 # Gombit
 
-[![CI](https://github.com/LAA-Software-Engineering/gombit/actions/workflows/ci.yml/badge.svg)](https://github.com/LAA-Software-Engineering/gombit/actions/workflows/ci.yml)
-[![Release](https://github.com/LAA-Software-Engineering/gombit/actions/workflows/release.yml/badge.svg)](https://github.com/LAA-Software-Engineering/gombit/actions/workflows/release.yml)
+[![CI](https://github.com/gombit-dev/gombit/actions/workflows/ci.yml/badge.svg)](https://github.com/gombit-dev/gombit/actions/workflows/ci.yml)
+[![Release](https://github.com/gombit-dev/gombit/actions/workflows/release.yml/badge.svg)](https://github.com/gombit-dev/gombit/actions/workflows/release.yml)
 [![Go 1.25+](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)](https://go.dev/dl/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Go Reference](https://pkg.go.dev/badge/github.com/LAA-Software-Engineering/gombit.svg)](https://pkg.go.dev/github.com/LAA-Software-Engineering/gombit)
+[![Go Reference](https://pkg.go.dev/badge/github.com/gombit-dev/gombit.svg)](https://pkg.go.dev/github.com/gombit-dev/gombit)
 
 **A Django-for-Go full-stack framework.** One CLI scaffolds a typed Go API, its
 OpenAPI document, a matching TypeScript client, a React frontend, versioned SQL
@@ -12,7 +12,7 @@ migrations, session auth, and a working admin — then builds the whole thing in
 a single binary.
 
 ```bash
-go install github.com/LAA-Software-Engineering/gombit/cmd/gombit@latest
+go install github.com/gombit-dev/gombit/cmd/gombit@latest
 gombit new tasks --database sqlite --auth cookie --ui mui
 cd tasks && gombit dev
 ```
@@ -65,7 +65,7 @@ Migrations also need [Atlas](https://atlasgo.io/):
 
 ```bash
 # 1. Install
-go install github.com/LAA-Software-Engineering/gombit/cmd/gombit@latest
+go install github.com/gombit-dev/gombit/cmd/gombit@latest
 
 # 2. Scaffold
 gombit new tasks --database sqlite --auth cookie --ui mui
@@ -215,7 +215,7 @@ scheduler, mail, storage, gRPC, multi-tenancy, i18n.
 Issues and pull requests are welcome — start with
 [CONTRIBUTING.md](CONTRIBUTING.md).
 
-- [Report a bug or request a feature](https://github.com/LAA-Software-Engineering/gombit/issues/new/choose)
+- [Report a bug or request a feature](https://github.com/gombit-dev/gombit/issues/new/choose)
 - [Security policy](SECURITY.md) — report vulnerabilities privately, not as issues
 - [Code of conduct](CODE_OF_CONDUCT.md)
 - [Changelog](CHANGELOG.md)

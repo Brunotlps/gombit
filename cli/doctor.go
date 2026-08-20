@@ -14,10 +14,10 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/LAA-Software-Engineering/gombit/cache"
-	"github.com/LAA-Software-Engineering/gombit/config"
-	"github.com/LAA-Software-Engineering/gombit/database"
-	"github.com/LAA-Software-Engineering/gombit/migrations"
+	"github.com/gombit-dev/gombit/cache"
+	"github.com/gombit-dev/gombit/config"
+	"github.com/gombit-dev/gombit/database"
+	"github.com/gombit-dev/gombit/migrations"
 	"github.com/spf13/cobra"
 )
 

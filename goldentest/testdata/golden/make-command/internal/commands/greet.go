@@ -4,7 +4,7 @@ package commands
 import (
 	"fmt"
 
-	"github.com/LAA-Software-Engineering/gombit/cli"
+	"github.com/gombit-dev/gombit/cli"
 )
 
 // NewGreetCommand returns the greet management command.

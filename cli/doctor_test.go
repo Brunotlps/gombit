@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/gombit/config"
+	"github.com/gombit-dev/gombit/config"
 )
 
 func TestCheckInsecureFlagsInsecureCookieInProduction(t *testing.T) {

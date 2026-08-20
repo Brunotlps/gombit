@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/LAA-Software-Engineering/gombit/client"
+	"github.com/gombit-dev/gombit/client"
 )
 
 func watchOpenAPI(ctx context.Context, opts Options, specURL string) error {

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/gombit/commandgen"
+	"github.com/gombit-dev/gombit/commandgen"
 )
 
 func TestRunMakeCommandGreetRunnable(t *testing.T) {
@@ -170,7 +170,7 @@ func TestRunMakeCommandRefusesFrameworkLayout(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(workDir, "go.mod"), []byte("module github.com/example/framework\n\ngo 1.22\n"), 0o600); err != nil {
 		t.Fatalf("write go.mod: %v", err)
 	}
-	mainSrc := "package main\n\nimport (\n\t\"context\"\n\t\"io\"\n\n\t\"github.com/LAA-Software-Engineering/gombit/cli\"\n)\n\nfunc run(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) error {\n\treturn cli.Execute(ctx, args, stdout, stderr)\n}\n"
+	mainSrc := "package main\n\nimport (\n\t\"context\"\n\t\"io\"\n\n\t\"github.com/gombit-dev/gombit/cli\"\n)\n\nfunc run(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) error {\n\treturn cli.Execute(ctx, args, stdout, stderr)\n}\n"
 	if err := os.WriteFile(filepath.Join(workDir, "cmd", "gombit", "main.go"), []byte(mainSrc), 0o600); err != nil {
 		t.Fatalf("write main.go: %v", err)
 	}

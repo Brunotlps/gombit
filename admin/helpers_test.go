@@ -10,12 +10,12 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LAA-Software-Engineering/gombit/admin"
-	"github.com/LAA-Software-Engineering/gombit/auth"
-	"github.com/LAA-Software-Engineering/gombit/config"
-	"github.com/LAA-Software-Engineering/gombit/contract"
-	"github.com/LAA-Software-Engineering/gombit/database"
-	"github.com/LAA-Software-Engineering/gombit/framework"
+	"github.com/gombit-dev/gombit/admin"
+	"github.com/gombit-dev/gombit/auth"
+	"github.com/gombit-dev/gombit/config"
+	"github.com/gombit-dev/gombit/contract"
+	"github.com/gombit-dev/gombit/database"
+	"github.com/gombit-dev/gombit/framework"
 	"go.uber.org/zap"
 	"golang.org/x/crypto/bcrypt"
 )

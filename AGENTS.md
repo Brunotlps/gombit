@@ -2,7 +2,7 @@
 
 Gombit is a Django-for-Go full-stack framework: Go backend (Gin + Huma + GORM),
 a generated React+TypeScript frontend, Atlas-backed migrations. Module path
-`github.com/LAA-Software-Engineering/gombit`.
+`github.com/gombit-dev/gombit`.
 
 ## Current state
 

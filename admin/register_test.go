@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/gombit/admin"
+	"github.com/gombit-dev/gombit/admin"
 	"github.com/gin-gonic/gin"
 )
 

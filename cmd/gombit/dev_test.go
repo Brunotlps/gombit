@@ -10,9 +10,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LAA-Software-Engineering/gombit/cli"
-	"github.com/LAA-Software-Engineering/gombit/config"
-	"github.com/LAA-Software-Engineering/gombit/dev"
+	"github.com/gombit-dev/gombit/cli"
+	"github.com/gombit-dev/gombit/config"
+	"github.com/gombit-dev/gombit/dev"
 )
 
 func TestRunHelpListsDev(t *testing.T) {

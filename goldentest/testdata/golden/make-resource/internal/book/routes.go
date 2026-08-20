@@ -4,7 +4,7 @@ package book
 import (
 	"net/http"
 
-	"github.com/LAA-Software-Engineering/gombit/framework"
+	"github.com/gombit-dev/gombit/framework"
 	"github.com/danielgtaylor/huma/v2"
 )
 

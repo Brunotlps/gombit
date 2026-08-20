@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/gombit/config"
+	"github.com/gombit-dev/gombit/config"
 )
 
 func TestParseModel(t *testing.T) {
@@ -167,7 +167,7 @@ func TestMakeMigrationsGeneratedLoaderUsesRealGormschema(t *testing.T) {
 		MigrationDir: migrationDir,
 		AtlasBinary:  "atlas-test",
 		Models: []Model{
-			{ImportPath: "github.com/LAA-Software-Engineering/gombit/migrations/testmodels", TypeName: "Product"},
+			{ImportPath: "github.com/gombit-dev/gombit/migrations/testmodels", TypeName: "Product"},
 		},
 		runner: runner,
 	})
@@ -215,7 +215,7 @@ func TestMakeMigrationsRunsAtlasCLISQLiteWhenAvailable(t *testing.T) {
 		MigrationDir: migrationDir,
 		AtlasBinary:  atlasBin,
 		Models: []Model{
-			{ImportPath: "github.com/LAA-Software-Engineering/gombit/migrations/testmodels", TypeName: "Product"},
+			{ImportPath: "github.com/gombit-dev/gombit/migrations/testmodels", TypeName: "Product"},
 		},
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -268,7 +268,7 @@ func TestMakeMigrationsSecondModelDoesNotDropTheFirst(t *testing.T) {
 		MigrationDir: migrationDir,
 		AtlasBinary:  atlasBin,
 		Models: []Model{
-			{ImportPath: "github.com/LAA-Software-Engineering/gombit/migrations/testmodels", TypeName: "Product"},
+			{ImportPath: "github.com/gombit-dev/gombit/migrations/testmodels", TypeName: "Product"},
 		},
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -294,7 +294,7 @@ func TestMakeMigrationsSecondModelDoesNotDropTheFirst(t *testing.T) {
 		MigrationDir: migrationDir,
 		AtlasBinary:  atlasBin,
 		Models: []Model{
-			{ImportPath: "github.com/LAA-Software-Engineering/gombit/migrations/testmodels", TypeName: "Account"},
+			{ImportPath: "github.com/gombit-dev/gombit/migrations/testmodels", TypeName: "Account"},
 		},
 		Stdout: io.Discard,
 		Stderr: io.Discard,
@@ -368,7 +368,7 @@ func TestMakeMigrationsFullListAfterIncrementalCallsIsNoop(t *testing.T) {
 	migrationDir := t.TempDir()
 	ctx := context.Background()
 	root := projectRoot(t)
-	const testmodelsPkg = "github.com/LAA-Software-Engineering/gombit/migrations/testmodels"
+	const testmodelsPkg = "github.com/gombit-dev/gombit/migrations/testmodels"
 
 	// "bootstrap": Product only, the way gombit new would seed it.
 	err := MakeMigrations(ctx, Options{

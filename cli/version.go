@@ -11,7 +11,7 @@ import (
 
 // Build metadata. Release binaries stamp these with -ldflags, e.g.
 //
-//	-X github.com/LAA-Software-Engineering/gombit/cli.Version=v0.1.0
+//	-X github.com/gombit-dev/gombit/cli.Version=v0.1.0
 //
 // When they are empty the values fall back to the module build info recorded
 // by `go install`, so `go install ...@v0.1.0` still self-reports v0.1.0.

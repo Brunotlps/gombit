@@ -11,8 +11,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/gombit/config"
-	"github.com/LAA-Software-Engineering/gombit/migrations"
+	"github.com/gombit-dev/gombit/config"
+	"github.com/gombit-dev/gombit/migrations"
 )
 
 // Generate writes a feature-package resource into an existing Gombit app.

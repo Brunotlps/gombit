@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/LAA-Software-Engineering/gombit/client"
+	"github.com/gombit-dev/gombit/client"
 	"github.com/spf13/cobra"
 )
 

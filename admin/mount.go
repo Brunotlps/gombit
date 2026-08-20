@@ -6,8 +6,8 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/gombit/auth"
-	"github.com/LAA-Software-Engineering/gombit/config"
+	"github.com/gombit-dev/gombit/auth"
+	"github.com/gombit-dev/gombit/config"
 	"github.com/danielgtaylor/huma/v2"
 )
 

@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/gombit/migrations"
-	"github.com/LAA-Software-Engineering/gombit/resourcegen"
+	"github.com/gombit-dev/gombit/migrations"
+	"github.com/gombit-dev/gombit/resourcegen"
 )
 
 func TestRunMakeResourceBookCompiles(t *testing.T) {
@@ -197,7 +197,7 @@ func appendReplace(t *testing.T, dest string) {
 	if err != nil {
 		t.Fatalf("open go.mod: %v", err)
 	}
-	if _, err := mod.WriteString("\nreplace github.com/LAA-Software-Engineering/gombit => " + cmdModuleRoot(t) + "\n"); err != nil {
+	if _, err := mod.WriteString("\nreplace github.com/gombit-dev/gombit => " + cmdModuleRoot(t) + "\n"); err != nil {
 		_ = mod.Close()
 		t.Fatalf("write replace: %v", err)
 	}

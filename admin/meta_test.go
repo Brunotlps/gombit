@@ -9,10 +9,10 @@ import (
 
 	"time"
 
-	"github.com/LAA-Software-Engineering/gombit/admin"
-	"github.com/LAA-Software-Engineering/gombit/auth"
-	"github.com/LAA-Software-Engineering/gombit/config"
-	"github.com/LAA-Software-Engineering/gombit/framework"
+	"github.com/gombit-dev/gombit/admin"
+	"github.com/gombit-dev/gombit/auth"
+	"github.com/gombit-dev/gombit/config"
+	"github.com/gombit-dev/gombit/framework"
 	"github.com/gin-gonic/gin"
 	"github.com/pb33f/libopenapi"
 	openapivalidator "github.com/pb33f/libopenapi-validator"

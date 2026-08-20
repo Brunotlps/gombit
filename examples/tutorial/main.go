@@ -16,11 +16,11 @@ import (
 	"errors"
 	"log"
 
-	"github.com/LAA-Software-Engineering/gombit/auth"
-	"github.com/LAA-Software-Engineering/gombit/config"
-	"github.com/LAA-Software-Engineering/gombit/database"
-	"github.com/LAA-Software-Engineering/gombit/examples/tutorial/internal/task"
-	"github.com/LAA-Software-Engineering/gombit/framework"
+	"github.com/gombit-dev/gombit/auth"
+	"github.com/gombit-dev/gombit/config"
+	"github.com/gombit-dev/gombit/database"
+	"github.com/gombit-dev/gombit/examples/tutorial/internal/task"
+	"github.com/gombit-dev/gombit/framework"
 )
 
 const (

@@ -2818,15 +2818,15 @@ Redis selected but unreachable when required for auth/session semantics
 
 Project baselines:
 
-- https://github.com/LAA-Software-Engineering/golang-rest-api-template
-- https://github.com/LAA-Software-Engineering/crud-template-monorepo
-- https://raw.githubusercontent.com/LAA-Software-Engineering/golang-rest-api-template/main/cmd/server/main.go
-- https://raw.githubusercontent.com/LAA-Software-Engineering/golang-rest-api-template/main/pkg/api/router.go
-- https://raw.githubusercontent.com/LAA-Software-Engineering/golang-rest-api-template/main/pkg/database/db.go
-- https://raw.githubusercontent.com/LAA-Software-Engineering/golang-rest-api-template/main/pkg/cache/cache.go
-- https://raw.githubusercontent.com/LAA-Software-Engineering/crud-template-monorepo/main/frontend/package.json
-- https://raw.githubusercontent.com/LAA-Software-Engineering/crud-template-monorepo/main/frontend/src/services/api.ts
-- https://raw.githubusercontent.com/LAA-Software-Engineering/crud-template-monorepo/main/frontend/src/types/index.ts
+- https://github.com/gombit-dev/golang-rest-api-template
+- https://github.com/gombit-dev/crud-template-monorepo
+- https://raw.githubusercontent.com/gombit-dev/golang-rest-api-template/main/cmd/server/main.go
+- https://raw.githubusercontent.com/gombit-dev/golang-rest-api-template/main/pkg/api/router.go
+- https://raw.githubusercontent.com/gombit-dev/golang-rest-api-template/main/pkg/database/db.go
+- https://raw.githubusercontent.com/gombit-dev/golang-rest-api-template/main/pkg/cache/cache.go
+- https://raw.githubusercontent.com/gombit-dev/crud-template-monorepo/main/frontend/package.json
+- https://raw.githubusercontent.com/gombit-dev/crud-template-monorepo/main/frontend/src/services/api.ts
+- https://raw.githubusercontent.com/gombit-dev/crud-template-monorepo/main/frontend/src/types/index.ts
 
 Technology references:
 

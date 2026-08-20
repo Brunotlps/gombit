@@ -5,8 +5,8 @@ This directory is the split-deploy frontend root (build plan C5 / §3.2).
 opt-in MUI CRUD preset: `ThemeProvider` + `CssBaseline`, an AppBar layout,
 Paper/TextField login, a product Table, and a dedicated create form.
 Default `gombit new` stays **minimal/headless** (C4). See the framework
-[`docs/frontend-mui.md`](https://github.com/LAA-Software-Engineering/gombit/blob/main/docs/frontend-mui.md).
-Bearer login/refresh is documented in the framework [`docs/auth.md`](https://github.com/LAA-Software-Engineering/gombit/blob/main/docs/auth.md).
+[`docs/frontend-mui.md`](https://github.com/gombit-dev/gombit/blob/main/docs/frontend-mui.md).
+Bearer login/refresh is documented in the framework [`docs/auth.md`](https://github.com/gombit-dev/gombit/blob/main/docs/auth.md).
 Cookie/CSRF mode (`--auth cookie`) is independent of the UI preset.
 
 ```sh
@@ -24,7 +24,7 @@ gombit build --embed
 
 That runs the Vite production build, copies `dist/` into
 `internal/web/static`, and compiles `./cmd/server`. See the framework
-[`docs/build.md`](https://github.com/LAA-Software-Engineering/gombit/blob/main/docs/build.md).
+[`docs/build.md`](https://github.com/gombit-dev/gombit/blob/main/docs/build.md).
 
 Public API origin:
 

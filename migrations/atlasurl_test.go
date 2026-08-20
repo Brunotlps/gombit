@@ -3,7 +3,7 @@ package migrations
 import (
 	"testing"
 
-	"github.com/LAA-Software-Engineering/gombit/config"
+	"github.com/gombit-dev/gombit/config"
 )
 
 func TestAtlasURL(t *testing.T) {

@@ -3,7 +3,7 @@ package main
 import (
 	"fmt"
 
-	"github.com/LAA-Software-Engineering/gombit/examples/migrations/internal/product"
+	"github.com/gombit-dev/gombit/examples/migrations/internal/product"
 )
 
 func main() {

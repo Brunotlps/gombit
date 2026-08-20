@@ -49,13 +49,13 @@ gombit build --embed
 ```
 
 `go run ./cmd/server` still works without a Vite `dist`. See
-[`docs/build.md`](https://github.com/LAA-Software-Engineering/gombit/blob/main/docs/build.md).
+[`docs/build.md`](https://github.com/gombit-dev/gombit/blob/main/docs/build.md).
 
-This module requires [`github.com/LAA-Software-Engineering/gombit`](https://github.com/LAA-Software-Engineering/gombit).
+This module requires [`github.com/gombit-dev/gombit`](https://github.com/gombit-dev/gombit).
 After scaffolding, pin a released version:
 
 ```sh
-go get github.com/LAA-Software-Engineering/gombit@latest
+go get github.com/gombit-dev/gombit@latest
 go mod tidy
 ```
 
@@ -142,5 +142,5 @@ Requires `GOMBIT_JWT_SECRET` to be set (auth on, Bearer or cookie mode;
 `.env` already has one). Prompts interactively when `--email` / `--password` are omitted and
 stdin is a TTY. Refuses duplicate emails and hashes the password with the
 same bcrypt hasher as `/auth/register`. See
-[`docs/cli.md`](https://github.com/LAA-Software-Engineering/gombit/blob/main/docs/cli.md#gombit-createsuperuser).
+[`docs/cli.md`](https://github.com/gombit-dev/gombit/blob/main/docs/cli.md#gombit-createsuperuser).
 

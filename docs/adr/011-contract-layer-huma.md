@@ -47,7 +47,7 @@ The benchmark was rerun locally for M0-3 on 2026-08-15:
 ```text
 goos: linux
 goarch: amd64
-pkg: github.com/LAA-Software-Engineering/gombit/internal/contractspike
+pkg: github.com/gombit-dev/gombit/internal/contractspike
 cpu: 12th Gen Intel(R) Core(TM) i7-12650H
 BenchmarkHumaGinListWidgets-16      677042      1599 ns/op   1365 B/op   17 allocs/op
 BenchmarkPlainGinListWidgets-16    1430974       830.2 ns/op 1130 B/op   11 allocs/op

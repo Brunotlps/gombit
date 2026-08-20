@@ -3,7 +3,7 @@ package main
 import (
 	"log"
 
-	"github.com/LAA-Software-Engineering/gombit/framework"
+	"github.com/gombit-dev/gombit/framework"
 )
 
 func main() {

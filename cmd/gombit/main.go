@@ -9,7 +9,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/LAA-Software-Engineering/gombit/cli"
+	"github.com/gombit-dev/gombit/cli"
 )
 
 func main() {

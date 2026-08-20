@@ -178,7 +178,7 @@ jobs:
           VERSION: ${{ needs.version.outputs.tag }}
         run: |
           set -euo pipefail
-          pkg=github.com/LAA-Software-Engineering/gombit/cli
+          pkg=github.com/gombit-dev/gombit/cli
           ldflags="-s -w"
           ldflags="$ldflags -X ${pkg}.Version=${VERSION}"
           ldflags="$ldflags -X ${pkg}.Commit=${GITHUB_SHA}"

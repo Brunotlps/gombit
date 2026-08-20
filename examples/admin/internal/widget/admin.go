@@ -1,8 +1,8 @@
 package widget
 
 import (
-	"github.com/LAA-Software-Engineering/gombit/admin"
-	"github.com/LAA-Software-Engineering/gombit/framework"
+	"github.com/gombit-dev/gombit/admin"
+	"github.com/gombit-dev/gombit/framework"
 )
 
 // RegisterAdmin registers Widget on the runtime admin. Feature packages own

@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/LAA-Software-Engineering/gombit/contract"
+	"github.com/gombit-dev/gombit/contract"
 	"github.com/danielgtaylor/huma/v2"
 )
 

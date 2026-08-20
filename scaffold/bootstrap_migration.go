@@ -6,8 +6,8 @@ import (
 	"os/exec"
 	"path/filepath"
 
-	"github.com/LAA-Software-Engineering/gombit/config"
-	"github.com/LAA-Software-Engineering/gombit/migrations"
+	"github.com/gombit-dev/gombit/config"
+	"github.com/gombit-dev/gombit/migrations"
 )
 
 // bootstrapModels lists the GORM models internal/platform/database.go.tmpl
@@ -27,7 +27,7 @@ import (
 // (chapter 3's own pattern) merges with this registry instead of treating
 // its single model as the entire desired schema.
 func bootstrapModels(module string) []migrations.Model {
-	const authImport = "github.com/LAA-Software-Engineering/gombit/auth"
+	const authImport = "github.com/gombit-dev/gombit/auth"
 	return []migrations.Model{
 		{ImportPath: authImport, TypeName: "User"},
 		{ImportPath: authImport, TypeName: "RefreshToken"},

@@ -17,7 +17,7 @@ import (
 	"strings"
 	"text/template"
 
-	"github.com/LAA-Software-Engineering/gombit/config"
+	"github.com/gombit-dev/gombit/config"
 )
 
 // Generate scaffolds a new Gombit application into opts.Dest (or <workdir>/<name>).

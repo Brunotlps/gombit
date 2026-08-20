@@ -3,8 +3,8 @@ package admin
 import (
 	"context"
 
-	"github.com/LAA-Software-Engineering/gombit/auth"
-	"github.com/LAA-Software-Engineering/gombit/contract"
+	"github.com/gombit-dev/gombit/auth"
+	"github.com/gombit-dev/gombit/contract"
 )
 
 func (h *handlers) permissionGrants(ctx context.Context, keys ...string) (map[string]bool, error) {

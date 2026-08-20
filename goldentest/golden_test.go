@@ -10,11 +10,11 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/gombit/client"
-	"github.com/LAA-Software-Engineering/gombit/commandgen"
-	"github.com/LAA-Software-Engineering/gombit/contract"
-	"github.com/LAA-Software-Engineering/gombit/resourcegen"
-	"github.com/LAA-Software-Engineering/gombit/scaffold"
+	"github.com/gombit-dev/gombit/client"
+	"github.com/gombit-dev/gombit/commandgen"
+	"github.com/gombit-dev/gombit/contract"
+	"github.com/gombit-dev/gombit/resourcegen"
+	"github.com/gombit-dev/gombit/scaffold"
 )
 
 var update = flag.Bool("update", false, "regenerate testdata/golden trees")

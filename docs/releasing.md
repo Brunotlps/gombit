@@ -86,8 +86,8 @@ cross-compiling job.
 
    ```bash
    VERSION=v0.1.0
-   curl -fsSLO "https://github.com/LAA-Software-Engineering/gombit/releases/download/${VERSION}/gombit-${VERSION}-linux-amd64.tar.gz"
-   curl -fsSLO "https://github.com/LAA-Software-Engineering/gombit/releases/download/${VERSION}/SHA256SUMS.txt"
+   curl -fsSLO "https://github.com/gombit-dev/gombit/releases/download/${VERSION}/gombit-${VERSION}-linux-amd64.tar.gz"
+   curl -fsSLO "https://github.com/gombit-dev/gombit/releases/download/${VERSION}/SHA256SUMS.txt"
    sha256sum -c SHA256SUMS.txt --ignore-missing
    tar -xzf "gombit-${VERSION}-linux-amd64.tar.gz"
    ./gombit version
@@ -99,12 +99,12 @@ cross-compiling job.
    can lag a few minutes:
 
    ```bash
-   go install github.com/LAA-Software-Engineering/gombit/cmd/gombit@v0.1.0
+   go install github.com/gombit-dev/gombit/cmd/gombit@v0.1.0
    gombit version --short
    ```
 
 3. **Check pkg.go.dev** has indexed
-   [the new version](https://pkg.go.dev/github.com/LAA-Software-Engineering/gombit).
+   [the new version](https://pkg.go.dev/github.com/gombit-dev/gombit).
 4. **Smoke-test the quickstart** from the README in a clean directory with the
    released binary — `gombit new`, `gombit dev`, `gombit doctor`.
 

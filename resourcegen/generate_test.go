@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/gombit/migrations"
-	"github.com/LAA-Software-Engineering/gombit/scaffold"
+	"github.com/gombit-dev/gombit/migrations"
+	"github.com/gombit-dev/gombit/scaffold"
 )
 
 func TestGenerateBookFeaturePackage(t *testing.T) {
@@ -337,16 +337,16 @@ func TestGeneratePassesAllAutoMigrateModels(t *testing.T) {
 		t.Fatalf("Generate() error = %v", err)
 	}
 	mod := readModulePathMust(t, filepath.Join(workDir, "demo"))
-	if !hasCollectedModel(got, "github.com/LAA-Software-Engineering/gombit/auth", "User") {
+	if !hasCollectedModel(got, "github.com/gombit-dev/gombit/auth", "User") {
 		t.Fatalf("MakeMigrations models = %#v, want runtime auth.User", got)
 	}
-	if !hasCollectedModel(got, "github.com/LAA-Software-Engineering/gombit/auth", "RefreshToken") {
+	if !hasCollectedModel(got, "github.com/gombit-dev/gombit/auth", "RefreshToken") {
 		t.Fatalf("MakeMigrations models = %#v, want runtime auth.RefreshToken", got)
 	}
-	if !hasCollectedModel(got, "github.com/LAA-Software-Engineering/gombit/auth", "Group") {
+	if !hasCollectedModel(got, "github.com/gombit-dev/gombit/auth", "Group") {
 		t.Fatalf("MakeMigrations models = %#v, want runtime auth.Group", got)
 	}
-	if !hasCollectedModel(got, "github.com/LAA-Software-Engineering/gombit/auth", "Permission") {
+	if !hasCollectedModel(got, "github.com/gombit-dev/gombit/auth", "Permission") {
 		t.Fatalf("MakeMigrations models = %#v, want runtime auth.Permission", got)
 	}
 	if !hasCollectedModel(got, mod+"/internal/product", "Product") {

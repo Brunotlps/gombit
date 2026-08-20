@@ -1,4 +1,4 @@
-module github.com/LAA-Software-Engineering/gombit
+module github.com/gombit-dev/gombit
 
 go 1.25.7
 

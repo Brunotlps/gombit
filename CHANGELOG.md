@@ -28,7 +28,7 @@ version.
 ### Fixed
 
 - **Scaffolded apps now build with no manual steps.** `gombit new` wrote
-  `require github.com/LAA-Software-Engineering/gombit v0.0.0` — a version that
+  `require github.com/gombit-dev/gombit v0.0.0` — a version that
   has never existed on the module proxy — so `go build ./...` in a fresh tree
   failed with *missing go.sum entry*. The generated `go.mod` is now pinned to
   the version of the binary that scaffolded it (release tag or
@@ -95,5 +95,5 @@ First tagged release. Milestones M0–M5 plus ADMIN-1 through ADMIN-3.
   multi-tenancy, i18n — are **not** included. See
   [the build plan](docs/GOMBIT_BUILD_PLAN.md).
 
-[Unreleased]: https://github.com/LAA-Software-Engineering/gombit/compare/v0.1.0...HEAD
-[0.1.0]: https://github.com/LAA-Software-Engineering/gombit/releases/tag/v0.1.0
+[Unreleased]: https://github.com/gombit-dev/gombit/compare/v0.1.0...HEAD
+[0.1.0]: https://github.com/gombit-dev/gombit/releases/tag/v0.1.0

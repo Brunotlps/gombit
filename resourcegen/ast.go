@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/gombit/migrations"
+	"github.com/gombit-dev/gombit/migrations"
 )
 
 // AddImportAndRegister adds `importPath` and `<pkg>.Register(app)` next to an

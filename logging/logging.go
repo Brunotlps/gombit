@@ -6,7 +6,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/LAA-Software-Engineering/gombit/config"
+	"github.com/gombit-dev/gombit/config"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
 )

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/LAA-Software-Engineering/gombit/commandgen"
-	"github.com/LAA-Software-Engineering/gombit/resourcegen"
+	"github.com/gombit-dev/gombit/commandgen"
+	"github.com/gombit-dev/gombit/resourcegen"
 	"github.com/spf13/cobra"
 )
 

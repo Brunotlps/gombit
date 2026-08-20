@@ -48,7 +48,7 @@ tagged release."
 | `docs/` | 18 topic docs, 4 ADRs, well-written but reference-style | No index, no installation guide, no tutorial, no getting-started narrative |
 | `examples/` | 15 per-feature dirs (`auth`, `admin`, `contract`, …), each a focused `main.go` | No end-to-end app tying them together |
 | `LICENSE` | **MIT**, © 2026 LAA Software Engineering | Badge must say MIT (ACP's says Apache — do not copy verbatim) |
-| `go.mod` | `go 1.25.7`, module `github.com/LAA-Software-Engineering/gombit` | Badge should read Go 1.25+ |
+| `go.mod` | `go 1.25.7`, module `github.com/gombit-dev/gombit` | Badge should read Go 1.25+ |
 
 ### REL-0 — backlog entry (do first, no code)
 
@@ -96,17 +96,17 @@ Target structure, modeled on `agentic-control-plane` but adapted to a framework:
 Badge block (verbatim, corrected for this repo):
 
 ```markdown
-[![CI](https://github.com/LAA-Software-Engineering/gombit/actions/workflows/ci.yml/badge.svg)](https://github.com/LAA-Software-Engineering/gombit/actions/workflows/ci.yml)
-[![Release](https://github.com/LAA-Software-Engineering/gombit/actions/workflows/release.yml/badge.svg)](https://github.com/LAA-Software-Engineering/gombit/actions/workflows/release.yml)
+[![CI](https://github.com/gombit-dev/gombit/actions/workflows/ci.yml/badge.svg)](https://github.com/gombit-dev/gombit/actions/workflows/ci.yml)
+[![Release](https://github.com/gombit-dev/gombit/actions/workflows/release.yml/badge.svg)](https://github.com/gombit-dev/gombit/actions/workflows/release.yml)
 [![Go 1.25+](https://img.shields.io/badge/Go-1.25+-00ADD8?logo=go)](https://go.dev/dl/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
-[![Go Reference](https://pkg.go.dev/badge/github.com/LAA-Software-Engineering/gombit.svg)](https://pkg.go.dev/github.com/LAA-Software-Engineering/gombit)
+[![Go Reference](https://pkg.go.dev/badge/github.com/gombit-dev/gombit.svg)](https://pkg.go.dev/github.com/gombit-dev/gombit)
 ```
 
 Quickstart body (must be verified by actually running it, §6):
 
 ```bash
-go install github.com/LAA-Software-Engineering/gombit/cmd/gombit@latest
+go install github.com/gombit-dev/gombit/cmd/gombit@latest
 gombit new demo --database sqlite --auth cookie --ui mui
 cd demo && gombit db migrate && gombit createsuperuser && gombit dev
 ```
@@ -190,7 +190,7 @@ Job steps, in order:
 5. `go test ./... -count=1 -timeout=15m` — gate the release on the same suite CI
    runs on `main`. (DB matrix jobs are integration-tagged and stay in `ci.yml`.)
 6. **Build matrix** — `-trimpath`,
-   `-ldflags "-s -w -X github.com/LAA-Software-Engineering/gombit/cli.Version=$VERSION"`
+   `-ldflags "-s -w -X github.com/gombit-dev/gombit/cli.Version=$VERSION"`
    for linux/amd64, linux/arm64, darwin/amd64, darwin/arm64, windows/amd64 from
    `./cmd/gombit`.
 
@@ -326,7 +326,7 @@ workflow handles pre-release tags, but `generate_release_notes` will need
 - [ ] Every PR follows `.github/pull_request_template.md` and links its issue
 - [ ] `main` is green on the full matrix; `v0.1.0` is tagged and the release has
       5 archives + `SHA256SUMS.txt`
-- [ ] `go install github.com/LAA-Software-Engineering/gombit/cmd/gombit@v0.1.0`
+- [ ] `go install github.com/gombit-dev/gombit/cmd/gombit@v0.1.0`
       works from a clean environment and `gombit version` prints `v0.1.0`
 - [ ] A reader who has never seen the repo can go from the README to a running
       tasks app with an admin login using only committed docs

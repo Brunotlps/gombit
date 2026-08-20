@@ -1,8 +1,8 @@
 package task
 
 import (
-	"github.com/LAA-Software-Engineering/gombit/admin"
-	"github.com/LAA-Software-Engineering/gombit/framework"
+	"github.com/gombit-dev/gombit/admin"
+	"github.com/gombit-dev/gombit/framework"
 )
 
 // RegisterAdmin registers Task on the runtime admin. Feature packages own

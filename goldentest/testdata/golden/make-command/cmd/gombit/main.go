@@ -8,7 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/LAA-Software-Engineering/gombit/cli"
+	"github.com/gombit-dev/gombit/cli"
 
 	"github.com/example/demo/internal/commands"
 	"github.com/example/demo/internal/product"

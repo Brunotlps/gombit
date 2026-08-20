@@ -11,8 +11,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/gombit/config"
-	"github.com/LAA-Software-Engineering/gombit/contract"
+	"github.com/gombit-dev/gombit/config"
+	"github.com/gombit-dev/gombit/contract"
 	"github.com/gin-gonic/gin"
 )
 

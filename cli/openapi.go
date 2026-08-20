@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LAA-Software-Engineering/gombit/contract"
+	"github.com/gombit-dev/gombit/contract"
 	"github.com/pb33f/libopenapi"
 	openapivalidator "github.com/pb33f/libopenapi-validator"
 	"github.com/spf13/cobra"

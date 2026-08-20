@@ -11,7 +11,7 @@ import (
 	"context"
 	"os"
 
-	"github.com/LAA-Software-Engineering/gombit/cli"
+	"github.com/gombit-dev/gombit/cli"
 
 	"github.com/example/demo/internal/product"
 )
@@ -27,7 +27,7 @@ func main() {
 
 const fixtureCommands = `package commands
 
-import "github.com/LAA-Software-Engineering/gombit/cli"
+import "github.com/gombit-dev/gombit/cli"
 
 func RegisterCommands(root *cli.Command) {
 }
@@ -39,7 +39,7 @@ import (
 	"context"
 	"io"
 
-	"github.com/LAA-Software-Engineering/gombit/cli"
+	"github.com/gombit-dev/gombit/cli"
 )
 
 func run(ctx context.Context, args []string, stdout io.Writer, stderr io.Writer) error {
@@ -132,7 +132,7 @@ func TestAddImportAndRegisterAfterNewRoot(t *testing.T) {
 import (
 	"os"
 
-	"github.com/LAA-Software-Engineering/gombit/cli"
+	"github.com/gombit-dev/gombit/cli"
 )
 
 func main() {

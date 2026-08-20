@@ -11,8 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/gombit/resourcegen"
-	"github.com/LAA-Software-Engineering/gombit/scaffold"
+	"github.com/gombit-dev/gombit/resourcegen"
+	"github.com/gombit-dev/gombit/scaffold"
 )
 
 func TestGenerateGreetCommand(t *testing.T) {

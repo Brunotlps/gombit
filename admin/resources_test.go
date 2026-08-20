@@ -13,9 +13,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/gombit/admin"
-	"github.com/LAA-Software-Engineering/gombit/auth"
-	"github.com/LAA-Software-Engineering/gombit/contract"
+	"github.com/gombit-dev/gombit/admin"
+	"github.com/gombit-dev/gombit/auth"
+	"github.com/gombit-dev/gombit/contract"
 	"github.com/gin-gonic/gin"
 )
 

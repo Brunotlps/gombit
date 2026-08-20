@@ -7,9 +7,9 @@ import (
 	"log"
 	"net/http"
 
-	"github.com/LAA-Software-Engineering/gombit/config"
-	"github.com/LAA-Software-Engineering/gombit/contract"
-	"github.com/LAA-Software-Engineering/gombit/framework"
+	"github.com/gombit-dev/gombit/config"
+	"github.com/gombit-dev/gombit/contract"
+	"github.com/gombit-dev/gombit/framework"
 	"github.com/danielgtaylor/huma/v2"
 )
 

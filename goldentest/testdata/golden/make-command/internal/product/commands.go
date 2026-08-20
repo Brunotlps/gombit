@@ -1,6 +1,6 @@
 package product
 
-import "github.com/LAA-Software-Engineering/gombit/cli"
+import "github.com/gombit-dev/gombit/cli"
 
 // RegisterCommands attaches this feature-package's management commands to the
 // app-owned gombit Cobra tree. Called explicitly from cmd/gombit; Gombit does

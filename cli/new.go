@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/LAA-Software-Engineering/gombit/scaffold"
+	"github.com/gombit-dev/gombit/scaffold"
 	"github.com/spf13/cobra"
 )
 

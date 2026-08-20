@@ -5,7 +5,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/gombit/contract"
+	"github.com/gombit-dev/gombit/contract"
 )
 
 func TestMain(m *testing.M) {

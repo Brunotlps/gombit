@@ -5,7 +5,7 @@ import (
 	"errors"
 	"strings"
 
-	"github.com/LAA-Software-Engineering/gombit/contract"
+	"github.com/gombit-dev/gombit/contract"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )

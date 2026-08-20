@@ -13,9 +13,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/gombit/config"
-	"github.com/LAA-Software-Engineering/gombit/database"
-	"github.com/LAA-Software-Engineering/gombit/migrations"
+	"github.com/gombit-dev/gombit/config"
+	"github.com/gombit-dev/gombit/database"
+	"github.com/gombit-dev/gombit/migrations"
 )
 
 var (
@@ -79,7 +79,7 @@ func (h *harness) prepareSchema() {
 		MigrationDir: h.migrateDir,
 		AtlasBinary:  h.atlasBin,
 		Models: []migrations.Model{{
-			ImportPath: "github.com/LAA-Software-Engineering/gombit/database/conformance/models",
+			ImportPath: "github.com/gombit-dev/gombit/database/conformance/models",
 			TypeName:   "Item",
 		}},
 		Stdout: io.Discard,

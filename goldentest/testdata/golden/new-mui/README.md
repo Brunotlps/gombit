@@ -39,7 +39,7 @@ back to `go run ./cmd/server`. The frontend uses `pnpm` when available,
 otherwise `npm`. Node.js is required for Vite HMR. The frontend is a Vite +
 React + TypeScript skeleton (router, generated client, React Hook Form,
 Bearer login, MUI CRUD preset — see
-[`docs/frontend-mui.md`](https://github.com/LAA-Software-Engineering/gombit/blob/main/docs/frontend-mui.md)).
+[`docs/frontend-mui.md`](https://github.com/gombit-dev/gombit/blob/main/docs/frontend-mui.md)).
 
 Split deploy is the default. For a single binary that serves API + static +
 SPA fallback:
@@ -50,13 +50,13 @@ gombit build --embed
 ```
 
 `go run ./cmd/server` still works without a Vite `dist`. See
-[`docs/build.md`](https://github.com/LAA-Software-Engineering/gombit/blob/main/docs/build.md).
+[`docs/build.md`](https://github.com/gombit-dev/gombit/blob/main/docs/build.md).
 
-This module requires [`github.com/LAA-Software-Engineering/gombit`](https://github.com/LAA-Software-Engineering/gombit).
+This module requires [`github.com/gombit-dev/gombit`](https://github.com/gombit-dev/gombit).
 After scaffolding, pin a released version:
 
 ```sh
-go get github.com/LAA-Software-Engineering/gombit@latest
+go get github.com/gombit-dev/gombit@latest
 go mod tidy
 ```
 
@@ -143,5 +143,5 @@ Requires `GOMBIT_JWT_SECRET` to be set (auth on, Bearer or cookie mode;
 `.env` already has one). Prompts interactively when `--email` / `--password` are omitted and
 stdin is a TTY. Refuses duplicate emails and hashes the password with the
 same bcrypt hasher as `/auth/register`. See
-[`docs/cli.md`](https://github.com/LAA-Software-Engineering/gombit/blob/main/docs/cli.md#gombit-createsuperuser).
+[`docs/cli.md`](https://github.com/gombit-dev/gombit/blob/main/docs/cli.md#gombit-createsuperuser).
 

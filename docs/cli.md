@@ -99,7 +99,7 @@ pointing at your checkout (never commit a machine-specific path):
 
 ```sh
 cd demo
-go mod edit -replace github.com/LAA-Software-Engineering/gombit=/path/to/gombit
+go mod edit -replace github.com/gombit-dev/gombit=/path/to/gombit
 go mod tidy
 ```
 
@@ -365,7 +365,7 @@ gombit make command greet --force
 `make` is a Cobra parent; `command` is the subcommand. This writes a
 feature-package management command and registers it on the **app-owned**
 `cmd/gombit` tree — not the framework binary
-(`go run github.com/LAA-Software-Engineering/gombit/cmd/gombit`).
+(`go run github.com/gombit-dev/gombit/cmd/gombit`).
 The generator requires a `gombit new` app (`cmd/server/main.go` and/or
 `gombit.yaml`) and refuses a framework-shaped tree so it cannot rewrite
 the framework `cmd/gombit/main.go`.
@@ -537,10 +537,10 @@ Version resolution has three tiers, in order:
 
 1. **ldflags.** Release binaries are stamped by
    `.github/workflows/release.yml` with
-   `-X github.com/LAA-Software-Engineering/gombit/cli.Version=<tag>` (plus
+   `-X github.com/gombit-dev/gombit/cli.Version=<tag>` (plus
    `Commit` and `BuildDate`).
 2. **Module build info.** A binary from
-   `go install github.com/LAA-Software-Engineering/gombit/cmd/gombit@v0.1.0`
+   `go install github.com/gombit-dev/gombit/cmd/gombit@v0.1.0`
    carries no ldflags, so the version comes from
    `runtime/debug.ReadBuildInfo()`. `commit` and `built` come from the
    embedded `vcs.revision` / `vcs.time` settings when the build had them.

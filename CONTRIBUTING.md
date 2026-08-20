@@ -3,7 +3,7 @@
 Thanks for wanting to help. This page covers how to get set up, how to get a
 change reviewed, and the bar a change has to clear.
 
-- **Bugs and features** → [open an issue](https://github.com/LAA-Software-Engineering/gombit/issues/new/choose)
+- **Bugs and features** → [open an issue](https://github.com/gombit-dev/gombit/issues/new/choose)
 - **Security vulnerabilities** → **not** an issue; see [SECURITY.md](SECURITY.md)
 - **Behaviour expectations** → [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)
 
@@ -26,7 +26,7 @@ Full setup and troubleshooting: [`docs/installation.md`](docs/installation.md).
 ## Getting set up
 
 ```bash
-git clone https://github.com/LAA-Software-Engineering/gombit.git
+git clone https://github.com/gombit-dev/gombit.git
 cd gombit
 go build ./...
 go test ./...

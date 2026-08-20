@@ -295,7 +295,7 @@ The repository example model can be passed with:
 ```sh
 gombit db makemigrations create_products \
   --driver sqlite \
-  --model github.com/LAA-Software-Engineering/gombit/examples/migrations/internal/product.Product
+  --model github.com/gombit-dev/gombit/examples/migrations/internal/product.Product
 ```
 
 This explicit list is the Program Mode equivalent of importing each feature

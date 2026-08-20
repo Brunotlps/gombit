@@ -10,8 +10,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/gombit/config"
-	"github.com/LAA-Software-Engineering/gombit/database"
+	"github.com/gombit-dev/gombit/config"
+	"github.com/gombit-dev/gombit/database"
 )
 
 func TestMigrateStatusRollbackAtlasCLISQLiteWhenAvailable(t *testing.T) {

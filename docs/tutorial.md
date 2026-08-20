@@ -457,8 +457,8 @@ Create `internal/task/admin.go`:
 package task
 
 import (
-	"github.com/LAA-Software-Engineering/gombit/admin"
-	"github.com/LAA-Software-Engineering/gombit/framework"
+	"github.com/gombit-dev/gombit/admin"
+	"github.com/gombit-dev/gombit/framework"
 )
 
 func RegisterAdmin(app *framework.App) error {
@@ -645,4 +645,4 @@ batteries (jobs, events, scheduler, mail, storage, gRPC, multi-tenancy, i18n)
 that are deliberately **not** here yet.
 
 Something wrong or unclear in this tutorial? That's a docs bug —
-[open an issue](https://github.com/LAA-Software-Engineering/gombit/issues/new/choose).
+[open an issue](https://github.com/gombit-dev/gombit/issues/new/choose).

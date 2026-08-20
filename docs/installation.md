@@ -53,13 +53,13 @@ curl -sSf https://atlasgo.sh | sh -s -- --community
 ### Option 1 — `go install` (recommended)
 
 ```bash
-go install github.com/LAA-Software-Engineering/gombit/cmd/gombit@latest
+go install github.com/gombit-dev/gombit/cmd/gombit@latest
 ```
 
 Pin a version instead of tracking `@latest`:
 
 ```bash
-go install github.com/LAA-Software-Engineering/gombit/cmd/gombit@v0.1.0
+go install github.com/gombit-dev/gombit/cmd/gombit@v0.1.0
 ```
 
 The binary lands in `$(go env GOBIN)`, or `$(go env GOPATH)/bin` when `GOBIN`
@@ -78,7 +78,7 @@ an untagged commit may report a pseudo-version.
 
 ### Option 2 — release archive
 
-Download from the [releases page](https://github.com/LAA-Software-Engineering/gombit/releases).
+Download from the [releases page](https://github.com/gombit-dev/gombit/releases).
 Archives are published for `linux/amd64`, `linux/arm64`, `darwin/amd64`,
 `darwin/arm64`, and `windows/amd64`.
 
@@ -87,8 +87,8 @@ VERSION=v0.1.0
 OS=linux      # or darwin
 ARCH=amd64    # or arm64
 
-curl -fsSLO "https://github.com/LAA-Software-Engineering/gombit/releases/download/${VERSION}/gombit-${VERSION}-${OS}-${ARCH}.tar.gz"
-curl -fsSLO "https://github.com/LAA-Software-Engineering/gombit/releases/download/${VERSION}/SHA256SUMS.txt"
+curl -fsSLO "https://github.com/gombit-dev/gombit/releases/download/${VERSION}/gombit-${VERSION}-${OS}-${ARCH}.tar.gz"
+curl -fsSLO "https://github.com/gombit-dev/gombit/releases/download/${VERSION}/SHA256SUMS.txt"
 
 # Verify before extracting.
 sha256sum -c SHA256SUMS.txt --ignore-missing
@@ -104,7 +104,7 @@ Windows (PowerShell):
 
 ```powershell
 $Version = "v0.1.0"
-Invoke-WebRequest -Uri "https://github.com/LAA-Software-Engineering/gombit/releases/download/$Version/gombit-$Version-windows-amd64.zip" -OutFile gombit.zip
+Invoke-WebRequest -Uri "https://github.com/gombit-dev/gombit/releases/download/$Version/gombit-$Version-windows-amd64.zip" -OutFile gombit.zip
 Expand-Archive gombit.zip -DestinationPath "$env:LOCALAPPDATA\gombit"
 $env:PATH += ";$env:LOCALAPPDATA\gombit"
 ```
@@ -112,7 +112,7 @@ $env:PATH += ";$env:LOCALAPPDATA\gombit"
 ### Option 3 — from source
 
 ```bash
-git clone https://github.com/LAA-Software-Engineering/gombit.git
+git clone https://github.com/gombit-dev/gombit.git
 cd gombit
 go build -o gombit ./cmd/gombit
 ```
@@ -121,7 +121,7 @@ A source build reports `dev` from `gombit version`. To stamp it the way
 releases do:
 
 ```bash
-pkg=github.com/LAA-Software-Engineering/gombit/cli
+pkg=github.com/gombit-dev/gombit/cli
 go build -ldflags "-X ${pkg}.Version=$(git describe --tags --always)" -o gombit ./cmd/gombit
 ```
 
@@ -196,7 +196,7 @@ skips tidy, and pins `v0.0.0`; point the app at your checkout:
 
 ```bash
 cd demo
-go mod edit -replace github.com/LAA-Software-Engineering/gombit=/path/to/gombit
+go mod edit -replace github.com/gombit-dev/gombit=/path/to/gombit
 go mod tidy
 ```
 
@@ -273,7 +273,7 @@ Without it Bearer auth is unmounted, so a superuser could never log in. See
 ## Upgrading and uninstalling
 
 ```bash
-go install github.com/LAA-Software-Engineering/gombit/cmd/gombit@latest
+go install github.com/gombit-dev/gombit/cmd/gombit@latest
 ```
 
 Read the [CHANGELOG](../CHANGELOG.md) first — Gombit is pre-1.0, so minor
@@ -283,7 +283,7 @@ The framework module version used by *your application* is independent of the
 CLI, and is upgraded in the app:
 
 ```bash
-go get github.com/LAA-Software-Engineering/gombit@v0.1.0
+go get github.com/gombit-dev/gombit@v0.1.0
 go mod tidy
 ```
 

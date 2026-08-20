@@ -1,6 +1,6 @@
 # Implementation Plan: [M2-2] `gombit db migrate` / `rollback` / `status`
 
-**Issue:** [#13](https://github.com/LAA-Software-Engineering/gombit/issues/13)
+**Issue:** [#13](https://github.com/gombit-dev/gombit/issues/13)
 **Backlog ID:** M2-2 (build plan §4)
 **Depends on:** M2-1 / #12 (`gombit db makemigrations`) — done on `main`
 **Size:** M · Labels: `migrations`, `cli`

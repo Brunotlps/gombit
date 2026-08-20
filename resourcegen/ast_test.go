@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/LAA-Software-Engineering/gombit/migrations"
+	"github.com/gombit-dev/gombit/migrations"
 )
 
 const fixtureMain = `package main
@@ -18,8 +18,8 @@ import (
 	"context"
 	"log"
 
-	"github.com/LAA-Software-Engineering/gombit/config"
-	"github.com/LAA-Software-Engineering/gombit/framework"
+	"github.com/gombit-dev/gombit/config"
+	"github.com/gombit-dev/gombit/framework"
 
 	"github.com/example/demo/internal/platform"
 	"github.com/example/demo/internal/product"
@@ -44,7 +44,7 @@ func main() {
 const fixturePlatform = `package platform
 
 import (
-	"github.com/LAA-Software-Engineering/gombit/database"
+	"github.com/gombit-dev/gombit/database"
 
 	"github.com/example/demo/internal/product"
 )
@@ -59,8 +59,8 @@ const fixtureMainIfRunOnly = `package main
 import (
 	"log"
 
-	"github.com/LAA-Software-Engineering/gombit/config"
-	"github.com/LAA-Software-Engineering/gombit/framework"
+	"github.com/gombit-dev/gombit/config"
+	"github.com/gombit-dev/gombit/framework"
 )
 
 func main() {
@@ -83,7 +83,7 @@ const fixtureMainNestedIfRun = `package main
 import (
 	"log"
 
-	"github.com/LAA-Software-Engineering/gombit/framework"
+	"github.com/gombit-dev/gombit/framework"
 )
 
 func main() {
@@ -219,7 +219,7 @@ func TestCollectAutoMigrateModelsNamedImport(t *testing.T) {
 	src := []byte(`package platform
 
 import (
-	"github.com/LAA-Software-Engineering/gombit/database"
+	"github.com/gombit-dev/gombit/database"
 
 	productmodel "github.com/example/demo/internal/product"
 	"github.com/example/demo/internal/book"

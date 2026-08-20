@@ -4,8 +4,8 @@ import (
 	"context"
 	"log"
 
-	"github.com/LAA-Software-Engineering/gombit/config"
-	"github.com/LAA-Software-Engineering/gombit/framework"
+	"github.com/gombit-dev/gombit/config"
+	"github.com/gombit-dev/gombit/framework"
 
 	"github.com/example/demo/internal/book"
 	"github.com/example/demo/internal/platform"

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/LAA-Software-Engineering/gombit/config"
+	"github.com/gombit-dev/gombit/config"
 	"github.com/redis/go-redis/v9"
 )
 

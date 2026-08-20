@@ -6,7 +6,7 @@ import (
 	"log"
 	"time"
 
-	"github.com/LAA-Software-Engineering/gombit/framework"
+	"github.com/gombit-dev/gombit/framework"
 )
 
 type widget struct {

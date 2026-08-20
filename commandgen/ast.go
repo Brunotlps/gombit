@@ -43,7 +43,7 @@ func AddCommandCall(src []byte, constructor string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("commandgen: parse %s: %w", commandsFileName, err)
 	}
-	addImport(file, "github.com/LAA-Software-Engineering/gombit/cli")
+	addImport(file, "github.com/gombit-dev/gombit/cli")
 	if err := insertAddCommandCall(file, constructor); err != nil {
 		return nil, err
 	}

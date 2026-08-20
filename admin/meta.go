@@ -3,8 +3,8 @@ package admin
 import (
 	"context"
 
-	"github.com/LAA-Software-Engineering/gombit/auth"
-	"github.com/LAA-Software-Engineering/gombit/contract"
+	"github.com/gombit-dev/gombit/auth"
+	"github.com/gombit-dev/gombit/contract"
 )
 
 // Catalog is the GET /admin/meta success data object.

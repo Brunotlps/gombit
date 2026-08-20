@@ -4,7 +4,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/LAA-Software-Engineering/gombit/config"
+	"github.com/gombit-dev/gombit/config"
 )
 
 func TestNewRedisClientUsesTypedConfig(t *testing.T) {

@@ -125,7 +125,7 @@ func TestRunNewDemoCompiles(t *testing.T) {
 	if err != nil {
 		t.Fatalf("open go.mod: %v", err)
 	}
-	if _, err := mod.WriteString("\nreplace github.com/LAA-Software-Engineering/gombit => " + cmdModuleRoot(t) + "\n"); err != nil {
+	if _, err := mod.WriteString("\nreplace github.com/gombit-dev/gombit => " + cmdModuleRoot(t) + "\n"); err != nil {
 		_ = mod.Close()
 		t.Fatalf("write replace: %v", err)
 	}

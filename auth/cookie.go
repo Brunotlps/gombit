@@ -4,7 +4,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/LAA-Software-Engineering/gombit/config"
+	"github.com/gombit-dev/gombit/config"
 )
 
 // Cookie and CSRF header names for cookie-mode session auth (M5-3). See

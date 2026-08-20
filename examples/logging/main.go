@@ -3,8 +3,8 @@ package main
 import (
 	"log"
 
-	"github.com/LAA-Software-Engineering/gombit/config"
-	"github.com/LAA-Software-Engineering/gombit/framework"
+	"github.com/gombit-dev/gombit/config"
+	"github.com/gombit-dev/gombit/framework"
 	"go.uber.org/zap"
 )
 
