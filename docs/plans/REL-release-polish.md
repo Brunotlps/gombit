@@ -47,7 +47,7 @@ tagged release."
 | Versioning | **No git tags.** No `Version` var, no `version` command, no `--version` flag in `cli/root.go` | Release binaries would be unstamped |
 | `docs/` | 18 topic docs, 4 ADRs, well-written but reference-style | No index, no installation guide, no tutorial, no getting-started narrative |
 | `examples/` | 15 per-feature dirs (`auth`, `admin`, `contract`, …), each a focused `main.go` | No end-to-end app tying them together |
-| `LICENSE` | **MIT**, © 2026 LAA Software Engineering | Badge must say MIT (ACP's says Apache — do not copy verbatim) |
+| `LICENSE` | **MIT**, © 2026 Gombit | Badge must say MIT (ACP's says Apache — do not copy verbatim) |
 | `go.mod` | `go 1.25.7`, module `github.com/gombit-dev/gombit` | Badge should read Go 1.25+ |
 
 ### REL-0 — backlog entry (do first, no code)
