@@ -83,7 +83,6 @@ body:
       options:
         - jwt (Bearer, default)
         - cookie (session + CSRF)
-        - none
         - not auth related
     validations:
       required: true
