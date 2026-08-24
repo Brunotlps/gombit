@@ -26,9 +26,11 @@ Backend reload uses air when it is on PATH, then watchexec, then falls back
 to go run ./cmd/server (with a hint). The frontend uses pnpm when available
 (or when frontend/pnpm-lock.yaml exists), otherwise npm.
 
-Vite proxies /api, /openapi.json, and /docs to the Go origin. When the live
-OpenAPI document changes, gombit regenerates frontend/src/api/generated
-(the same output as gombit client generate).
+Vite proxies /api, /openapi.json, and /docs to the Go origin. Prefixes that
+do not start with /api (for example /svc/v2) get an extra proxy entry from
+the live GOMBIT_API_PREFIX. When the live OpenAPI document changes, gombit
+regenerates frontend/src/api/generated (the same output as gombit client
+generate).
 
 A service table is printed at startup, including the API docs URL (/docs).
 
@@ -43,12 +45,16 @@ opt-in MUI CRUD preset (default UI stays minimal). Split deploy is the
 default; gombit build --embed is the optional single-binary SPA path.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			apiPrefix := "/api/v1"
+			cfg, cfgErr := LoadConfig()
 			if !cmd.Flags().Changed("http") {
-				cfg, err := LoadConfig()
-				if err != nil {
-					return fmt.Errorf("gombit dev: %w", err)
+				if cfgErr != nil {
+					return fmt.Errorf("gombit dev: %w", cfgErr)
 				}
 				httpAddr = dev.HTTPAddrFromConfig(cfg)
+			}
+			if cfgErr == nil {
+				apiPrefix = dev.APIPrefixFromConfig(cfg)
 			}
 			if err := dev.ValidateFlags(httpAddr, frontendHost, frontendPort, poll, clientOut); err != nil {
 				return fmt.Errorf("gombit %w", err)
@@ -56,6 +62,7 @@ default; gombit build --embed is the optional single-binary SPA path.`,
 			err := RunDev(cmd.Context(), dev.Options{
 				WorkDir:      ".",
 				HTTPAddr:     httpAddr,
+				APIPrefix:    apiPrefix,
 				FrontendHost: frontendHost,
 				FrontendPort: frontendPort,
 				ClientOut:    clientOut,

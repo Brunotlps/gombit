@@ -131,10 +131,16 @@ func frontendDepsInstalled(frontendDir string) bool {
 }
 
 // childEnv copies parent then replaces the keys gombit dev owns so Linux
-// first-wins getenv cannot keep a parent GOMBIT_HTTP_ADDR / VITE_API_URL.
+// first-wins getenv cannot keep a parent GOMBIT_HTTP_ADDR / VITE_API_URL /
+// GOMBIT_API_PREFIX.
 func childEnv(parent []string, opts Options, backendOrigin string) []string {
+	prefix := strings.TrimSuffix(strings.TrimSpace(opts.APIPrefix), "/")
+	if prefix == "" {
+		prefix = "/api/v1"
+	}
 	return overlayEnv(parent,
 		"GOMBIT_HTTP_ADDR="+opts.HTTPAddr,
+		"GOMBIT_API_PREFIX="+prefix,
 		"GOMBIT_DEV_BACKEND="+backendOrigin,
 		"GOMBIT_DEV_FRONTEND_HOST="+opts.FrontendHost,
 		"GOMBIT_DEV_FRONTEND_PORT="+strconv.Itoa(opts.FrontendPort),

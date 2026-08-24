@@ -59,6 +59,10 @@ func embeddedFrontendHandler(fsys fs.FS, apiPrefix string) gin.HandlerFunc {
 		}
 
 		name := strings.TrimPrefix(urlPath, "/")
+		if name == "index.html" {
+			serveIndexHTML(c, fsys, apiPrefix)
+			return
+		}
 		if name != "" && name != "." && fs.ValidPath(name) {
 			if serveEmbeddedFile(c, fsys, name) {
 				return
@@ -69,7 +73,7 @@ func embeddedFrontendHandler(fsys fs.FS, apiPrefix string) gin.HandlerFunc {
 			c.AbortWithStatus(http.StatusNotFound)
 			return
 		}
-		serveIndexHTML(c, fsys)
+		serveIndexHTML(c, fsys, apiPrefix)
 	}
 }
 
@@ -139,12 +143,13 @@ func serveEmbeddedFile(c *gin.Context, fsys fs.FS, name string) bool {
 	return true
 }
 
-func serveIndexHTML(c *gin.Context, fsys fs.FS) {
+func serveIndexHTML(c *gin.Context, fsys fs.FS, apiPrefix string) {
 	data, err := fs.ReadFile(fsys, "index.html")
 	if err != nil {
 		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
+	data = injectAPIPrefixHTML(data, apiPrefix)
 	applySPAContentSecurityPolicy(c)
 	c.Data(http.StatusOK, "text/html; charset=utf-8", data)
 }

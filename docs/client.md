@@ -17,6 +17,12 @@ go run ./cmd/gombit client generate \
 modified files and reminds you to add `openapi-fetch@0.17.0`. Schema types
 come from `openapi-typescript@7.13.0`.
 
+Path keys in `schema.ts` are normalized to D8 `/api/v1/...` even when the
+spec (and the live Huma API) uses another `GOMBIT_API_PREFIX`. The
+generator rewrites a temporary copy; it does **not** change the OpenAPI
+document on disk. Scaffolded pages call `client.GET("/api/v1/...")`;
+`createAppClient` maps that typed prefix to the live one on the wire.
+
 `--dry-run` prints the file list without writing and applies the same
 overwrite rule as a real run: a user-owned file (no generated banner) is
 refused unless `--force` is also set. `--force` overwrites a file that was

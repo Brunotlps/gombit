@@ -89,10 +89,14 @@ func serveAdminIndexHTML(c *gin.Context, fsys fs.FS, apiPrefix string) {
 		c.AbortWithStatus(http.StatusNotFound)
 		return
 	}
-	escaped := html.EscapeString(apiPrefix)
-	data = bytes.ReplaceAll(data, []byte(apiPrefixPlaceholder), []byte(escaped))
+	data = injectAPIPrefixHTML(data, apiPrefix)
 	applySPAContentSecurityPolicy(c)
 	writeBytes(c, "text/html; charset=utf-8", data)
+}
+
+func injectAPIPrefixHTML(data []byte, apiPrefix string) []byte {
+	escaped := html.EscapeString(normalizeAPIPrefix(apiPrefix))
+	return bytes.ReplaceAll(data, []byte(apiPrefixPlaceholder), []byte(escaped))
 }
 
 func writeBytes(c *gin.Context, contentType string, data []byte) {

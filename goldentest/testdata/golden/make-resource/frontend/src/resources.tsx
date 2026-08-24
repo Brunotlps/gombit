@@ -3,7 +3,8 @@
  */
 
 // React list + create-form pages. Types come from ./api/generated
-// (gombit client generate / gombit dev). API prefix: /api/v1
+// (gombit client generate / gombit dev). OpenAPI path keys use /api/v1;
+// createAppClient rewrites them to the live GOMBIT_API_PREFIX.
 // Access tokens stay in memory; this file does not use web storage.
 
 import type { RouteObject } from "react-router";

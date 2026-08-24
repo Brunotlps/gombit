@@ -39,9 +39,11 @@ of the UI preset. See [frontend.md](frontend.md) and
 - **Roboto** via a Google Fonts `<link>` in `frontend/index.html`.
 
 `gombit make resource` reads `ui:` from `gombit.yaml` the same way it
-reads `api_prefix:` and `database:`. When `ui: mui`, generated
+reads `database:`. When `ui: mui`, generated
 `frontend/src/<feature>/list.tsx` and `form.tsx` use MUI Table/TextField
-instead of raw `<table>` / `<input>`.
+instead of raw `<table>` / `<input>`. OpenAPI path keys stay `/api/v1/...`;
+`createAppClient` rewrites them to the prefix from `index.html` (injected
+by embed/`gombit dev`, or substituted on a split deploy).
 
 Access tokens stay **in memory**. `VITE_*` values are public; never put
 JWT secrets in the frontend.

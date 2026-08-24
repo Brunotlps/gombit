@@ -51,6 +51,7 @@ func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
 		"frontend/src/app/providers.tsx",
 		"frontend/src/app/router.tsx",
 		"frontend/src/api/client.ts",
+		"frontend/src/api/apiPrefix.ts",
 		"frontend/src/api/retry.ts",
 		"frontend/src/api/formErrors.ts",
 		"frontend/src/api/generated/client.ts",
@@ -185,10 +186,14 @@ func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
 	}
 
 	viteConfig := readFile(t, filepath.Join(dest, "frontend", "vite.config.ts"))
-	for _, want := range []string{"/api", "/openapi.json", "/docs", "GOMBIT_DEV_FRONTEND_HOST"} {
+	for _, want := range []string{"/api", "/openapi.json", "/docs", "GOMBIT_DEV_FRONTEND_HOST", "GOMBIT_API_PREFIX", "__GOMBIT_API_PREFIX__", "injectAPIPrefix"} {
 		if !strings.Contains(viteConfig, want) {
 			t.Fatalf("vite.config.ts missing %q:\n%s", want, viteConfig)
 		}
+	}
+	indexHTML := readFile(t, filepath.Join(dest, "frontend", "index.html"))
+	if !strings.Contains(indexHTML, `content="__GOMBIT_API_PREFIX__"`) {
+		t.Fatal("frontend/index.html missing __GOMBIT_API_PREFIX__ placeholder")
 	}
 	pkg := readFile(t, filepath.Join(dest, "frontend", "package.json"))
 	for _, want := range []string{`"vite"`, `"react"`, `"react-dom"`, `"react-router"`, `"react-hook-form"`, `"@vitejs/plugin-react"`, `"openapi-fetch": "0.17.0"`} {
@@ -263,6 +268,7 @@ func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
 	if strings.Contains(appClient, "csrfInFlight") || strings.Contains(appClient, "bootstrapCSRF") {
 		t.Fatal("jwt api/client.ts must not include cookie CSRF bootstrap")
 	}
+	assertSPAHonorsRuntimeAPIPrefix(t, dest, "jwt")
 	router := readFile(t, filepath.Join(dest, "frontend", "src", "app", "router.tsx"))
 	if !strings.Contains(router, "RequireAuth") || !strings.Contains(router, "LoginPage") {
 		t.Fatal("router.tsx missing RequireAuth / LoginPage")
@@ -515,6 +521,57 @@ func TestGenerate401RetryReusesBufferedBody(t *testing.T) {
 	}
 }
 
+// TestGenerateSPAHonorsRuntimeAPIPrefix is the #109 contract: changing
+// GOMBIT_API_PREFIX must not require regenerating frontend source. Plumbing
+// goes through apiPrefix()/apiPath()/rewriteAPIRequest; index.html keeps the
+// serve-time placeholder instead of baking /api/v1.
+func TestGenerateSPAHonorsRuntimeAPIPrefix(t *testing.T) {
+	for _, auth := range []string{"jwt", "cookie"} {
+		t.Run(auth, func(t *testing.T) {
+			workDir := t.TempDir()
+			err := Generate(context.Background(), Options{
+				Name:     "demo",
+				Database: "sqlite",
+				Auth:     auth,
+				WorkDir:  workDir,
+			})
+			if err != nil {
+				t.Fatalf("Generate() error = %v", err)
+			}
+			assertSPAHonorsRuntimeAPIPrefix(t, filepath.Join(workDir, "demo"), auth)
+		})
+	}
+}
+
+func TestAPIPrefixRewriteHonorsInjectedPrefix(t *testing.T) {
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("node not available")
+	}
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	harness := filepath.Join(filepath.Dir(thisFile), "testdata", "api_prefix_harness.mjs")
+	workDir := t.TempDir()
+	err := Generate(context.Background(), Options{
+		Name:     "demo",
+		Database: "sqlite",
+		WorkDir:  workDir,
+	})
+	if err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+	prefixPath := filepath.Join(workDir, "demo", "frontend", "src", "api", "apiPrefix.ts")
+	cmd := exec.Command("node", "--experimental-strip-types", "--no-warnings", harness, prefixPath) //nolint:gosec // fixed harness argv
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("api prefix harness: %v\n%s", err, out)
+	}
+	if !strings.Contains(string(out), "ok") {
+		t.Fatalf("api prefix harness stdout = %q, want ok", out)
+	}
+}
+
 func TestRetryBodyResentWhenRequestBodyUndefined(t *testing.T) {
 	if _, err := exec.LookPath("node"); err != nil {
 		t.Skip("node not available")
@@ -591,6 +648,74 @@ func assert401RetryReusesBufferedBody(t *testing.T, client, retry string, extra 
 	lower := strings.ToLower(client + retry)
 	if strings.Contains(lower, "localstorage") || strings.Contains(lower, "sessionstorage") {
 		t.Error("api/client.ts uses web storage")
+	}
+}
+
+func assertSPAHonorsRuntimeAPIPrefix(t *testing.T, dest, auth string) {
+	t.Helper()
+	index := readFile(t, filepath.Join(dest, "frontend", "index.html"))
+	if !strings.Contains(index, `meta name="gombit-api-prefix"`) {
+		t.Error("index.html missing gombit-api-prefix meta")
+	}
+	if !strings.Contains(index, "__GOMBIT_API_PREFIX__") {
+		t.Error("index.html missing __GOMBIT_API_PREFIX__ placeholder")
+	}
+
+	viteEnv := readFile(t, filepath.Join(dest, "frontend", "src", "vite-env.d.ts"))
+	if !strings.Contains(viteEnv, "__GOMBIT_API_PREFIX__") {
+		t.Error("vite-env.d.ts missing Window.__GOMBIT_API_PREFIX__")
+	}
+
+	viteConfig := readFile(t, filepath.Join(dest, "frontend", "vite.config.ts"))
+	for _, want := range []string{"GOMBIT_API_PREFIX", "transformIndexHtml", "injectAPIPrefix"} {
+		if !strings.Contains(viteConfig, want) {
+			t.Errorf("vite.config.ts missing %q", want)
+		}
+	}
+
+	prefix := readFile(t, filepath.Join(dest, "frontend", "src", "api", "apiPrefix.ts"))
+	for _, want := range []string{
+		"export function apiPrefix()",
+		"export function apiPath(",
+		"export function rewriteAPIRequest(",
+		"DEFAULT_API_PREFIX",
+		"__GOMBIT_API_PREFIX__",
+		`meta[name="gombit-api-prefix"]`,
+	} {
+		if !strings.Contains(prefix, want) {
+			t.Errorf("apiPrefix.ts missing %q", want)
+		}
+	}
+	if strings.Contains(prefix, `"/api/v1/auth/`) || strings.Contains(prefix, `"/api/v1/products`) {
+		t.Error("apiPrefix.ts hardcodes /api/v1 request paths; callers must compose via apiPath/rewrite")
+	}
+
+	client := readFile(t, filepath.Join(dest, "frontend", "src", "api", "client.ts"))
+	if !strings.Contains(client, `from "./apiPrefix"`) {
+		t.Error("client.ts must import the runtime prefix helper")
+	}
+	if !strings.Contains(client, "rewriteAPIRequest(") {
+		t.Error("client.ts missing rewriteAPIRequest in createAppClient")
+	}
+	if strings.Contains(client, `const CSRF_PATH = "/api/v1/`) || strings.Contains(client, `const REFRESH_PATH = "/api/v1/`) {
+		t.Error("client.ts hardcodes CSRF_PATH/REFRESH_PATH to /api/v1")
+	}
+	if auth == "cookie" {
+		if !strings.Contains(client, `apiPath("/auth/csrf")`) {
+			t.Error("cookie client.ts CSRF bootstrap must use apiPath(\"/auth/csrf\")")
+		}
+		if !strings.Contains(client, `apiPath("/auth/refresh")`) {
+			t.Error("cookie client.ts refresh must use apiPath(\"/auth/refresh\")")
+		}
+	}
+
+	readme := readFile(t, filepath.Join(dest, "frontend", "README.md"))
+	if !strings.Contains(readme, "A CDN must replace `__GOMBIT_API_PREFIX__`") {
+		t.Error("frontend/README.md must document split-deploy placeholder substitution")
+	}
+	envExample := readFile(t, filepath.Join(dest, ".env.example"))
+	if !strings.Contains(envExample, "A CDN must replace __GOMBIT_API_PREFIX__") {
+		t.Error(".env.example must document split-deploy placeholder substitution")
 	}
 }
 

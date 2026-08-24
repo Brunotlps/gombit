@@ -453,3 +453,58 @@ func readModulePathMust(t *testing.T, dir string) string {
 	}
 	return mod
 }
+
+// TestGenerateFrontendKeepsTypedDefaultPrefix is the #109 contract for
+// make-resource pages: gombit.yaml api_prefix is not baked into list/form
+// OpenAPI path keys. createAppClient rewrites /api/v1 to the live prefix.
+func TestGenerateFrontendKeepsTypedDefaultPrefix(t *testing.T) {
+	workDir := t.TempDir()
+	if err := scaffold.Generate(context.Background(), scaffold.Options{
+		Name:     "demo",
+		Database: "sqlite",
+		WorkDir:  workDir,
+		Stdout:   ioDiscard{},
+	}); err != nil {
+		t.Fatalf("scaffold: %v", err)
+	}
+	appDir := filepath.Join(workDir, "demo")
+	yamlPath := filepath.Join(appDir, "gombit.yaml")
+	yaml := readFile(t, yamlPath)
+	yaml = strings.ReplaceAll(yaml, "api_prefix: /api/v1", "api_prefix: /svc/v2")
+	if !strings.Contains(yaml, "api_prefix: /svc/v2") {
+		t.Fatal("failed to rewrite gombit.yaml api_prefix")
+	}
+	if err := os.WriteFile(yamlPath, []byte(yaml), 0o600); err != nil {
+		t.Fatalf("write gombit.yaml: %v", err)
+	}
+
+	previousLook := lookPath
+	lookPath = func(string) (string, error) { return "", errors.New("atlas missing") }
+	t.Cleanup(func() { lookPath = previousLook })
+
+	err := Generate(context.Background(), Options{
+		WorkDir:   appDir,
+		Name:      "Book",
+		Fields:    []string{"title:string:required"},
+		Stdout:    ioDiscard{},
+		skipAtlas: true,
+	})
+	if err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+
+	listTS := readFile(t, filepath.Join(appDir, "frontend", "src", "book", "list.tsx"))
+	if !strings.Contains(listTS, `const listPath = "/api/v1/books" as const`) {
+		t.Fatalf("list.tsx must keep typed /api/v1 OpenAPI path, got:\n%s", listTS)
+	}
+	if strings.Contains(listTS, "/svc/v2") {
+		t.Fatal("list.tsx baked live api_prefix /svc/v2; prefix must be runtime-rewritten")
+	}
+	formTS := readFile(t, filepath.Join(appDir, "frontend", "src", "book", "form.tsx"))
+	if !strings.Contains(formTS, `const createPath = "/api/v1/books" as const`) {
+		t.Fatalf("form.tsx must keep typed /api/v1 OpenAPI path, got:\n%s", formTS)
+	}
+	if strings.Contains(formTS, "/svc/v2") {
+		t.Fatal("form.tsx baked live api_prefix /svc/v2")
+	}
+}

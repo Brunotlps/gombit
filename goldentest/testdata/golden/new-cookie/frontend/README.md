@@ -34,10 +34,14 @@ VITE_API_URL
 
 Empty (the `gombit new` / `gombit dev` default) means same-origin so the
 Vite `/api` proxy works. For a split deploy, set the API **origin only**
-(for example `http://127.0.0.1:8080`) — OpenAPI paths already include
-`/api/v1`. `VITE_*` values are public. Do not put JWT secrets, database
-passwords, or other server credentials here. Access tokens stay in memory
-— never `localStorage` or `sessionStorage`.
+(for example `http://127.0.0.1:8080`). OpenAPI path keys stay `/api/v1/...`.
+`gombit dev` and `gombit build --embed` inject `GOMBIT_API_PREFIX` into
+`index.html`. A CDN must replace `__GOMBIT_API_PREFIX__` in `dist/index.html`
+(or set `window.__GOMBIT_API_PREFIX__`) before serving — the placeholder
+alone falls back to `/api/v1`. Do not put the prefix in `VITE_*`. `VITE_*`
+values are public. Do not put JWT secrets, database passwords, or other
+server credentials here. Access tokens stay in memory — never
+`localStorage` or `sessionStorage`.
 
 The home page lists products via `unwrap(client.GET("/api/v1/products"))`.
 `/products/new` is a React Hook Form create page; D10 field errors call

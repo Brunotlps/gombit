@@ -72,6 +72,49 @@ func TestGenerateWritesCompilingClient(t *testing.T) {
 	typecheckGenerated(t, workDir, outDir)
 }
 
+func TestGenerateNormalizesCustomPrefixPathKeys(t *testing.T) {
+	requireNode(t)
+
+	workDir := t.TempDir()
+	specPath := writeSpecWithPrefix(t, workDir, "/svc/v2")
+	raw := readFile(t, specPath)
+	if !strings.Contains(raw, `"/svc/v2/widgets"`) {
+		t.Fatalf("precondition: spec missing live /svc/v2 path: %s", truncate(raw, 200))
+	}
+	if strings.Contains(raw, `"/api/v1/widgets"`) {
+		t.Fatal("precondition: live spec unexpectedly already uses /api/v1 path keys")
+	}
+
+	outDir := filepath.Join(workDir, "frontend", "src", "api", "generated")
+	stderr := new(bytes.Buffer)
+	err := Generate(context.Background(), Options{
+		WorkDir:  workDir,
+		SpecPath: specPath,
+		OutDir:   outDir,
+		Stdout:   ioDiscard{},
+		Stderr:   stderr,
+	})
+	if err != nil {
+		t.Fatalf("Generate() error = %v; stderr=%s", err, stderr.String())
+	}
+
+	// The committed / on-disk OpenAPI document keeps live Huma paths
+	// (contract-drift compares that document, not the typed client keys).
+	if got := readFile(t, specPath); !strings.Contains(got, `"/svc/v2/widgets"`) {
+		t.Fatal("Generate() rewrote the caller's OpenAPI document")
+	}
+
+	schema := readFile(t, filepath.Join(outDir, "schema.ts"))
+	if !strings.Contains(schema, `"/api/v1/widgets"`) {
+		t.Fatalf("schema.ts missing typed /api/v1/widgets key; head=%s", truncate(schema, 400))
+	}
+	if strings.Contains(schema, "/svc/v2/") {
+		t.Fatalf("schema.ts still has live prefix /svc/v2: %s", truncate(schema, 400))
+	}
+
+	typecheckGenerated(t, workDir, outDir)
+}
+
 func TestGenerateDryRunDoesNotWrite(t *testing.T) {
 	workDir := t.TempDir()
 	specPath := writeSampleSpec(t, workDir)
@@ -293,9 +336,14 @@ func TestGenerateRejectsNon31Spec(t *testing.T) {
 
 func writeSampleSpec(t *testing.T, workDir string) string {
 	t.Helper()
-	app, err := SampleApp()
+	return writeSpecWithPrefix(t, workDir, "")
+}
+
+func writeSpecWithPrefix(t *testing.T, workDir, prefix string) string {
+	t.Helper()
+	app, err := sampleAppWithPrefix(prefix)
 	if err != nil {
-		t.Fatalf("SampleApp() error = %v", err)
+		t.Fatalf("sampleAppWithPrefix(%q) error = %v", prefix, err)
 	}
 	path := filepath.Join(workDir, "openapi.json")
 	if err := contract.WriteOpenAPI(path, app.API()); err != nil {

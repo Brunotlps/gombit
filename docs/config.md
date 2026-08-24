@@ -70,6 +70,15 @@ recognizes:
 | `GOMBIT_COOKIE_SECURE` | `Config.Auth.CookieSecure` | `true` |
 | `GOMBIT_COOKIE_SAMESITE` | `Config.Auth.CookieSameSite` | `lax` |
 
+`GOMBIT_API_PREFIX` is a live setting (D8). Go routes, Huma, and the admin
+SPA honor it. The generated application SPA honors it when the prefix is
+injected into `index.html`: `gombit build --embed` (Gin) and `gombit dev`
+(Vite). A split/CDN deploy must replace `__GOMBIT_API_PREFIX__` in the
+built `index.html` (or set `window.__GOMBIT_API_PREFIX__`) before serving;
+the placeholder alone falls back to `/api/v1`. `gombit client generate`
+normalizes OpenAPI path keys to `/api/v1` so page source does not need
+regenerating. See [frontend.md](frontend.md#talking-to-the-api).
+
 `GOMBIT_ENV` accepts the exact lowercase values `development`, `test`, and
 `production`.
 `GOMBIT_DATABASE_DRIVER` accepts `sqlite`, `postgres`, and `mysql`.

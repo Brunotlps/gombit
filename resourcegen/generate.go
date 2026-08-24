@@ -42,9 +42,11 @@ func Generate(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
-	apiPrefix := readAPIPrefix(opts.WorkDir)
 	ui := readUI(opts.WorkDir)
-	ctxData := newRenderContext(module, name, fields, apiPrefix, ui, opts.Service, opts.Repo)
+	// OpenAPI path keys stay /api/v1 (placeholder client / D8). The generated
+	// SPA rewrites that prefix to the live GOMBIT_API_PREFIX at request time,
+	// so make-resource pages must not bake gombit.yaml api_prefix.
+	ctxData := newRenderContext(module, name, fields, defaultAPIPrefix, ui, opts.Service, opts.Repo)
 
 	files, err := renderFeatureFiles(ctxData)
 	if err != nil {
@@ -63,7 +65,7 @@ func Generate(ctx context.Context, opts Options) error {
 	resources := collectFrontendResources(opts.WorkDir, name)
 	files = append(files, fileSpec{
 		relPath: resourcesTSRel,
-		content: renderResourcesTS(resources, apiPrefix),
+		content: renderResourcesTS(resources),
 	})
 
 	mainPath := filepath.Join(opts.WorkDir, filepath.FromSlash(serverMainRel))
@@ -211,28 +213,6 @@ func readModulePath(workDir string) (string, error) {
 	return "", errors.New("resourcegen: go.mod is missing a module path")
 }
 
-func readAPIPrefix(workDir string) string {
-	path := filepath.Join(workDir, "gombit.yaml")
-	// #nosec G304 -- optional project file
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return defaultAPIPrefix
-	}
-	for _, line := range strings.Split(string(data), "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "api_prefix:") {
-			continue
-		}
-		value := strings.TrimSpace(strings.TrimPrefix(line, "api_prefix:"))
-		value = strings.Trim(value, `"'`)
-		if value == "" {
-			return defaultAPIPrefix
-		}
-		return value
-	}
-	return defaultAPIPrefix
-}
-
 func readUI(workDir string) string {
 	path := filepath.Join(workDir, "gombit.yaml")
 	// #nosec G304 -- optional project file
@@ -295,12 +275,13 @@ func hasGeneratedListPage(srcDir, pkg string) bool {
 	return false
 }
 
-func renderResourcesTS(resources []ResourceName, apiPrefix string) []byte {
+func renderResourcesTS(resources []ResourceName) []byte {
 	var b strings.Builder
 	b.WriteString(tsBanner())
 	b.WriteString("\n")
 	b.WriteString("// React list + create-form pages. Types come from ./api/generated\n")
-	b.WriteString("// (gombit client generate / gombit dev). API prefix: " + apiPrefix + "\n")
+	b.WriteString("// (gombit client generate / gombit dev). OpenAPI path keys use /api/v1;\n")
+	b.WriteString("// createAppClient rewrites them to the live GOMBIT_API_PREFIX.\n")
 	b.WriteString("// Access tokens stay in memory; this file does not use web storage.\n\n")
 	b.WriteString("import type { RouteObject } from \"react-router\";\n\n")
 	for _, res := range resources {

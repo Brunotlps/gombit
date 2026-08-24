@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/gombit-dev/gombit/config"
 )
 
 func TestValidateFlags(t *testing.T) {
@@ -111,5 +113,30 @@ func TestValidateFlagsOK(t *testing.T) {
 	err := ValidateFlags(DefaultHTTPAddr, DefaultFrontendHost, DefaultFrontendPort, DefaultPollInterval, DefaultClientOut)
 	if err != nil {
 		t.Fatalf("ValidateFlags() error = %v", err)
+	}
+}
+
+func TestAPIPrefixFromConfig(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{name: "empty", in: "", want: "/api/v1"},
+		{name: "spaces", in: "   ", want: "/api/v1"},
+		{name: "default", in: "/api/v1", want: "/api/v1"},
+		{name: "trailing slash", in: "/svc/v2/", want: "/svc/v2"},
+		{name: "custom", in: "/svc/v2", want: "/svc/v2"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			cfg := config.Config{}
+			cfg.API.Prefix = tt.in
+			if got := APIPrefixFromConfig(cfg); got != tt.want {
+				t.Fatalf("APIPrefixFromConfig(%q) = %q, want %q", tt.in, got, tt.want)
+			}
+		})
 	}
 }
