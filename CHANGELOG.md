@@ -27,6 +27,9 @@ version.
 
 ### Fixed
 
+- `AtlasURL` now converts Postgres unix-socket and IPv6 libpq DSNs, and
+  SQLite `file:///abs` URIs, into Atlas `--url` values that parse
+  ([#135](https://github.com/gombit-dev/gombit/issues/135)).
 - `RedactDSN` / `SanitizeError` now redact libpq keyword/value DSN passwords
   (`password=secret dbname=app`) without swallowing the rest of the DSN, and
   strip the password token from driver errors that do not echo the full DSN
