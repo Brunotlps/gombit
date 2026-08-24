@@ -237,6 +237,9 @@ func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
 	if !strings.Contains(loginPage, "/api/v1/auth/login") {
 		t.Fatal("LoginPage.tsx missing login path")
 	}
+	if strings.Contains(loginPage, "bootstrapCSRF") {
+		t.Fatal("jwt LoginPage.tsx must not import bootstrapCSRF")
+	}
 	if strings.Contains(strings.ToLower(loginPage), "localstorage") {
 		t.Fatal("LoginPage.tsx uses localStorage")
 	}
@@ -256,6 +259,9 @@ func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
 	appClient := readFile(t, filepath.Join(dest, "frontend", "src", "api", "client.ts"))
 	if !strings.Contains(appClient, "refreshInFlight") {
 		t.Fatal("api/client.ts missing shared refresh promise")
+	}
+	if strings.Contains(appClient, "csrfInFlight") || strings.Contains(appClient, "bootstrapCSRF") {
+		t.Fatal("jwt api/client.ts must not include cookie CSRF bootstrap")
 	}
 	router := readFile(t, filepath.Join(dest, "frontend", "src", "app", "router.tsx"))
 	if !strings.Contains(router, "RequireAuth") || !strings.Contains(router, "LoginPage") {
@@ -585,6 +591,42 @@ func assert401RetryReusesBufferedBody(t *testing.T, client, retry string, extra 
 	lower := strings.ToLower(client + retry)
 	if strings.Contains(lower, "localstorage") || strings.Contains(lower, "sessionstorage") {
 		t.Error("api/client.ts uses web storage")
+	}
+}
+
+// TestGenerateCookieCSRFBootstrapIsSerialized is the #107 regression: GET
+// /auth/csrf always mints a new cookie+body pair, so overlapping bootstrap
+// calls (React StrictMode remounts, or login before the mount effect
+// finishes) desync the HttpOnly cookie from the in-memory X-CSRF-Token.
+func TestGenerateCookieCSRFBootstrapIsSerialized(t *testing.T) {
+	workDir := t.TempDir()
+	err := Generate(context.Background(), Options{
+		Name:     "shop",
+		Database: "sqlite",
+		Auth:     "cookie",
+		WorkDir:  workDir,
+	})
+	if err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+
+	client := readFile(t, filepath.Join(workDir, "shop", "frontend", "src", "api", "client.ts"))
+	if !strings.Contains(client, "csrfInFlight") {
+		t.Fatal("cookie client.ts missing csrfInFlight lock")
+	}
+	if !strings.Contains(client, "if (getCSRFToken())") {
+		t.Fatal("cookie client.ts missing skip-if-token-exists no-op")
+	}
+	if !strings.Contains(client, "if (csrfInFlight)") {
+		t.Fatal("cookie client.ts missing in-flight promise reuse")
+	}
+
+	login := readFile(t, filepath.Join(workDir, "shop", "frontend", "src", "pages", "LoginPage.tsx"))
+	if strings.Count(login, "await bootstrapCSRF()") < 2 {
+		t.Fatal("cookie LoginPage.tsx must await bootstrapCSRF() on both login and register")
+	}
+	if !strings.Contains(login, "void bootstrapCSRF()") {
+		t.Fatal("cookie LoginPage.tsx missing eager CSRF bootstrap on mount")
 	}
 }
 

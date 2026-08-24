@@ -82,6 +82,9 @@ func assertFrontendInvariants(t *testing.T, files fileMap) {
 	if !strings.Contains(login, "/api/v1/auth/login") {
 		t.Error("LoginPage.tsx missing login path")
 	}
+	if strings.Contains(login, "bootstrapCSRF") {
+		t.Error("jwt LoginPage.tsx must not import bootstrapCSRF")
+	}
 	client := string(files["frontend/src/api/client.ts"])
 	if client == "" {
 		t.Fatal("missing frontend/src/api/client.ts")
@@ -94,6 +97,9 @@ func assertFrontendInvariants(t *testing.T, files fileMap) {
 		t.Fatal("missing frontend/src/api/retry.ts")
 	}
 	assert401RetryReusesBufferedBody(t, client, retry, []string{`headers.set("Authorization", ` + "`Bearer ${access}`" + `)`})
+	if strings.Contains(client, "csrfInFlight") || strings.Contains(client, "bootstrapCSRF") {
+		t.Error("jwt client.ts must not include cookie CSRF bootstrap")
+	}
 }
 
 // assertCookieFrontendInvariants is assertFrontendInvariants' counterpart for
@@ -136,8 +142,11 @@ func assertCookieFrontendInvariants(t *testing.T, files fileMap) {
 	if login == "" {
 		t.Fatal("missing frontend/src/pages/LoginPage.tsx")
 	}
-	if !strings.Contains(login, "bootstrapCSRF") {
-		t.Error("cookie-mode LoginPage.tsx missing bootstrapCSRF call")
+	if strings.Count(login, "await bootstrapCSRF()") < 2 {
+		t.Error("cookie-mode LoginPage.tsx must await bootstrapCSRF() on both login and register")
+	}
+	if !strings.Contains(login, "void bootstrapCSRF()") {
+		t.Error("cookie-mode LoginPage.tsx missing eager CSRF bootstrap on mount")
 	}
 	client := string(files["frontend/src/api/client.ts"])
 	if client == "" {
@@ -151,6 +160,12 @@ func assertCookieFrontendInvariants(t *testing.T, files fileMap) {
 		t.Fatal("missing frontend/src/api/retry.ts")
 	}
 	assert401RetryReusesBufferedBody(t, client, retry, []string{`headers.set("X-CSRF-Token", token)`})
+	if !strings.Contains(client, "csrfInFlight") {
+		t.Error("cookie-mode client.ts missing csrfInFlight lock")
+	}
+	if !strings.Contains(client, "if (getCSRFToken())") {
+		t.Error("cookie-mode client.ts missing skip-if-token-exists no-op")
+	}
 }
 
 func assertMUIFrontendInvariants(t *testing.T, files fileMap) {

@@ -75,9 +75,12 @@ app — including feature routes added later via `app.Router()` — not just
   {"error": {"code": "authorization", "message": "csrf token missing or invalid", "request_id": "..."}}
   ```
 
-`GET /auth/csrf` is the bootstrap endpoint: an SPA calls it once (e.g. on
-app load, or on the login page before the first `POST /auth/login`) to get
-a token, mirrored in both the `Set-Cookie` header and the JSON body
+`GET /auth/csrf` is the bootstrap endpoint: it **always mints a new** signed
+cookie+body pair (it does not reuse an existing `gombit_csrf` cookie). The
+SPA must not overlap these calls — overlapping responses desync the HttpOnly
+cookie from the in-memory `X-CSRF-Token` and login then 403s. The generated
+client serializes that (see [Generated frontend](#generated-frontend)). The
+token is mirrored in both the `Set-Cookie` header and the JSON body
 (`{"data": {"csrf_token": "..."}}`) so the SPA does not need to parse
 `document.cookie` itself.
 
@@ -88,7 +91,7 @@ differs: tokens travel in cookies, not JSON.
 
 | Method | Path | Auth | Notes |
 | --- | --- | --- | --- |
-| `GET` | `/auth/csrf` | Public, safe (CSRF-exempt) | Issues/refreshes the CSRF cookie; body mirrors it as `csrf_token`. |
+| `GET` | `/auth/csrf` | Public, safe (CSRF-exempt) | Always issues a **new** CSRF cookie+body pair; body mirrors it as `csrf_token`. |
 | `POST` | `/auth/register` | Public, CSRF-protected | Same as Bearer mode: creates a user, never sets `IsSuperuser`. |
 | `POST` | `/auth/login` | Public, CSRF-protected | Body `{email, password}`. On success, sets `gombit_access` + `gombit_refresh` cookies; body is the public user, not tokens. |
 | `POST` | `/auth/refresh` | Cookie (`gombit_refresh`), CSRF-protected | No request body; reads the refresh cookie. Rotates both session cookies. |
@@ -123,8 +126,11 @@ rebuilds the request from buffered body bytes so POST/PATCH JSON survives
 that refresh (buffering is gated on method; Firefox does not implement
 the Request.body getter). `RequireAuth` confirms a session by calling
 `GET /me` (it cannot check an in-memory token, unlike Bearer mode).
-`LoginPage` calls `bootstrapCSRF()` on mount so the login `POST` itself
-has a token to double-submit. See the templates under
+`LoginPage` warms the token with `bootstrapCSRF()` on mount and **awaits**
+it before `POST /auth/login` and `POST /auth/register`. Concurrent callers
+share one in-flight promise (`csrfInFlight`); if a token is already in
+memory the call is a no-op so React StrictMode remounts do not mint a
+second pair. See the templates under
 [`scaffold/templates/frontend/src`](../scaffold/templates/frontend/src) for
 the exact `{{if eq .Auth "cookie"}}` branches.
 
