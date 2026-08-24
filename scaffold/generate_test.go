@@ -283,6 +283,13 @@ func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
 	if !strings.Contains(schema, `"/api/v1/auth/login"`) || !strings.Contains(schema, `"/api/v1/me"`) {
 		t.Fatal("placeholder schema.ts missing auth paths")
 	}
+	if !strings.Contains(schema, "per_page?: number") {
+		t.Fatal("placeholder schema.ts missing list-products per_page query param")
+	}
+	handler := readFile(t, filepath.Join(dest, "internal", "product", "handler.go"))
+	if !strings.Contains(handler, "contract.ClampPage") || !strings.Contains(handler, `query:"per_page"`) {
+		t.Fatal("product handler missing page/per_page list pagination")
+	}
 }
 
 func TestGenerateDryRunWritesNothing(t *testing.T) {

@@ -10,7 +10,8 @@
 //	{"data": ..., "meta": {"page": 1, "per_page": 20, "total": 125}}
 //
 // Use contract.DataMeta[T, PageMeta] (or another concrete meta type) so OpenAPI
-// emits a real meta schema.
+// emits a real meta schema. Generated list handlers honor page/per_page via
+// ClampPage (default page 1, per_page 20, max 100).
 // Validation failures (Huma Install path):
 //
 //	{"error":{"code":"validation_error","message":"...","fields":{...},"request_id":"..."}}

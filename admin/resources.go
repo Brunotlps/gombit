@@ -10,12 +10,6 @@ import (
 	"gorm.io/gorm/clause"
 )
 
-const (
-	defaultPage    = 1
-	defaultPerPage = 20
-	maxPerPage     = 100
-)
-
 type listInput struct {
 	Slug     string `path:"slug" doc:"Registered model slug"`
 	Page     int    `query:"page" doc:"1-based page"`
@@ -81,17 +75,7 @@ func (h *handlers) listResources(ctx context.Context, input *listInput) (*listOu
 		return nil, contract.WithContext(ctx, contract.Internal("admin database is not attached"))
 	}
 
-	page := input.Page
-	if page < 1 {
-		page = defaultPage
-	}
-	perPage := input.PerPage
-	if perPage < 1 {
-		perPage = defaultPerPage
-	}
-	if perPage > maxPerPage {
-		perPage = maxPerPage
-	}
+	page, perPage := contract.ClampPage(input.Page, input.PerPage)
 
 	q := db.WithContext(ctx).Model(m.newInstance())
 	q, err = applySearch(q, m, input.Search)
@@ -118,7 +102,7 @@ func (h *handlers) listResources(ctx context.Context, input *listInput) (*listOu
 	}
 
 	slice := m.newSlice()
-	if err := q.Offset((page - 1) * perPage).Limit(perPage).Find(slice).Error; err != nil {
+	if err := q.Offset(contract.PageOffset(page, perPage)).Limit(perPage).Find(slice).Error; err != nil {
 		return nil, contract.WithContext(ctx, contract.Internal("list resources"))
 	}
 

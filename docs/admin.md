@@ -208,7 +208,8 @@ appear in OpenAPI.
 
 List query parameters:
 
-- `page`, `per_page` (default page 1, per_page 20, max 100)
+- `page`, `per_page` (default page 1, per_page 20, max 100; same
+  `contract.ClampPage` as generated list handlers)
 - `search` (OR `LIKE` across `Options.Search`)
 - `ordering` (a field from `Options.Ordering`; prefix `-` for DESC)
 - one query key per `Options.Filter` field

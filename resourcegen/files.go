@@ -143,8 +143,12 @@ func renderHandler(ctx renderContext) string {
 	}
 	b.WriteString("}\n\n")
 	listOut := "list" + ctx.Resource.Tag + "Output"
+	listIn := "list" + ctx.Resource.Tag + "Input"
 	b.WriteString("type " + listOut + " struct {\n")
 	b.WriteString("\tBody contract.DataMeta[[]" + data + ", contract.PageMeta]\n}\n\n")
+	b.WriteString("type " + listIn + " struct {\n")
+	b.WriteString("\tPage    int `query:\"page\" doc:\"1-based page\"`\n")
+	b.WriteString("\tPerPage int `query:\"per_page\" doc:\"Page size\"`\n}\n\n")
 	b.WriteString("type get" + typ + "Input struct {\n")
 	b.WriteString("\tID string `path:\"id\" doc:\"" + typ + " identifier\"`\n}\n\n")
 	b.WriteString("type get" + typ + "Output struct {\n")
@@ -157,9 +161,15 @@ func renderHandler(ctx renderContext) string {
 	b.WriteString("type create" + typ + "Output struct {\n")
 	b.WriteString("\tBody contract.Data[" + data + "]\n}\n\n")
 
-	b.WriteString("func (h *Handler) list(ctx context.Context, _ *struct{}) (*" + listOut + ", error) {\n")
+	b.WriteString("func (h *Handler) list(ctx context.Context, input *" + listIn + ") (*" + listOut + ", error) {\n")
+	b.WriteString("\tpage, perPage := contract.ClampPage(input.Page, input.PerPage)\n")
+	b.WriteString("\tq := h.DB.WithContext(ctx).Model(&" + typ + "{})\n")
+	b.WriteString("\tvar total int64\n")
+	b.WriteString("\tif err := q.Session(&gorm.Session{}).Count(&total).Error; err != nil {\n")
+	b.WriteString("\t\treturn nil, contract.WithContext(ctx, contract.Internal(\"list " + ctx.Resource.PluralSnake + "\"))\n")
+	b.WriteString("\t}\n")
 	b.WriteString("\tvar rows []" + typ + "\n")
-	b.WriteString("\tif err := h.DB.WithContext(ctx).Order(\"id\").Find(&rows).Error; err != nil {\n")
+	b.WriteString("\tif err := q.Order(\"id\").Offset(contract.PageOffset(page, perPage)).Limit(perPage).Find(&rows).Error; err != nil {\n")
 	b.WriteString("\t\treturn nil, contract.WithContext(ctx, contract.Internal(\"list " + ctx.Resource.PluralSnake + "\"))\n")
 	b.WriteString("\t}\n")
 	b.WriteString("\titems := make([]" + data + ", 0, len(rows))\n")
@@ -167,7 +177,7 @@ func renderHandler(ctx renderContext) string {
 	b.WriteString("\treturn &" + listOut + "{\n")
 	b.WriteString("\t\tBody: contract.DataMeta[[]" + data + ", contract.PageMeta]{\n")
 	b.WriteString("\t\t\tData: items,\n")
-	b.WriteString("\t\t\tMeta: &contract.PageMeta{Page: 1, PerPage: 20, Total: int64(len(items))},\n")
+	b.WriteString("\t\t\tMeta: &contract.PageMeta{Page: page, PerPage: perPage, Total: total},\n")
 	b.WriteString("\t\t},\n")
 	b.WriteString("\t}, nil\n}\n\n")
 

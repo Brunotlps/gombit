@@ -27,6 +27,12 @@ version.
 
 ### Fixed
 
+- Generated list handlers honor `page` / `per_page` instead of returning every
+  row while advertising `meta.per_page=20`. Scaffolded product handlers,
+  `gombit make resource`, and the tutorial Task list clamp like the admin data
+  plane (default page 1, per_page 20, max 100), `COUNT` `meta.total`
+  separately, and `LIMIT`/`OFFSET` the payload
+  ([#110](https://github.com/gombit-dev/gombit/issues/110)).
 - Generated application SPA honors `GOMBIT_API_PREFIX` / `config.API.Prefix`
   at runtime (HTML `__GOMBIT_API_PREFIX__` injection + `rewriteAPIRequest`)
   for `gombit dev` and `gombit build --embed`. `gombit client generate`
