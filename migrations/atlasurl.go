@@ -35,7 +35,7 @@ func sqliteAtlasURL(dsn string) (string, error) {
 		return dsn, nil
 	}
 	if strings.HasPrefix(dsn, "file:") {
-		return sqliteFileURIToAtlas(dsn), nil
+		return sqliteFileURIToAtlas(dsn)
 	}
 	return "sqlite://" + dsn, nil
 }
@@ -43,19 +43,19 @@ func sqliteAtlasURL(dsn string) (string, error) {
 // sqliteFileURIToAtlas maps a SQLite file: URI onto Atlas's sqlite:// form.
 // url.Parse is required so file:///abs (three slashes) becomes sqlite:///abs,
 // not sqlite:////abs or sqlite://///abs from a naive "file:" strip (#135).
-func sqliteFileURIToAtlas(dsn string) string {
+func sqliteFileURIToAtlas(dsn string) (string, error) {
 	u, err := url.Parse(dsn)
 	if err != nil {
-		return "sqlite://" + strings.TrimPrefix(dsn, "file:")
+		return "", fmt.Errorf("migrations: sqlite file URI: %w", err)
 	}
 	path := u.Opaque
 	if path == "" {
 		path = u.Path
 	}
 	if u.RawQuery == "" {
-		return "sqlite://" + path
+		return "sqlite://" + path, nil
 	}
-	return "sqlite://" + path + "?" + u.RawQuery
+	return "sqlite://" + path + "?" + u.RawQuery, nil
 }
 
 func postgresAtlasURL(dsn string) (string, error) {

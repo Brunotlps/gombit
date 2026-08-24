@@ -142,6 +142,14 @@ func TestAtlasURL(t *testing.T) {
 			},
 			wantErr: true,
 		},
+		{
+			name: "sqlite file uri invalid percent escape",
+			cfg: config.DatabaseConfig{
+				Driver: config.DatabaseDriverSQLite,
+				DSN:    "file:///tmp/foo%2.db",
+			},
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {
