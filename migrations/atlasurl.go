@@ -34,20 +34,28 @@ func sqliteAtlasURL(dsn string) (string, error) {
 	if strings.HasPrefix(dsn, "sqlite://") {
 		return dsn, nil
 	}
-	path, query, hasQuery := strings.Cut(dsn, "?")
-	suffix := ""
-	if hasQuery {
-		suffix = "?" + query
+	if strings.HasPrefix(dsn, "file:") {
+		return sqliteFileURIToAtlas(dsn), nil
 	}
-	switch {
-	case strings.HasPrefix(path, "file:///"):
-		// file:///tmp/app.db → sqlite:///tmp/app.db (three slashes, #135).
-		return "sqlite://" + strings.TrimPrefix(path, "file://") + suffix, nil
-	case strings.HasPrefix(path, "file:"):
-		return "sqlite://" + strings.TrimPrefix(path, "file:") + suffix, nil
-	default:
-		return "sqlite://" + path + suffix, nil
+	return "sqlite://" + dsn, nil
+}
+
+// sqliteFileURIToAtlas maps a SQLite file: URI onto Atlas's sqlite:// form.
+// url.Parse is required so file:///abs (three slashes) becomes sqlite:///abs,
+// not sqlite:////abs or sqlite://///abs from a naive "file:" strip (#135).
+func sqliteFileURIToAtlas(dsn string) string {
+	u, err := url.Parse(dsn)
+	if err != nil {
+		return "sqlite://" + strings.TrimPrefix(dsn, "file:")
 	}
+	path := u.Opaque
+	if path == "" {
+		path = u.Path
+	}
+	if u.RawQuery == "" {
+		return "sqlite://" + path
+	}
+	return "sqlite://" + path + "?" + u.RawQuery
 }
 
 func postgresAtlasURL(dsn string) (string, error) {
