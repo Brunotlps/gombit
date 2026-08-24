@@ -86,6 +86,15 @@ func TestGenerateBookFeaturePackage(t *testing.T) {
 	if !strings.Contains(handlerSrc, `contract.Internal("list books")`) {
 		t.Fatalf("handler Internal message = %q, want list books", handlerSrc)
 	}
+	if !strings.Contains(handlerSrc, `database.MapLoadError(ctx, err, "book not found", "load book")`) {
+		t.Fatal("generated get handler does not map load errors via database.MapLoadError")
+	}
+	if !strings.Contains(handlerSrc, `database.MapPersistError(ctx, err, "resource already exists", "create book")`) {
+		t.Fatal("generated create handler does not map persist errors via database.MapPersistError")
+	}
+	if strings.Count(handlerSrc, `contract.NotFound("book not found")`) != 1 {
+		t.Fatal("generated get handler should keep parse-id as not_found and not map First() errors to 404")
+	}
 	if !strings.Contains(handlerSrc, `query:"page"`) || !strings.Contains(handlerSrc, `query:"per_page"`) {
 		t.Fatal("generated list handler missing page/per_page query params")
 	}

@@ -156,6 +156,21 @@ Helpers: `Validation`, `Authentication`, `Authorization`, `NotFound`,
 `New(category, message)`. Always wrap with `WithContext` in handlers so
 `request_id` is set — constructors alone leave it empty.
 
+GORM errors from generated list/get/create handlers (and the admin data
+plane) go through `database.MapLoadError` / `database.MapPersistError`:
+
+| Driver outcome | D10 `error.code` | HTTP |
+| --- | --- | --- |
+| Missing row (`gorm.ErrRecordNotFound`) | `not_found` | 404 |
+| Unique / duplicate key | `conflict` | 409 |
+| Any other database error | `internal` | 500 |
+
+`database.IsUniqueViolation` is the portable detector (`gorm.ErrDuplicatedKey`
+or a driver string containing `unique` / `duplicate` — `database.Open` does
+not enable GORM `TranslateError`). Auth registration uses the same helper
+and still returns `conflict` for a taken email. Do not map every `First()`
+error to 404 or every `Create()` error to 500.
+
 Gin middleware may also emit D10 errors that are not §41 categories.
 `contract.PayloadTooLarge` (`error.code` `payload_too_large`, HTTP 413) is
 used by XSS JSON sanitizer buffering (see [`docs/router.md`](router.md));

@@ -37,6 +37,29 @@ the caller owns opening and closing that handle. `app.Database()` returns the
 metadata handle and `app.DB()` returns the raw `*gorm.DB` escape hatch.
 HTTP-only apps can omit `WithDatabase`.
 
+## Error mapping
+
+`database.Open` does not set `gorm.Config.TranslateError`, so duplicate-key
+errors are usually the driver string rather than `gorm.ErrDuplicatedKey`.
+Callers should not inspect those strings themselves:
+
+```go
+if err := db.Create(&row).Error; err != nil {
+	return database.MapPersistError(ctx, err, "resource already exists", "create widget")
+}
+if err := db.First(&row, id).Error; err != nil {
+	return database.MapLoadError(ctx, err, "widget not found", "load widget")
+}
+```
+
+| Helper | `gorm.ErrRecordNotFound` | unique / duplicate | other |
+| --- | --- | --- | --- |
+| `MapLoadError` | D10 `not_found` | `internal` | `internal` |
+| `MapPersistError` | `internal` | D10 `conflict` | `internal` |
+
+`IsUniqueViolation` is the shared detector used by those helpers and by
+auth registration. See [`docs/contract.md`](contract.md#application-errors-41-categories).
+
 ## Capabilities
 
 `database.Capabilities` captures driver differences that affect generated code

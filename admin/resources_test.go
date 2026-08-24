@@ -14,11 +14,11 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/gombit-dev/gombit/admin"
 	"github.com/gombit-dev/gombit/auth"
 	"github.com/gombit-dev/gombit/contract"
 	"github.com/gombit-dev/gombit/framework"
-	"github.com/gin-gonic/gin"
 )
 
 type rowEnvelope struct {
@@ -303,6 +303,22 @@ func TestResourceUnknownIDNotFound(t *testing.T) {
 	jar := loginSuperuser(t, app)
 	rec := doRequest(app, jar, http.MethodGet, "/api/v1/admin/resources/widgets/9999", "")
 	assertError(t, rec, http.StatusNotFound, "not_found")
+}
+
+func TestResourceDuplicateUniqueReturnsConflict(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	app := newCookieApp(t)
+	registerWidgets(t, app)
+	if err := app.DB().Exec("CREATE UNIQUE INDEX idx_widgets_sku ON widgets(sku)").Error; err != nil {
+		t.Fatalf("CREATE UNIQUE INDEX error = %v", err)
+	}
+	jar := loginSuperuser(t, app)
+	first := doRequest(app, jar, http.MethodPost, "/api/v1/admin/resources/widgets", `{"name":"Alpha","sku":"dup","price":10}`)
+	if first.Code != http.StatusOK {
+		t.Fatalf("create status = %d; body: %s", first.Code, first.Body.String())
+	}
+	dup := doRequest(app, jar, http.MethodPost, "/api/v1/admin/resources/widgets", `{"name":"Beta","sku":"dup","price":20}`)
+	assertError(t, dup, http.StatusConflict, "conflict")
 }
 
 func TestResourceDisabledActionForbidden(t *testing.T) {

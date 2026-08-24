@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"github.com/gombit-dev/gombit/contract"
+	"github.com/gombit-dev/gombit/database"
 	"gorm.io/gorm"
 )
 
@@ -76,7 +77,7 @@ func (h *Handler) get(ctx context.Context, input *getBookInput) (*getBookOutput,
 	}
 	var row Book
 	if err := h.DB.WithContext(ctx).First(&row, uint(id)).Error; err != nil {
-		return nil, contract.WithContext(ctx, contract.NotFound("book not found"))
+		return nil, database.MapLoadError(ctx, err, "book not found", "load book")
 	}
 	return &getBookOutput{
 		Body: contract.Data[bookData]{Data: toBookData(row)},
@@ -88,7 +89,7 @@ func (h *Handler) create(ctx context.Context, input *createBookInput) (*createBo
 		Title: input.Body.Title,
 	}
 	if err := h.DB.WithContext(ctx).Create(&row).Error; err != nil {
-		return nil, contract.WithContext(ctx, contract.Internal("create book"))
+		return nil, database.MapPersistError(ctx, err, "resource already exists", "create book")
 	}
 	return &createBookOutput{
 		Body: contract.Data[bookData]{Data: toBookData(row)},

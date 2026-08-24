@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/gombit-dev/gombit/contract"
+	"github.com/gombit-dev/gombit/database"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -137,7 +138,7 @@ func (h *handlers) createResource(ctx context.Context, input *writeInput) (*rowO
 		return nil, err
 	}
 	if err := db.WithContext(ctx).Create(inst).Error; err != nil {
-		return nil, mapDBError(ctx, err)
+		return nil, database.MapPersistError(ctx, err, "resource already exists", "persist resource")
 	}
 	return &rowOutput{Body: contract.Data[row]{Data: m.toRow(inst)}}, nil
 }
@@ -181,7 +182,7 @@ func (h *handlers) updateResource(ctx context.Context, input *patchInput) (*rowO
 		return nil, contract.WithContext(ctx, contract.Internal("admin database is not attached"))
 	}
 	if err := db.WithContext(ctx).Save(inst).Error; err != nil {
-		return nil, mapDBError(ctx, err)
+		return nil, database.MapPersistError(ctx, err, "resource already exists", "persist resource")
 	}
 	return &rowOutput{Body: contract.Data[row]{Data: m.toRow(inst)}}, nil
 }
@@ -205,7 +206,7 @@ func (h *handlers) deleteResource(ctx context.Context, input *itemInput) (*delet
 		return nil, contract.WithContext(ctx, contract.Internal("admin database is not attached"))
 	}
 	if err := db.WithContext(ctx).Delete(inst).Error; err != nil {
-		return nil, mapDBError(ctx, err)
+		return nil, database.MapPersistError(ctx, err, "resource already exists", "persist resource")
 	}
 	return &deleteOutput{Body: contract.Data[deleteResult]{Data: deleteResult{OK: true}}}, nil
 }
@@ -240,11 +241,8 @@ func (h *handlers) loadByID(ctx context.Context, m *registered, id string) (any,
 	}
 	inst := m.newInstance()
 	err = db.WithContext(ctx).Where(clause.Eq{Column: clause.Column{Name: m.pkColumn}, Value: pk}).First(inst).Error
-	if errors.Is(err, gorm.ErrRecordNotFound) {
-		return nil, contract.WithContext(ctx, contract.NotFound("unknown resource"))
-	}
 	if err != nil {
-		return nil, contract.WithContext(ctx, contract.Internal("load resource"))
+		return nil, database.MapLoadError(ctx, err, "unknown resource", "load resource")
 	}
 	return inst, nil
 }
@@ -381,15 +379,4 @@ func quoteIdent(db *gorm.DB, name string) string {
 	var b strings.Builder
 	db.QuoteTo(&b, name)
 	return b.String()
-}
-
-func mapDBError(ctx context.Context, err error) error {
-	if err == nil {
-		return nil
-	}
-	msg := strings.ToLower(err.Error())
-	if strings.Contains(msg, "unique") || strings.Contains(msg, "duplicate") {
-		return contract.WithContext(ctx, contract.Conflict("resource already exists"))
-	}
-	return contract.WithContext(ctx, contract.Internal("persist resource"))
 }
