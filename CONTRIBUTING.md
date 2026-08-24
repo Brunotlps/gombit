@@ -170,7 +170,8 @@ cd internal/adminui && npm ci && npm test
 
 ## Code review
 
-Before opening or merging a PR, review the diff against the working agreement.
+Before opening or merging a PR, review the diff as an adversarial senior
+reviewer against the working agreement and the change's claimed contract.
 This repo ships a review skill for it:
 
 - **Claude Code:** run `/code-review` (`.claude/skills/code-review/SKILL.md`)

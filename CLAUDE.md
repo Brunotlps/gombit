@@ -3,9 +3,10 @@
 ## Claude Code
 
 - Project skill available: `code-review` (`.claude/skills/code-review/SKILL.md`)
-  — reviews a diff/PR against the Agent Working Agreement in
-  docs/GOMBIT_BUILD_PLAN.md §5. Invoke with `/code-review` or ask to review a
-  PR/diff; it overrides the bundled `/code-review` for this repo.
+  — adversarial review of a diff/PR against the Agent Working Agreement in
+  docs/GOMBIT_BUILD_PLAN.md §5 and the change's claimed contract. Invoke with
+  `/code-review` or ask to review a PR/diff; it overrides the bundled
+  `/code-review` for this repo.
 - This repo has completed M0–M3 and started M4 CLI (see AGENTS.md
   "Current state").
   Prefer a direct `Read` of `docs/GOMBIT_BUILD_PLAN.md` over spawning an

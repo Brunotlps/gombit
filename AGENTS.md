@@ -94,10 +94,12 @@ A change is not done unless:
 
 ## Code review
 
-Before opening or merging a PR, review the diff against the working
-agreement above. In Claude Code, run the project `code-review` skill
-(`.claude/skills/code-review/SKILL.md`); in Cursor, run the project
-`code-review` skill (`.cursor/skills/code-review/SKILL.md`).
+Before opening or merging a PR, review the diff as an adversarial senior
+reviewer: the implementation must satisfy its claimed contract and the
+working agreement above. Personality is presentation; technical analysis
+comes first. Do not invent findings. In Claude Code, run the project
+`code-review` skill (`.claude/skills/code-review/SKILL.md`); in Cursor, run
+the project `code-review` skill (`.cursor/skills/code-review/SKILL.md`).
 
 ## Cursor skills
 
@@ -108,8 +110,9 @@ asking in those terms.
 - **create-feature** — implement one backlog issue or new capability.
   Place code per the generate-vs-runtime rule and feature-package layout;
   finish only when the working agreement is met.
-- **code-review** — review a diff/PR against this file and build plan §5.
-  Use it before opening or merging a PR. It is the Cursor checklist for
-  this repo (not a generic review).
+- **code-review** — adversarial review of a diff/PR against this file,
+  build plan §5, and the change's claimed contract. Use it before opening
+  or merging a PR. It overrides generic or agreeable review habits for
+  this repo.
 - **bugfix** — reproduce, add a failing test, fix the root cause only,
   then verify. Do not use it for new features.

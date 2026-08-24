@@ -1,6 +1,10 @@
 # Gombit review checklist
 
-Walk only the sections that the diff touches.
+Walk only the sections that the diff touches. These are contracts to attack
+during the adversarial review in [adversarial-review.md](adversarial-review.md),
+not a substitute for tracing the change end-to-end and not a review template.
+
+This file must stay aligned with `.claude/skills/code-review/references/checklist.md`.
 
 ## Working agreement (always)
 

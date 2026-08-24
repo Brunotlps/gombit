@@ -87,7 +87,7 @@ Assess blast radius: other feature-packages, middleware order, migration history
 - DB-touching fixes: SQLite **and** PostgreSQL.
 - Runtime extractions: extracted suite still green.
 - Lint / `gofmt` clean when Go exists.
-- Then run the `code-review` skill on the fix diff.
+- Then run the `code-review` skill on the fix diff. That skill is an adversarial contract review (`# APPROVE` / `# COMMENT` / `# REQUEST CHANGES`), not a checklist dump.
 
 ### 7. Hand-off
 
