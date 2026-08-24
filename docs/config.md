@@ -43,7 +43,7 @@ recognizes:
 | `GOMBIT_HTTP_ADDR` | `Config.HTTP.Addr` | `:8080` |
 | `GOMBIT_HTTP_TRUSTED_PROXIES` | `Config.HTTP.TrustedProxies` | unset |
 | `GOMBIT_HTTP_REQUEST_TIMEOUT` | `Config.HTTP.RequestTimeout` | `60s` |
-| `GOMBIT_API_PREFIX` | `Config.API.Prefix` | `/api/v1` |
+| `GOMBIT_API_PREFIX` | `Config.API.Prefix` | `/api/v1` | Honored by Go routes, Huma, the admin SPA, and the generated application SPA (runtime injection + request rewrite). Changing this does not require regenerating frontend source. |
 | `GOMBIT_DOCS_ENABLED` | `Config.API.DocsEnabled` | `true` (off in production when unset) |
 | `GOMBIT_DATABASE_DRIVER` | `Config.Database.Driver` | `sqlite` |
 | `GOMBIT_DATABASE_DSN` | `Config.Database.DSN` | `file:gombit.db?cache=shared&_fk=1` |
@@ -69,6 +69,12 @@ recognizes:
 | `GOMBIT_AUTH_MODE` | `Config.Auth.Mode` | `jwt` |
 | `GOMBIT_COOKIE_SECURE` | `Config.Auth.CookieSecure` | `true` |
 | `GOMBIT_COOKIE_SAMESITE` | `Config.Auth.CookieSameSite` | `lax` |
+
+`GOMBIT_API_PREFIX` is a live setting (D8). Go routes, Huma, the admin SPA,
+and the generated application SPA all honor it. The generated frontend
+reads the prefix at runtime (HTML injection + request rewrite) so changing
+`.env` does not require regenerating frontend source. See
+[frontend.md](frontend.md#talking-to-the-api).
 
 `GOMBIT_ENV` accepts the exact lowercase values `development`, `test`, and
 `production`.

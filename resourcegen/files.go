@@ -310,7 +310,7 @@ func renderListTSX(ctx renderContext) string {
 }
 
 func renderMinimalListTSX(ctx renderContext) string {
-	listPath := ctx.APIPrefix + ctx.Resource.HTTPPath
+	listPath := defaultAPIPrefix + ctx.Resource.HTTPPath
 	labels := `["id"`
 	for _, field := range ctx.Fields {
 		labels += `, "` + field.JSONName + `"`
@@ -410,7 +410,7 @@ func renderFormTSX(ctx renderContext) string {
 }
 
 func renderMinimalFormTSX(ctx renderContext) string {
-	createPath := ctx.APIPrefix + ctx.Resource.HTTPPath
+	createPath := defaultAPIPrefix + ctx.Resource.HTTPPath
 	var b strings.Builder
 	b.WriteString(tsBanner())
 	b.WriteString("\nimport { useState } from \"react\";\n")
@@ -533,7 +533,7 @@ func renderFormField(field Field) string {
 }
 
 func renderMUIListTSX(ctx renderContext) string {
-	listPath := ctx.APIPrefix + ctx.Resource.HTTPPath
+	listPath := defaultAPIPrefix + ctx.Resource.HTTPPath
 	colSpan := 1 + len(ctx.Fields)
 	labels := `["id"`
 	for _, field := range ctx.Fields {
@@ -655,7 +655,7 @@ func renderMUIListTSX(ctx renderContext) string {
 }
 
 func renderMUIFormTSX(ctx renderContext) string {
-	createPath := ctx.APIPrefix + ctx.Resource.HTTPPath
+	createPath := defaultAPIPrefix + ctx.Resource.HTTPPath
 	needsCheckbox := false
 	for _, field := range ctx.Fields {
 		if field.Type == FieldBool {

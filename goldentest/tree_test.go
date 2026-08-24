@@ -100,6 +100,7 @@ func assertFrontendInvariants(t *testing.T, files fileMap) {
 	if strings.Contains(client, "csrfInFlight") || strings.Contains(client, "bootstrapCSRF") {
 		t.Error("jwt client.ts must not include cookie CSRF bootstrap")
 	}
+	assertRuntimeAPIPrefix(t, files, "jwt")
 }
 
 // assertCookieFrontendInvariants is assertFrontendInvariants' counterpart for
@@ -166,6 +167,7 @@ func assertCookieFrontendInvariants(t *testing.T, files fileMap) {
 	if !strings.Contains(client, "if (getCSRFToken())") {
 		t.Error("cookie-mode client.ts missing skip-if-token-exists no-op")
 	}
+	assertRuntimeAPIPrefix(t, files, "cookie")
 }
 
 func assertMUIFrontendInvariants(t *testing.T, files fileMap) {
@@ -199,6 +201,7 @@ func assertMUIFrontendInvariants(t *testing.T, files fileMap) {
 	if !strings.Contains(login, "TextField") && !strings.Contains(login, "Paper") {
 		t.Error("MUI LoginPage.tsx missing Paper/TextField")
 	}
+	assertRuntimeAPIPrefix(t, files, "jwt")
 }
 
 // assert401RetryReusesBufferedBody is the #106 contract: 401 retries must
@@ -242,6 +245,39 @@ func assert401RetryReusesBufferedBody(t *testing.T, client, retry string, extra 
 		if !strings.Contains(retry, want) {
 			t.Errorf("retry.ts missing %q", want)
 		}
+	}
+}
+
+func assertRuntimeAPIPrefix(t *testing.T, files fileMap, auth string) {
+	t.Helper()
+	index := string(files["frontend/index.html"])
+	if !strings.Contains(index, "__GOMBIT_API_PREFIX__") {
+		t.Error("index.html missing __GOMBIT_API_PREFIX__ placeholder")
+	}
+	if _, ok := files["frontend/src/api/apiPrefix.ts"]; !ok {
+		t.Fatal("missing frontend/src/api/apiPrefix.ts")
+	}
+	prefix := string(files["frontend/src/api/apiPrefix.ts"])
+	for _, want := range []string{"export function apiPrefix()", "rewriteAPIRequest", "__GOMBIT_API_PREFIX__"} {
+		if !strings.Contains(prefix, want) {
+			t.Errorf("apiPrefix.ts missing %q", want)
+		}
+	}
+	client := string(files["frontend/src/api/client.ts"])
+	if !strings.Contains(client, `from "./apiPrefix"`) || !strings.Contains(client, "rewriteAPIRequest(") {
+		t.Error("client.ts must rewrite typed /api/v1 paths through apiPrefix")
+	}
+	if strings.Contains(client, `const CSRF_PATH = "/api/v1/`) || strings.Contains(client, `const REFRESH_PATH = "/api/v1/`) {
+		t.Error("client.ts hardcodes CSRF/REFRESH paths to /api/v1")
+	}
+	if auth == "cookie" {
+		if !strings.Contains(client, `apiPath("/auth/csrf")`) || !strings.Contains(client, `apiPath("/auth/refresh")`) {
+			t.Error("cookie client.ts must build CSRF/refresh URLs with apiPath()")
+		}
+	}
+	vite := string(files["frontend/vite.config.ts"])
+	if !strings.Contains(vite, "GOMBIT_API_PREFIX") || !strings.Contains(vite, "injectAPIPrefix") {
+		t.Error("vite.config.ts must inject GOMBIT_API_PREFIX during vite dev")
 	}
 }
 

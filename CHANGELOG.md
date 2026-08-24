@@ -27,6 +27,11 @@ version.
 
 ### Fixed
 
+- Generated application SPA honors `GOMBIT_API_PREFIX` / `config.API.Prefix`
+  at runtime (HTML `__GOMBIT_API_PREFIX__` injection + `rewriteAPIRequest`),
+  matching the admin SPA. Changing `.env` no longer 404s `/api/v1/...`
+  while Go routes moved
+  ([#109](https://github.com/gombit-dev/gombit/issues/109)).
 - Admin edit forms can clear optional fields. The SPA now sends JSON `null`
   for emptied string/text/date/datetime/json/number inputs instead of
   omitting them, and the data-plane setter writes NULL/empty when a PATCH

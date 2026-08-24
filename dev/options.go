@@ -45,6 +45,7 @@ type GenerateFunc func(ctx context.Context, spec []byte) error
 type Options struct {
 	WorkDir      string
 	HTTPAddr     string
+	APIPrefix    string
 	FrontendHost string
 	FrontendPort int
 	ClientOut    string
@@ -81,6 +82,9 @@ func (opts *Options) normalize() error {
 	opts.WorkDir = abs
 	if opts.HTTPAddr == "" {
 		opts.HTTPAddr = DefaultHTTPAddr
+	}
+	if opts.APIPrefix == "" {
+		opts.APIPrefix = "/api/v1"
 	}
 	if opts.FrontendHost == "" {
 		opts.FrontendHost = DefaultFrontendHost
@@ -135,6 +139,15 @@ func HTTPAddrFromConfig(cfg config.Config) string {
 		return DefaultHTTPAddr
 	}
 	return addr
+}
+
+// APIPrefixFromConfig returns config.API.Prefix, or D8 `/api/v1`.
+func APIPrefixFromConfig(cfg config.Config) string {
+	prefix := strings.TrimSuffix(strings.TrimSpace(cfg.API.Prefix), "/")
+	if prefix == "" {
+		return "/api/v1"
+	}
+	return prefix
 }
 
 func parseListenAddr(addr string) (hostPort string, err error) {

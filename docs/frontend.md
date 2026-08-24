@@ -36,6 +36,7 @@ frontend/src/
 │   └── router.tsx      # /login, RequireAuth, /, /products/new
 ├── api/
 │   ├── client.ts       # createAppClient + 401 refresh + useApiClient
+│   ├── apiPrefix.ts    # runtime GOMBIT_API_PREFIX (not baked at gombit new)
 │   ├── retry.ts        # buffer POST/PATCH body; rebuild 401 retry init
 │   ├── formErrors.ts   # D10 fields → RHF setError
 │   └── generated/      # schema.ts, client.ts, error.ts
@@ -55,23 +56,45 @@ frontend/src/
 ## Talking to the API
 
 The home page calls `unwrap(client.GET("/api/v1/products"))`. Create uses
-`client.POST("/api/v1/products", { body })`. Paths come from the generated
-OpenAPI types — do not hand-write DTOs.
+`client.POST("/api/v1/products", { body })`. Those strings are **OpenAPI
+path keys** from the generated placeholder client (D8 default `/api/v1`)
+— do not hand-write DTOs.
+
+`createAppClient` rewrites that typed `/api/v1` prefix to the live
+`config.API.Prefix` / `GOMBIT_API_PREFIX` on the way out
+(`rewriteAPIRequest` in `src/api/apiPrefix.ts`). Changing `.env` and
+restarting does **not** require regenerating frontend source. Cookie-mode
+CSRF/refresh `fetch()` URLs go through `apiPath("/auth/csrf")` the same
+way.
+
+The prefix is injected at serve time, matching the admin SPA:
+
+- `gombit build --embed`: Gin replaces `__GOMBIT_API_PREFIX__` in
+  `index.html` when it serves the SPA.
+- `gombit dev`: Vite's `transformIndexHtml` plugin does the same from
+  `GOMBIT_API_PREFIX` (passed in the child environment). Production Vite
+  builds leave the placeholder so embed can inject the live value.
 
 `createGombitClient` `baseUrl` is `import.meta.env.VITE_API_URL` (public).
 Empty means same-origin so the Vite `/api` proxy used by `gombit dev`
 works. For a split deploy, set the API **origin only** (for example
-`http://127.0.0.1:8080`); OpenAPI paths already include `/api/v1`.
+`http://127.0.0.1:8080`); OpenAPI path keys stay `/api/v1/...` and the
+rewrite maps them to the live prefix. Prefixes that still start with
+`/api` (such as `/api/v2`) hit the existing `/api` proxy; a prefix that
+does not (`/svc/v2`) gets an extra Vite proxy entry.
 
 `VITE_*` values are baked into the browser bundle. Never put JWT secrets,
-database passwords, or other server credentials there.
+database passwords, or other server credentials there. Do not put
+`GOMBIT_API_PREFIX` in `VITE_*` — that would freeze it at Vite build
+time.
 
 ## Access token (in memory)
 
 `src/auth/session.ts` holds the access and refresh tokens in module
 variables. `getAccessToken` is passed into `createGombitClient`.
 `createAppClient` attaches `Authorization: Bearer` and, on 401, calls
-`POST /api/v1/auth/refresh` once using the in-memory refresh token.
+`POST /auth/refresh` once using the in-memory refresh token (typed
+OpenAPI path `/api/v1/auth/refresh`, rewritten to the live prefix).
 Concurrent 401s wait on that refresh and retry instead of returning the
 stale failure. The retry rebuilds the request from buffered body bytes
 (gated on method, not the Request.body getter — unimplemented in Firefox)

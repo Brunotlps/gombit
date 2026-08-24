@@ -186,7 +186,9 @@ One command starts:
 1. The Go API with reload when `air` or `watchexec` is on `PATH`. If neither
    is installed, Gombit runs `go run ./cmd/server` and prints a hint.
 2. The Vite frontend with HMR (`pnpm` when available, otherwise `npm`). Vite
-   proxies `/api`, `/openapi.json`, and `/docs` to the Go origin.
+   proxies `/api`, `/openapi.json`, and `/docs` to the Go origin. Prefixes
+   that do not start with `/api` get an extra proxy entry from the live
+   `GOMBIT_API_PREFIX`.
 3. An OpenAPI watcher that regenerates `frontend/src/api/generated` when the
    live `/openapi.json` document changes (`gombit client generate`).
 
@@ -213,11 +215,14 @@ API docs     http://127.0.0.1:8080/docs
 mode is not supported. Node.js is required for Vite.
 
 `--http` and the Vite proxy origin are written into the child environment
-(`GOMBIT_HTTP_ADDR`, `GOMBIT_DEV_BACKEND`, `VITE_API_URL=`), replacing
-any parent values so a shell-exported `.env.example` cannot keep the API on
-`:8080` while the service table prints `--http :9090`. Empty `VITE_API_URL`
-is same-origin so OpenAPI paths such as `/api/v1/products` hit the Vite
-proxy.
+(`GOMBIT_HTTP_ADDR`, `GOMBIT_DEV_BACKEND`, `GOMBIT_API_PREFIX`,
+`VITE_API_URL=`), replacing any parent values so a shell-exported
+`.env.example` cannot keep the API on `:8080` while the service table
+prints `--http :9090`. Empty `VITE_API_URL` is same-origin so OpenAPI
+path keys such as `/api/v1/products` hit the Vite proxy; `createAppClient`
+rewrites them to the live `GOMBIT_API_PREFIX`. Vite also replaces
+`__GOMBIT_API_PREFIX__` in `index.html` during `vite dev` (production
+builds leave the placeholder for `gombit build --embed`).
 
 SIGINT/SIGTERM stops the child processes. On Unix, Gombit signals the process
 group so air/npm grandchildren exit. On Windows, teardown uses
@@ -306,7 +311,9 @@ under `frontend/src/<feature>/`. They import types from
 `error.fields` through `frontend/src/api/formErrors.ts`. A generated
 `frontend/src/resources.tsx` registry is the React Router registration
 point (not regex-patched `main.tsx`). When `gombit.yaml` has `ui: mui`,
-list/form pages use MUI Table and TextField instead of raw HTML.
+list/form pages use MUI Table and TextField instead of raw HTML. Generated
+list/form OpenAPI path keys stay `/api/v1/<resource>`; `createAppClient`
+rewrites them to the live `GOMBIT_API_PREFIX` (same as the product pages).
 
 After generating routes, run `gombit client generate` or `gombit dev` so
 `frontend/src/api/generated` includes the new paths.

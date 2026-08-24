@@ -26,8 +26,9 @@ tree has only `.keep` (no `index.html`), so the runtime does not install
 SPA fallback. Unknown paths stay 404.
 
 `VITE_API_URL` is public. For a split deploy, set it to the API **origin
-only** (OpenAPI paths already include `/api/v1`). Never put JWT secrets in
-`VITE_*`. Access tokens stay in memory.
+only**. OpenAPI path keys stay `/api/v1/...`; `createAppClient` rewrites
+them to the live `GOMBIT_API_PREFIX`. Do not bake the prefix into `VITE_*`.
+Never put JWT secrets in `VITE_*`. Access tokens stay in memory.
 
 ## Opt-in: `gombit build --embed`
 
@@ -59,7 +60,7 @@ The compiled binary serves:
 | Huma `/api/*`, `/openapi.json`, `/docs` | API / contract (not `index.html`) |
 | `/livez`, `/readyz`, `/metrics` | Probes |
 | GET `/assets/…` when the file exists in the embed FS | That file, with a sane Content-Type |
-| GET `/`, `/login`, `/products/new`, other missing frontend paths | `index.html` (SPA fallback) |
+| GET `/`, `/login`, `/products/new`, other missing frontend paths | `index.html` (SPA fallback); `__GOMBIT_API_PREFIX__` is replaced with `config.API.Prefix` |
 | Non-GET unmatched routes | 404 — not `index.html` |
 
 Path names are cleaned; `..` cannot escape the embed FS. Application

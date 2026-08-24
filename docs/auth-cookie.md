@@ -121,7 +121,10 @@ production JWT-secret-strength check.
 "authenticated" flag and the in-memory CSRF token — never the session
 tokens themselves, which the browser holds as HttpOnly cookies this code
 cannot read. `frontend/src/api/client.ts` attaches `X-CSRF-Token` on unsafe
-requests and retries once after a silent `/auth/refresh` on 401. The retry
+requests and retries once after a silent `/auth/refresh` on 401. CSRF and
+refresh `fetch()` URLs go through `apiPath()` so they follow
+`GOMBIT_API_PREFIX`. Typed openapi-fetch calls keep `/api/v1/...` path
+keys; `rewriteAPIRequest` maps them to the live prefix. The retry
 rebuilds the request from buffered body bytes so POST/PATCH JSON survives
 that refresh (buffering is gated on method; Firefox does not implement
 the Request.body getter). `RequireAuth` confirms a session by calling

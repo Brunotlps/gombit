@@ -9,10 +9,10 @@ import (
 	"testing"
 	"testing/fstest"
 
-	"github.com/gombit-dev/gombit/config"
-	"github.com/gombit-dev/gombit/contract"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/gin-gonic/gin"
+	"github.com/gombit-dev/gombit/config"
+	"github.com/gombit-dev/gombit/contract"
 )
 
 const embedIndexBody = "<!doctype html><title>spa</title>index"
@@ -263,6 +263,34 @@ func TestEmbeddedFrontendRejectsDotDot(t *testing.T) {
 	}
 	if rec.Body.String() != embedIndexBody {
 		t.Fatalf("traversal escaped embed FS: %q", rec.Body.String())
+	}
+}
+
+func TestEmbeddedFrontendInjectsRuntimeAPIPrefix(t *testing.T) {
+	previousMode := gin.Mode()
+	t.Cleanup(func() { gin.SetMode(previousMode) })
+	gin.SetMode(gin.TestMode)
+
+	fsys := fstest.MapFS{
+		"index.html": {Data: []byte("<!doctype html><meta name=\"gombit-api-prefix\" content=\"__GOMBIT_API_PREFIX__\"><div id=\"root\">spa</div>")},
+	}
+	cfg := config.Default()
+	cfg.HTTP.Addr = "127.0.0.1:0"
+	cfg.API.Prefix = "/svc/v2"
+	app := newTestApp(t, WithConfig(cfg), WithEmbeddedFrontend(fsys))
+
+	for _, path := range []string{"/", "/login", "/index.html"} {
+		rec := serveEmbed(t, app, http.MethodGet, path, nil)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET %s status = %d; body=%s", path, rec.Code, rec.Body.String())
+		}
+		body := rec.Body.String()
+		if !strings.Contains(body, "/svc/v2") {
+			t.Fatalf("GET %s missing runtime prefix /svc/v2: %s", path, body)
+		}
+		if strings.Contains(body, apiPrefixPlaceholder) {
+			t.Fatalf("GET %s still contains __GOMBIT_API_PREFIX__ placeholder", path)
+		}
 	}
 }
 

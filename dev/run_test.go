@@ -426,9 +426,11 @@ func TestChildEnvReplacesParentKeysOnProcSpec(t *testing.T) {
 		"GOMBIT_HTTP_ADDR=:8080",
 		"VITE_API_URL=http://localhost:8080/api/v1",
 		"GOMBIT_DEV_FRONTEND_HOST=0.0.0.0",
+		"GOMBIT_API_PREFIX=/api/v1",
 	}
 	opts := Options{
 		HTTPAddr:     ":9090",
+		APIPrefix:    "/svc/v2",
 		FrontendHost: "127.0.0.1",
 		FrontendPort: 4173,
 	}
@@ -441,6 +443,9 @@ func TestChildEnvReplacesParentKeysOnProcSpec(t *testing.T) {
 	}
 	if values := envKeyValues(spec.Env, "GOMBIT_DEV_FRONTEND_HOST"); len(values) != 1 || values[0] != "127.0.0.1" {
 		t.Fatalf("ProcSpec.Env GOMBIT_DEV_FRONTEND_HOST = %v, want 127.0.0.1", values)
+	}
+	if values := envKeyValues(spec.Env, "GOMBIT_API_PREFIX"); len(values) != 1 || values[0] != "/svc/v2" {
+		t.Fatalf("ProcSpec.Env GOMBIT_API_PREFIX = %v, want single /svc/v2", values)
 	}
 }
 
@@ -507,6 +512,9 @@ func TestRunChildEnvReplacesParentHTTPAddr(t *testing.T) {
 		}
 		if values := envKeyValues(cmd.Env, "VITE_API_URL"); len(values) != 1 || values[0] != "" {
 			t.Fatalf("child Env VITE_API_URL = %v, want single empty same-origin value", values)
+		}
+		if values := envKeyValues(cmd.Env, "GOMBIT_API_PREFIX"); len(values) != 1 || values[0] != "/api/v1" {
+			t.Fatalf("child Env GOMBIT_API_PREFIX = %v, want single /api/v1", values)
 		}
 	}
 
