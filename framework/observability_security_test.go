@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gombit-dev/gombit/config"
 	"github.com/gin-gonic/gin"
+	"github.com/gombit-dev/gombit/config"
 )
 
 func TestDefaultRuntimeMiddlewareOrder(t *testing.T) {
@@ -29,8 +29,8 @@ func TestDefaultRuntimeMiddlewareOrder(t *testing.T) {
 		"trace_context",
 		"metrics",
 		"security_headers",
-		"xss",
 		"request_timeout",
+		"xss",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("runtime middleware order = %v, want %v", got, want)
@@ -226,6 +226,9 @@ func TestRunContextConfiguresServerTimeouts(t *testing.T) {
 	app.mu.RUnlock()
 	if server == nil {
 		t.Fatal("server = nil, want configured HTTP server")
+	}
+	if server.ReadTimeout != cfg.HTTP.RequestTimeout {
+		t.Fatalf("server.ReadTimeout = %v, want %v", server.ReadTimeout, cfg.HTTP.RequestTimeout)
 	}
 	if server.WriteTimeout != cfg.HTTP.RequestTimeout {
 		t.Fatalf("server.WriteTimeout = %v, want %v", server.WriteTimeout, cfg.HTTP.RequestTimeout)

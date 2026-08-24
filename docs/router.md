@@ -54,8 +54,8 @@ Recovery
   -> trace context
   -> request metrics
   -> security headers
-  -> XSS HTML-tag sanitization (request input)
   -> request timeout
+  -> XSS HTML-tag sanitization (request input)
   -> Bearer JWT middleware on protected Huma operations (`GET /me`)
   -> feature group middleware (if any)
     -> feature handler
@@ -88,10 +88,15 @@ Other behavior notes:
   Callers that hash the raw body must hash the bytes handlers actually see.
 - Unclosed dangerous elements (for example a truncated `<script>...`) discard
   the remainder of the string (fail-closed).
+- JSON body reads are capped at 8MiB. Larger bodies abort with HTTP 413 and
+  never reach handlers. Request timeout middleware runs *before* XSS, and
+  `http.Server.ReadTimeout` matches `GOMBIT_HTTP_REQUEST_TIMEOUT`, so a slow
+  or never-ending body cannot `io.ReadAll` unbounded (#137).
 
 Canonical design order (draft §13.3) also includes CORS, body-size limit, rate
-limiting, and auth context. Those remain deferred; when body-size lands it
-inserts immediately before XSS.
+limiting, and auth context. Those remain deferred; when a first-class body-size
+middleware lands it still inserts immediately before XSS. The 8MiB XSS cap is
+only a bound on sanitizer buffering, not that middleware.
 
 Request IDs use the `X-Request-Id` header. If the caller provides one, the
 runtime preserves it; otherwise it generates one and stores it on both Gin's

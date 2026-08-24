@@ -17,6 +17,11 @@ import (
 // case-sensitive). Keys like "Password" or nested paths still get stripped.
 const xssPasswordField = "password"
 
+// maxJSONBodyBytes caps XSS JSON body buffering (issue #137). A first-class
+// body-size middleware is still deferred (docs/router.md); this keeps
+// sanitizeJSONBody from io.ReadAll-ing an attacker-controlled stream.
+const maxJSONBodyBytes int64 = 8 << 20
+
 // Elements whose text content must not reach handlers (matched to HTML
 // sanitizer "strict" expectations: tags stripped, dangerous element bodies
 // discarded).
@@ -44,6 +49,9 @@ func xssMiddleware() gin.HandlerFunc {
 			sanitizeQuery(c)
 		case http.MethodPost, http.MethodPut, http.MethodPatch:
 			sanitizeJSONBody(c)
+		}
+		if c.IsAborted() {
+			return
 		}
 		c.Next()
 	}
@@ -78,10 +86,17 @@ func sanitizeJSONBody(c *gin.Context) {
 		return
 	}
 
-	raw, err := io.ReadAll(c.Request.Body)
+	limited := io.LimitReader(c.Request.Body, maxJSONBodyBytes+1)
+	raw, err := io.ReadAll(limited)
 	_ = c.Request.Body.Close()
 	if err != nil {
 		c.Request.Body = io.NopCloser(bytes.NewReader(nil))
+		c.AbortWithStatus(http.StatusBadRequest)
+		return
+	}
+	if int64(len(raw)) > maxJSONBodyBytes {
+		c.Request.Body = io.NopCloser(bytes.NewReader(nil))
+		c.AbortWithStatus(http.StatusRequestEntityTooLarge)
 		return
 	}
 	if len(bytes.TrimSpace(raw)) == 0 {

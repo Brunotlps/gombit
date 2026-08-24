@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -98,6 +99,63 @@ func TestSanitizeJSONBodyEmptyBodyNoop(t *testing.T) {
 	}
 	if string(got) != "   " {
 		t.Fatalf("body = %q, want unchanged whitespace", got)
+	}
+}
+
+func TestSanitizeJSONBodyRejectsOversized(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := bytes.Repeat([]byte("x"), int(maxJSONBodyBytes)+1)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	sanitizeJSONBody(c)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusRequestEntityTooLarge)
+	}
+	if !c.IsAborted() {
+		t.Fatal("expected XSS sanitizer to abort an oversized JSON body")
+	}
+}
+
+type infiniteJSONReader struct{}
+
+func (infiniteJSONReader) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = 'x'
+	}
+	return len(p), nil
+}
+
+func TestSanitizeJSONBodyDoesNotBlockOnInfiniteBody(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", infiniteJSONReader{})
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	done := make(chan struct{})
+	go func() {
+		sanitizeJSONBody(c)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("sanitizeJSONBody blocked on unbounded ReadAll")
+	}
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusRequestEntityTooLarge)
+	}
+	if !c.IsAborted() {
+		t.Fatal("expected XSS sanitizer to abort an unbounded JSON body")
 	}
 }
 
