@@ -56,7 +56,7 @@ This file must stay aligned with `.cursor/skills/code-review/references/checklis
 - [ ] Cookie mode uses HttpOnly / Secure / SameSite + CSRF
 - [ ] `X-API-Key` is not enabled by default for browser apps
 - [ ] Production validation still fails loud for draft Appendix C cases
-- [ ] Middleware order preserved if the HTTP stack moved (recovery → request ID → tracing → access log → proxy/IP → security headers → CORS → body limit → timeout → XSS HTML sanitization → rate limit → auth → app → handler)
+- [ ] Middleware order preserved if the HTTP stack moved (recovery → request ID → tracing → access log → proxy/IP → security headers → CORS → body limit → XSS HTML sanitization → timeout → rate limit → auth → app → handler)
 
 ## Go idiom (when Go exists)
 

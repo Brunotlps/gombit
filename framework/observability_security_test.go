@@ -29,8 +29,8 @@ func TestDefaultRuntimeMiddlewareOrder(t *testing.T) {
 		"trace_context",
 		"metrics",
 		"security_headers",
-		"request_timeout",
 		"xss",
+		"request_timeout",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("runtime middleware order = %v, want %v", got, want)

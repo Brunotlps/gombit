@@ -27,7 +27,10 @@ version.
 
 ### Fixed
 
-<<<<<<< HEAD
+- XSS JSON sanitization no longer `io.ReadAll`s request bodies without a
+  bound: JSON sanitizer buffering is capped at 8MiB (HTTP 413, D10
+  `payload_too_large`), and `http.Server.ReadTimeout` follows
+  `GOMBIT_HTTP_REQUEST_TIMEOUT` ([#137](https://github.com/gombit-dev/gombit/issues/137)).
 - `AtlasURL` now converts Postgres unix-socket and IPv6 libpq DSNs, and
   SQLite `file:///abs` URIs, into Atlas `--url` values that parse
   ([#135](https://github.com/gombit-dev/gombit/issues/135)).
@@ -35,12 +38,6 @@ version.
   (`password=secret dbname=app`) without swallowing the rest of the DSN, and
   strip the password token from driver errors that do not echo the full DSN
   ([#136](https://github.com/gombit-dev/gombit/issues/136)).
-=======
-- XSS JSON sanitization no longer `io.ReadAll`s request bodies without a
-  bound: JSON bodies are capped at 8MiB (HTTP 413), request timeout middleware
-  runs before XSS, and `http.Server.ReadTimeout` follows
-  `GOMBIT_HTTP_REQUEST_TIMEOUT` ([#137](https://github.com/gombit-dev/gombit/issues/137)).
->>>>>>> eee2704 (fix: bound XSS JSON body reads and set ReadTimeout)
 - **Scaffolded apps now build with no manual steps.** `gombit new` wrote
   `require github.com/gombit-dev/gombit v0.0.0` — a version that
   has never existed on the module proxy — so `go build ./...` in a fresh tree

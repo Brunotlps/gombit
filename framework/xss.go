@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gombit-dev/gombit/contract"
 	"golang.org/x/net/html"
 )
 
@@ -57,6 +58,18 @@ func xssMiddleware() gin.HandlerFunc {
 	}
 }
 
+func writeXSSError(c *gin.Context, env *contract.ErrorEnvelope) {
+	env = contract.WithContext(c.Request.Context(), env)
+	if env == nil {
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	c.Abort()
+	c.Header("Content-Type", "application/json")
+	c.Status(env.GetStatus())
+	_ = json.NewEncoder(c.Writer).Encode(env)
+}
+
 func sanitizeQuery(c *gin.Context) {
 	query := c.Request.URL.Query()
 	changed := false
@@ -90,13 +103,14 @@ func sanitizeJSONBody(c *gin.Context) {
 	raw, err := io.ReadAll(limited)
 	_ = c.Request.Body.Close()
 	if err != nil {
+		// Leave an empty body so Gin/Huma can emit a normal D10 validation
+		// error. Aborting with a bare 400 would skip the envelope (D10).
 		c.Request.Body = io.NopCloser(bytes.NewReader(nil))
-		c.AbortWithStatus(http.StatusBadRequest)
 		return
 	}
 	if int64(len(raw)) > maxJSONBodyBytes {
 		c.Request.Body = io.NopCloser(bytes.NewReader(nil))
-		c.AbortWithStatus(http.StatusRequestEntityTooLarge)
+		writeXSSError(c, contract.PayloadTooLarge("JSON body exceeds the 8MiB sanitizer buffer"))
 		return
 	}
 	if len(bytes.TrimSpace(raw)) == 0 {

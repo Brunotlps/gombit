@@ -9,6 +9,10 @@ import (
 // CodeValidationError is the stable D10 code for request validation failures.
 const CodeValidationError = "validation_error"
 
+// CodePayloadTooLarge is the D10 code for a body that exceeded a framework
+// buffer cap (HTTP 413). This is not a §41 category.
+const CodePayloadTooLarge = "payload_too_large"
+
 const validationMessage = "The request contains invalid fields."
 
 // ErrorBody is the D10 error object nested under "error".
@@ -117,6 +121,22 @@ func Conflict(message string) *ErrorEnvelope {
 // Wrap with WithContext in handlers to attach request_id.
 func RateLimited(message string) *ErrorEnvelope {
 	return New(CategoryRateLimited, message)
+}
+
+// PayloadTooLarge returns a D10 error for a request body that exceeded a
+// framework buffer cap (HTTP 413). This is not a §41 category; the sanitizer
+// bound is not the deferred body-size middleware.
+func PayloadTooLarge(message string) *ErrorEnvelope {
+	if message == "" {
+		message = "The request body is too large."
+	}
+	return &ErrorEnvelope{
+		status: http.StatusRequestEntityTooLarge,
+		Body: ErrorBody{
+			Code:    CodePayloadTooLarge,
+			Message: message,
+		},
+	}
 }
 
 // DependencyUnavailable returns a dependency_unavailable error (HTTP 503).

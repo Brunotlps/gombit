@@ -532,9 +532,6 @@ func runtimeMiddlewareStack(cfg config.Config, metrics *httpMetrics) []namedMidd
 			name:    "security_headers",
 			handler: securityHeadersMiddleware(cfg.Environment == config.EnvironmentProduction),
 		},
-		// Timeout before XSS so the request context is canceled if a body
-		// read blocks; XSS itself also caps JSON buffering (issue #137).
-		{name: "request_timeout", handler: requestTimeoutMiddleware(cfg.HTTP.RequestTimeout)},
 		{name: "xss", handler: xssMiddleware()},
 	}
 	// CSRF must run as global Gin middleware, not just on the auth Huma
@@ -544,6 +541,7 @@ func runtimeMiddlewareStack(cfg config.Config, metrics *httpMetrics) []namedMidd
 	if cfg.Auth.Enabled() && cfg.Auth.EffectiveMode() == config.AuthModeCookie {
 		stack = append(stack, namedMiddleware{name: "csrf", handler: auth.CSRFMiddleware(cfg)})
 	}
+	stack = append(stack, namedMiddleware{name: "request_timeout", handler: requestTimeoutMiddleware(cfg.HTTP.RequestTimeout)})
 	return stack
 }
 
