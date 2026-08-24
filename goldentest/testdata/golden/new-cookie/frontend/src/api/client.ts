@@ -97,21 +97,41 @@ export function createAppClient(): ApiClient {
   return client;
 }
 
+let csrfInFlight: Promise<void> | null = null;
+
 /**
- * Fetches a fresh CSRF cookie/token pair. Call once on app load (or right
- * before the first mutating request, e.g. on the login page) so
- * POST /auth/login and friends have a token to double-submit.
+ * Fetches a CSRF cookie/token pair. Concurrent callers share one in-flight
+ * promise (GET /auth/csrf always mints a new pair; overlapping responses
+ * desync the cookie from the in-memory X-CSRF-Token). If a token is already
+ * in memory, this is a no-op so React StrictMode remounts do not mint a
+ * second pair. After clearSession the token is gone and the next call
+ * bootstraps again. Login must await this before POST.
  */
-export async function bootstrapCSRF(): Promise<void> {
-  const baseUrl = import.meta.env.VITE_API_URL ?? "";
-  const response = await fetch(baseUrl + CSRF_PATH, { credentials: "same-origin" });
-  if (!response.ok) {
-    return;
+export function bootstrapCSRF(): Promise<void> {
+  if (getCSRFToken()) {
+    return Promise.resolve();
   }
-  const body = (await response.json()) as { data?: { csrf_token?: string } };
-  if (body.data?.csrf_token) {
-    setCSRFToken(body.data.csrf_token);
+  if (csrfInFlight) {
+    return csrfInFlight;
   }
+  csrfInFlight = (async () => {
+    try {
+      const baseUrl = import.meta.env.VITE_API_URL ?? "";
+      const response = await fetch(baseUrl + CSRF_PATH, {
+        credentials: "same-origin",
+      });
+      if (!response.ok) {
+        return;
+      }
+      const body = (await response.json()) as { data?: { csrf_token?: string } };
+      if (body.data?.csrf_token) {
+        setCSRFToken(body.data.csrf_token);
+      }
+    } finally {
+      csrfInFlight = null;
+    }
+  })();
+  return csrfInFlight;
 }
 
 function csrfRequestHeaders(): HeadersInit {

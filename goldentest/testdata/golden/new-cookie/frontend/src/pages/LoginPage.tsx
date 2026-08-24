@@ -34,6 +34,9 @@ export function LoginPage() {
   async function onLogin(values: LoginValues) {
     setStatus("");
     try {
+      // Mount effect starts CSRF; wait for that in-flight pair (or mint one
+      // after clearSession) before POST /auth/login.
+      await bootstrapCSRF();
       await unwrap(
         await client.POST("/api/v1/auth/login", {
           body: { email: values.email, password: values.password },
@@ -51,6 +54,7 @@ export function LoginPage() {
   async function onRegister(values: LoginValues) {
     setStatus("");
     try {
+      await bootstrapCSRF();
       await unwrap(
         await client.POST("/api/v1/auth/register", {
           body: { email: values.email, password: values.password },

@@ -31,6 +31,10 @@ version.
   silent refresh. POST/PATCH retries buffer via `clone().arrayBuffer()` gated
   on method (Firefox's `Request.body` getter is undefined) and resend those
   bytes ([#106](https://github.com/gombit-dev/gombit/issues/106)).
+- Cookie-mode generated SPAs serialize CSRF bootstrap (`csrfInFlight` plus
+  skip-if-token-exists) and `await bootstrapCSRF()` before login/register,
+  so React StrictMode remounts no longer mint a second pair that 403s login
+  ([#107](https://github.com/gombit-dev/gombit/issues/107)).
 - XSS JSON sanitization no longer `io.ReadAll`s request bodies without a
   bound: JSON sanitizer buffering is capped at 8MiB (HTTP 413, D10
   `payload_too_large`), and `http.Server.ReadTimeout` follows
