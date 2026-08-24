@@ -27,6 +27,10 @@ version.
 
 ### Fixed
 
+- Admin edit forms can clear optional fields. The SPA now sends JSON `null`
+  for emptied string/text/date/datetime/json/number inputs instead of
+  omitting them, and the data-plane setter writes NULL/empty when a PATCH
+  key is present with `null` ([#108](https://github.com/gombit-dev/gombit/issues/108)).
 - Generated SPA 401 interceptor no longer clones a consumed `Request` after
   silent refresh. POST/PATCH retries buffer via `clone().arrayBuffer()` gated
   on method (Firefox's `Request.body` getter is undefined) and resend those

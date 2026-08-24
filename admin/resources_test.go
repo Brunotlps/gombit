@@ -12,10 +12,12 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gombit-dev/gombit/admin"
 	"github.com/gombit-dev/gombit/auth"
 	"github.com/gombit-dev/gombit/contract"
+	"github.com/gombit-dev/gombit/framework"
 	"github.com/gin-gonic/gin"
 )
 
@@ -82,6 +84,113 @@ func TestResourceCRUDAndAuthz(t *testing.T) {
 	}
 	missing := doRequest(app, jar, http.MethodGet, "/api/v1/admin/resources/widgets/"+id, "")
 	assertError(t, missing, http.StatusNotFound, "not_found")
+}
+
+func TestResourcePatchClearsOptionalFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	app := newCookieApp(t)
+	registerWidgets(t, app)
+	jar := loginSuperuser(t, app)
+
+	create := doRequest(app, jar, http.MethodPost, "/api/v1/admin/resources/widgets",
+		`{"name":"Alpha","sku":"keep-me","price":10,"note":"hello"}`)
+	if create.Code != http.StatusOK {
+		t.Fatalf("create status = %d; body: %s", create.Code, create.Body.String())
+	}
+	var created rowEnvelope
+	if err := json.Unmarshal(create.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode create: %v", err)
+	}
+	id := fmt.Sprint(asInt(created.Data["id"]))
+	path := "/api/v1/admin/resources/widgets/" + id
+
+	omit := doRequest(app, jar, http.MethodPatch, path, `{"price":99}`)
+	if omit.Code != http.StatusOK {
+		t.Fatalf("omit-key patch status = %d; body: %s", omit.Code, omit.Body.String())
+	}
+	assertStoredWidget(t, app, created.Data["id"], Widget{Name: "Alpha", SKU: "keep-me", Price: 99, Note: "hello"})
+
+	clearNull := doRequest(app, jar, http.MethodPatch, path, `{"note":null}`)
+	if clearNull.Code != http.StatusOK {
+		t.Fatalf("null patch status = %d; body: %s", clearNull.Code, clearNull.Body.String())
+	}
+	assertStoredWidget(t, app, created.Data["id"], Widget{Name: "Alpha", SKU: "keep-me", Price: 99, Note: ""})
+
+	setNote := doRequest(app, jar, http.MethodPatch, path, `{"note":"again"}`)
+	if setNote.Code != http.StatusOK {
+		t.Fatalf("restore patch status = %d; body: %s", setNote.Code, setNote.Body.String())
+	}
+	clearEmpty := doRequest(app, jar, http.MethodPatch, path, `{"note":""}`)
+	if clearEmpty.Code != http.StatusOK {
+		t.Fatalf("empty-string patch status = %d; body: %s", clearEmpty.Code, clearEmpty.Body.String())
+	}
+	assertStoredWidget(t, app, created.Data["id"], Widget{Name: "Alpha", SKU: "keep-me", Price: 99, Note: ""})
+
+	required := doRequest(app, jar, http.MethodPatch, path, `{"name":null}`)
+	assertError(t, required, http.StatusUnprocessableEntity, contract.CodeValidationError)
+	env := decodeError(t, required)
+	if len(env.Fields["name"]) == 0 {
+		t.Fatalf("fields.name missing; %#v", env.Fields)
+	}
+	assertStoredWidget(t, app, created.Data["id"], Widget{Name: "Alpha", SKU: "keep-me", Price: 99, Note: ""})
+}
+
+func TestResourcePatchClearsNullablePointerAndJSON(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	type Doc struct {
+		ID      uint            `gorm:"primaryKey" json:"id"`
+		Title   string          `json:"title"`
+		Note    *string         `json:"note"`
+		Payload json.RawMessage `json:"payload"`
+		Due     *time.Time      `json:"due"`
+	}
+	app := newCookieApp(t)
+	if err := app.DB().AutoMigrate(&Doc{}); err != nil {
+		t.Fatalf("AutoMigrate: %v", err)
+	}
+	if err := admin.Register(app, Doc{}, admin.Options{
+		Slug: "docs",
+		Fields: []admin.Field{
+			{Name: "id", Type: admin.TypeInteger, ReadOnly: true},
+			{Name: "title", Type: admin.TypeString, Required: true},
+			{Name: "note", Type: admin.TypeText},
+			{Name: "payload", Type: admin.TypeJSON},
+			{Name: "due", Type: admin.TypeDateTime},
+		},
+	}); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	note := "hello"
+	due := time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC)
+	doc := Doc{Title: "Memo", Note: &note, Payload: json.RawMessage(`{"k":1}`), Due: &due}
+	if err := app.DB().Create(&doc).Error; err != nil {
+		t.Fatalf("create fixture: %v", err)
+	}
+	jar := loginSuperuser(t, app)
+	path := fmt.Sprintf("/api/v1/admin/resources/docs/%d", doc.ID)
+
+	clear := doRequest(app, jar, http.MethodPatch, path, `{"note":null,"payload":null,"due":null}`)
+	if clear.Code != http.StatusOK {
+		t.Fatalf("clear patch status = %d; body: %s", clear.Code, clear.Body.String())
+	}
+
+	var stored Doc
+	if err := app.DB().First(&stored, doc.ID).Error; err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if stored.Title != "Memo" {
+		t.Fatalf("title = %q, want Memo (omitted key must stay unchanged)", stored.Title)
+	}
+	if stored.Note != nil {
+		t.Fatalf("note = %#v, want nil", stored.Note)
+	}
+	if len(stored.Payload) != 0 {
+		t.Fatalf("payload = %#v, want nil/empty", stored.Payload)
+	}
+	if stored.Due != nil {
+		t.Fatalf("due = %#v, want nil", stored.Due)
+	}
 }
 
 func TestResourceAnonymousUnauthorized(t *testing.T) {
@@ -472,6 +581,19 @@ func asInt(v any) int64 {
 		return n
 	default:
 		return 0
+	}
+}
+
+func assertStoredWidget(t *testing.T, app *framework.App, id any, want Widget) {
+	t.Helper()
+	var stored Widget
+	if err := app.DB().First(&stored, asInt(id)).Error; err != nil {
+		t.Fatalf("reload widget: %v", err)
+	}
+	if stored.Name != want.Name || stored.SKU != want.SKU || stored.Price != want.Price || stored.Note != want.Note {
+		t.Fatalf("stored widget = {name:%q sku:%q price:%d note:%q}, want {name:%q sku:%q price:%d note:%q}",
+			stored.Name, stored.SKU, stored.Price, stored.Note,
+			want.Name, want.SKU, want.Price, want.Note)
 	}
 }
 
