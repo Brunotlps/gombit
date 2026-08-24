@@ -293,7 +293,7 @@ This writes a feature-package under `internal/<snake>/`:
 | File | When |
 | --- | --- |
 | `<snake>.go` | GORM model (`gorm.Model` + fields) |
-| `handler.go` | Thin Huma list/get/create over GORM (D10 envelope; list honors `page`/`per_page`) |
+| `handler.go` | Thin Huma list/get/create over GORM (D10 envelope; list honors `page`/`per_page`; get/create map missing rows to `not_found` and unique violations to `conflict`) |
 | `routes.go` | `Register(app *framework.App)` |
 | `service.go` | Only with `--service` (pass-through) |
 | `repo.go` | Only with `--repo` (pass-through) |

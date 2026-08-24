@@ -93,6 +93,49 @@ func TestListOpenAPIExposesPageQueryParams(t *testing.T) {
 	}
 }
 
+func TestGetMissingTaskReturnsNotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	app := newTaskApp(t)
+
+	rec := getTask(t, app, "999")
+	assertError(t, rec, http.StatusNotFound, "not_found")
+}
+
+func TestGetInvalidIDReturnsNotFound(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	app := newTaskApp(t)
+
+	rec := getTask(t, app, "abc")
+	assertError(t, rec, http.StatusNotFound, "not_found")
+}
+
+func TestGetNonNotFoundDBErrorReturnsInternal(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	app := newTaskApp(t)
+	if err := app.DB().Migrator().DropTable(&task.Task{}); err != nil {
+		t.Fatalf("DropTable(Task) error = %v", err)
+	}
+
+	rec := getTask(t, app, "1")
+	assertError(t, rec, http.StatusInternalServerError, "internal")
+}
+
+func TestCreateDuplicateUniqueReturnsConflict(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	app := newTaskApp(t)
+	if err := app.DB().Exec("CREATE UNIQUE INDEX idx_tasks_title ON tasks(title)").Error; err != nil {
+		t.Fatalf("CREATE UNIQUE INDEX error = %v", err)
+	}
+
+	createTask(t, app, "same-title")
+	body := `{"title":"same-title","done":false}`
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/tasks", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	app.Router().ServeHTTP(rec, req)
+	assertError(t, rec, http.StatusConflict, "conflict")
+}
+
 func newTaskApp(t *testing.T) *framework.App {
 	t.Helper()
 	db, err := database.Open(config.DatabaseConfig{
@@ -145,4 +188,25 @@ func getList(t *testing.T, app *framework.App, path string) listEnvelope {
 		t.Fatalf("decode GET %s: %v; body: %s", path, err, rec.Body.String())
 	}
 	return env
+}
+
+func getTask(t *testing.T, app *framework.App, id string) *httptest.ResponseRecorder {
+	t.Helper()
+	rec := httptest.NewRecorder()
+	app.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/api/v1/tasks/"+id, nil))
+	return rec
+}
+
+func assertError(t *testing.T, rec *httptest.ResponseRecorder, status int, code string) {
+	t.Helper()
+	if rec.Code != status {
+		t.Fatalf("status = %d, want %d; body: %s", rec.Code, status, rec.Body.String())
+	}
+	var env contract.ErrorEnvelope
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode error envelope: %v; body: %s", err, rec.Body.String())
+	}
+	if env.Body.Code != code {
+		t.Fatalf("error.code = %q, want %q; body: %s", env.Body.Code, code, rec.Body.String())
+	}
 }

@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/gombit-dev/gombit/contract"
+	"github.com/gombit-dev/gombit/database"
 	"gorm.io/gorm"
 )
 
@@ -77,7 +78,7 @@ func (h *Handler) get(ctx context.Context, input *getProductInput) (*getProductO
 	}
 	var row Product
 	if err := h.DB.WithContext(ctx).First(&row, uint(id)).Error; err != nil {
-		return nil, contract.WithContext(ctx, contract.NotFound("product not found"))
+		return nil, database.MapLoadError(ctx, err, "product not found", "load product")
 	}
 	return &getProductOutput{
 		Body: contract.Data[productData]{Data: toProductData(row)},
@@ -87,7 +88,7 @@ func (h *Handler) get(ctx context.Context, input *getProductInput) (*getProductO
 func (h *Handler) create(ctx context.Context, input *createProductInput) (*createProductOutput, error) {
 	row := Product{Name: input.Body.Name, Price: input.Body.Price}
 	if err := h.DB.WithContext(ctx).Create(&row).Error; err != nil {
-		return nil, contract.WithContext(ctx, contract.Internal("create product"))
+		return nil, database.MapPersistError(ctx, err, "resource already exists", "create product")
 	}
 	return &createProductOutput{
 		Body: contract.Data[productData]{Data: toProductData(row)},

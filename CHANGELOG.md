@@ -27,6 +27,13 @@ version.
 
 ### Fixed
 
+- Generated get/create handlers map GORM errors to D10 categories instead of
+  collapsing every load failure to `not_found` and every persist failure to
+  `internal`. Missing rows are 404 `not_found`; unique/duplicate keys are 409
+  `conflict`; other driver errors are 500 `internal`. Shared helpers live in
+  `database` (`IsUniqueViolation`, `MapLoadError`, `MapPersistError`) and are
+  used by generated handlers, admin, and auth
+  ([#111](https://github.com/gombit-dev/gombit/issues/111)).
 - Generated list handlers honor `page` / `per_page` instead of returning every
   row while advertising `meta.per_page=20`. Scaffolded product handlers,
   `gombit make resource`, and the tutorial Task list clamp like the admin data

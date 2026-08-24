@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gombit-dev/gombit/config"
+	"github.com/gombit-dev/gombit/database"
 	"gorm.io/gorm"
 )
 
@@ -72,7 +73,7 @@ func (s *Service) createUser(ctx context.Context, email, password string, superu
 	}
 	user := User{Email: email, PasswordHash: hash, IsSuperuser: superuser}
 	if err := s.db.WithContext(ctx).Create(&user).Error; err != nil {
-		if isUniqueViolation(err) {
+		if database.IsUniqueViolation(err) {
 			return User{}, errEmailTaken
 		}
 		return User{}, err
@@ -251,21 +252,6 @@ func (s *Service) compareDummy(password string) {
 		s.dummyHash = hash
 	}
 	_ = s.hasher.Compare(s.dummyHash, password)
-}
-
-// isUniqueViolation reports duplicate-key errors. database.Open does not
-// set gorm.Config.TranslateError, so ErrDuplicatedKey is usually unset
-// and the driver error string is the portable signal across SQLite,
-// Postgres, and MySQL.
-func isUniqueViolation(err error) bool {
-	if err == nil {
-		return false
-	}
-	if errors.Is(err, gorm.ErrDuplicatedKey) {
-		return true
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "unique") || strings.Contains(msg, "duplicate")
 }
 
 // TokenPair is the login/refresh success payload (inside D10 data).
