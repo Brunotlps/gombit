@@ -97,9 +97,11 @@ Validation returns `config.FieldErrors`, which names the typed field, the
 environment variable, the invalid value, and the validation message.
 
 `gombit config show` prints this typed result as aligned key/value lines.
-DSN userinfo/passwords, the Redis password, and the JWT secret are redacted
-(`*****`); `Config.Redacted()` / `RedactDSN` are the helpers. Do not log raw
-DSNs or JWT secrets.
+DSN userinfo/passwords (URL form, MySQL `user:pass@tcp`, libpq
+`password=`/`pwd=`/`pass=` keywords, and `?password=` query params), the Redis
+password, and the JWT secret are redacted (`*****`); `Config.Redacted()` /
+`RedactDSN` / `SanitizeError` are the helpers. Do not log raw DSNs or JWT
+secrets.
 
 Appendix C production checks fail loudly for a **non-empty** JWT secret
 shorter than 32 characters, for the generated-app development placeholder,

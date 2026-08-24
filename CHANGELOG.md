@@ -27,6 +27,10 @@ version.
 
 ### Fixed
 
+- `RedactDSN` / `SanitizeError` now redact libpq keyword/value DSN passwords
+  (`password=secret dbname=app`) without swallowing the rest of the DSN, and
+  strip the password token from driver errors that do not echo the full DSN
+  ([#136](https://github.com/gombit-dev/gombit/issues/136)).
 - **Scaffolded apps now build with no manual steps.** `gombit new` wrote
   `require github.com/gombit-dev/gombit v0.0.0` — a version that
   has never existed on the module proxy — so `go build ./...` in a fresh tree
