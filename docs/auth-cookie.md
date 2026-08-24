@@ -118,11 +118,13 @@ production JWT-secret-strength check.
 "authenticated" flag and the in-memory CSRF token — never the session
 tokens themselves, which the browser holds as HttpOnly cookies this code
 cannot read. `frontend/src/api/client.ts` attaches `X-CSRF-Token` on unsafe
-requests and retries once after a silent `/auth/refresh` on 401.
-`RequireAuth` confirms a session by calling `GET /me` (it cannot check an
-in-memory token, unlike Bearer mode). `LoginPage` calls `bootstrapCSRF()` on
-mount so the login `POST` itself has a token to double-submit. See the
-templates under
+requests and retries once after a silent `/auth/refresh` on 401. The retry
+rebuilds the request from buffered body bytes so POST/PATCH JSON survives
+that refresh (buffering is gated on method; Firefox does not implement
+the Request.body getter). `RequireAuth` confirms a session by calling
+`GET /me` (it cannot check an in-memory token, unlike Bearer mode).
+`LoginPage` calls `bootstrapCSRF()` on mount so the login `POST` itself
+has a token to double-submit. See the templates under
 [`scaffold/templates/frontend/src`](../scaffold/templates/frontend/src) for
 the exact `{{if eq .Auth "cookie"}}` branches.
 

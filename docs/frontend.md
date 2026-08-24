@@ -36,6 +36,7 @@ frontend/src/
 │   └── router.tsx      # /login, RequireAuth, /, /products/new
 ├── api/
 │   ├── client.ts       # createAppClient + 401 refresh + useApiClient
+│   ├── retry.ts        # buffer POST/PATCH body; rebuild 401 retry init
 │   ├── formErrors.ts   # D10 fields → RHF setError
 │   └── generated/      # schema.ts, client.ts, error.ts
 ├── auth/
@@ -72,7 +73,10 @@ variables. `getAccessToken` is passed into `createGombitClient`.
 `createAppClient` attaches `Authorization: Bearer` and, on 401, calls
 `POST /api/v1/auth/refresh` once using the in-memory refresh token.
 Concurrent 401s wait on that refresh and retry instead of returning the
-stale failure. `RequireAuth` sends anonymous users to `/login`. Logout
+stale failure. The retry rebuilds the request from buffered body bytes
+(gated on method, not the Request.body getter — unimplemented in Firefox)
+rather than cloning the consumed `Request`, so POST/PATCH JSON survives
+silent refresh. `RequireAuth` sends anonymous users to `/login`. Logout
 clears memory and revokes the refresh token. Generated source never reads
 `localStorage` or `sessionStorage`. See [auth.md](auth.md).
 

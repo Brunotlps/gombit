@@ -5,8 +5,10 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -49,6 +51,7 @@ func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
 		"frontend/src/app/providers.tsx",
 		"frontend/src/app/router.tsx",
 		"frontend/src/api/client.ts",
+		"frontend/src/api/retry.ts",
 		"frontend/src/api/formErrors.ts",
 		"frontend/src/api/generated/client.ts",
 		"frontend/src/api/generated/error.ts",
@@ -465,6 +468,123 @@ func TestGenerateRecordsAuthAndUIChoices(t *testing.T) {
 	list := readFile(t, filepath.Join(workDir, "shop", "frontend", "src", "pages", "ProductListPage.tsx"))
 	if !strings.Contains(list, "Table") || !strings.Contains(list, "@mui/material") {
 		t.Fatal("cookie + mui ProductListPage.tsx missing MUI Table")
+	}
+}
+
+// TestGenerate401RetryReusesBufferedBody is the #106 contract: after fetch
+// consumes request.body, `new Request(request, ...)` throws in the browser
+// (or retries POST/PATCH with an empty body). Both auth branches must buffer
+// the body in onRequest and rebuild the retry from those bytes.
+func TestGenerate401RetryReusesBufferedBody(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		auth string
+		want []string
+	}{
+		{
+			name: "jwt",
+			auth: "jwt",
+			want: []string{`headers.set("Authorization", ` + "`Bearer ${access}`" + `)`},
+		},
+		{
+			name: "cookie",
+			auth: "cookie",
+			want: []string{`headers.set("X-CSRF-Token", token)`},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			workDir := t.TempDir()
+			err := Generate(context.Background(), Options{
+				Name:     "demo",
+				Database: "sqlite",
+				Auth:     tt.auth,
+				WorkDir:  workDir,
+			})
+			if err != nil {
+				t.Fatalf("Generate() error = %v", err)
+			}
+			apiDir := filepath.Join(workDir, "demo", "frontend", "src", "api")
+			assert401RetryReusesBufferedBody(t, readFile(t, filepath.Join(apiDir, "client.ts")), readFile(t, filepath.Join(apiDir, "retry.ts")), tt.want)
+		})
+	}
+}
+
+func TestRetryBodyResentWhenRequestBodyUndefined(t *testing.T) {
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("node not available")
+	}
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	harness := filepath.Join(filepath.Dir(thisFile), "testdata", "retry_body_harness.mjs")
+	for _, auth := range []string{"jwt", "cookie"} {
+		t.Run(auth, func(t *testing.T) {
+			workDir := t.TempDir()
+			err := Generate(context.Background(), Options{
+				Name:     "demo",
+				Database: "sqlite",
+				Auth:     auth,
+				WorkDir:  workDir,
+			})
+			if err != nil {
+				t.Fatalf("Generate() error = %v", err)
+			}
+			retryPath := filepath.Join(workDir, "demo", "frontend", "src", "api", "retry.ts")
+			cmd := exec.Command("node", "--experimental-strip-types", "--no-warnings", harness, retryPath) //nolint:gosec // fixed harness argv
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("retry body harness: %v\n%s", err, out)
+			}
+			if !strings.Contains(string(out), "ok") {
+				t.Fatalf("retry body harness stdout = %q, want ok", out)
+			}
+		})
+	}
+}
+
+func assert401RetryReusesBufferedBody(t *testing.T, client, retry string, extra []string) {
+	t.Helper()
+	if strings.Contains(client, "new Request(request") {
+		t.Error("api/client.ts 401 retry clones a consumed Request; rebuild from buffered body bytes instead")
+	}
+	for _, src := range []string{client, retry} {
+		if strings.Contains(src, "request.body !=") || strings.Contains(src, "request.body !==") {
+			t.Error("401 retry must not gate on Request.body (undefined in Firefox); gate on method")
+		}
+	}
+	for _, want := range append([]string{
+		"refreshInFlight",
+		"isAuthURL",
+		`from "./retry"`,
+		"bufferRetryBody",
+		"fetch(request.url",
+		"retryInit(",
+	}, extra...) {
+		if !strings.Contains(client, want) {
+			t.Errorf("api/client.ts missing %q", want)
+		}
+	}
+	for _, want := range []string{
+		`request.method !== "GET" && request.method !== "HEAD"`,
+		"request.clone().arrayBuffer()",
+		"init.body = body",
+		"signal: request.signal",
+		"mode: request.mode",
+		"cache: request.cache",
+		"redirect: request.redirect",
+		"referrer: request.referrer",
+		"referrerPolicy: request.referrerPolicy",
+		"integrity: request.integrity",
+		"keepalive: request.keepalive",
+	} {
+		if !strings.Contains(retry, want) {
+			t.Errorf("api/retry.ts missing %q", want)
+		}
+	}
+	lower := strings.ToLower(client + retry)
+	if strings.Contains(lower, "localstorage") || strings.Contains(lower, "sessionstorage") {
+		t.Error("api/client.ts uses web storage")
 	}
 }
 
