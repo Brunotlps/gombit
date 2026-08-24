@@ -371,8 +371,6 @@ func renderMinimalListTSX(ctx renderContext) string {
 	b.WriteString("    <section>\n")
 	b.WriteString("      <h1>" + ctx.Resource.Tag + "</h1>\n")
 	b.WriteString("      <p>\n")
-	b.WriteString("        <Link to=\"/\">Products</Link>\n")
-	b.WriteString("        {\" · \"}\n")
 	b.WriteString("        <Link to=\"/" + ctx.Resource.Kebab + "/new\">New " + ctx.Resource.TypeName + "</Link>\n")
 	b.WriteString("      </p>\n")
 	b.WriteString("      <table>\n")

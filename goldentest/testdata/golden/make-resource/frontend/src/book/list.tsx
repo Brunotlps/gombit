@@ -51,8 +51,6 @@ export function BookListPage() {
     <section>
       <h1>Books</h1>
       <p>
-        <Link to="/">Products</Link>
-        {" · "}
         <Link to="/books/new">New Book</Link>
       </p>
       <table>
