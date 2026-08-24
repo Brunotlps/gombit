@@ -710,7 +710,7 @@ func assertSPAHonorsRuntimeAPIPrefix(t *testing.T, dest, auth string) {
 	}
 
 	readme := readFile(t, filepath.Join(dest, "frontend", "README.md"))
-	if !strings.Contains(readme, "A CDN must replace __GOMBIT_API_PREFIX__") {
+	if !strings.Contains(readme, "A CDN must replace `__GOMBIT_API_PREFIX__`") {
 		t.Error("frontend/README.md must document split-deploy placeholder substitution")
 	}
 	envExample := readFile(t, filepath.Join(dest, ".env.example"))

@@ -280,7 +280,7 @@ func assertRuntimeAPIPrefix(t *testing.T, files fileMap, auth string) {
 		t.Error("vite.config.ts must inject GOMBIT_API_PREFIX during vite dev")
 	}
 	readme := string(files["frontend/README.md"])
-	if !strings.Contains(readme, "A CDN must replace __GOMBIT_API_PREFIX__") {
+	if !strings.Contains(readme, "A CDN must replace `__GOMBIT_API_PREFIX__`") {
 		t.Error("frontend/README.md must document split-deploy placeholder substitution")
 	}
 	envExample := string(files[".env.example"])
