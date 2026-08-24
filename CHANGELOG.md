@@ -27,6 +27,10 @@ version.
 
 ### Fixed
 
+- Unknown-email login timing pad no longer races on `Service.dummyHash`.
+  `compareDummy` initializes the dummy bcrypt hash once via `sync.Once` so
+  concurrent `Authenticate` misses are race-free
+  ([#113](https://github.com/gombit-dev/gombit/issues/113)).
 - `gombit make resource` no longer hardcodes a **Products** home link on
   generated list pages. AppLayout already exposes that nav; Books (and any
   other resource) keep a New link only
