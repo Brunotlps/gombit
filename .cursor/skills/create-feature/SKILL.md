@@ -66,4 +66,4 @@ Until `go.mod` exists, verification is: the change matches the issue AC, does no
 
 - One issue → one PR where practical.
 - Conventional commit prefix is fine (`feat:`, `docs:`, `chore:`).
-- After implementing, run the `code-review` skill against the diff before calling the work done.
+- After implementing, run the `code-review` skill against the diff before calling the work done. That skill is an adversarial contract review (`# APPROVE` / `# COMMENT` / `# REQUEST CHANGES`), not a checklist dump.

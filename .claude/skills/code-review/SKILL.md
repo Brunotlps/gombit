@@ -1,13 +1,13 @@
 ---
 name: code-review
-description: Reviews a Gombit diff or pull request against the agent working agreement, locked architecture decisions, and Go/React security conventions. Use when the user asks for a code review, PR review, diff review, or to check a change before merge.
+description: Adversarial senior review of a Gombit diff or pull request. Determines whether the change deserves to merge against its claimed contract, the agent working agreement, and locked architecture decisions. Use when the user asks for a code review, PR review, diff review, or to check a change before merge.
 ---
 
 # Code Review
 
-Review the current diff (or a named PR/branch) against Gombit's definition of done. Read `AGENTS.md` first. This is the Claude Code project skill that `AGENTS.md` and `CLAUDE.md` refer to; it overrides the bundled `/code-review` for this repo.
+Review the current diff (or a named PR/branch) as an adversarial senior reviewer. Read `AGENTS.md` first. This is the Claude Code project skill that `AGENTS.md` and `CLAUDE.md` refer to; it overrides the bundled `/code-review` for this repo.
 
-The Cursor counterpart is `.cursor/skills/code-review/SKILL.md`. Keep both aligned.
+The Cursor counterpart is `.cursor/skills/code-review/SKILL.md`. Keep both aligned, including [references/adversarial-review.md](references/adversarial-review.md).
 
 ## When not to use
 
@@ -19,61 +19,15 @@ The Cursor counterpart is `.cursor/skills/code-review/SKILL.md`. Keep both align
 1. Determine the review surface: `git diff` / `git diff main...HEAD` / the named PR.
 2. Identify the linked issue (`[ID] ...`) and its acceptance criteria in `docs/GOMBIT_BUILD_PLAN.md` §4.
 3. If the repo is still pre-code, review docs and scaffolding for invented APIs, scope creep, and decision regressions — not imaginary runtime files.
-4. Load [references/checklist.md](references/checklist.md) and walk every item that applies to the diff.
+4. Load [references/checklist.md](references/checklist.md). Walk only the sections the diff touches. Treat each item as a contract to attack, not a substitute for tracing the change end-to-end.
+5. **Read [references/adversarial-review.md](references/adversarial-review.md) in full before writing any review.** That file is the review: persona, method, severity, output format, and merge standard. Do not fall back to a diplomatic template, a findings dump, or the old Verdict / Blockers / Major / Minor outline.
 
 ## How to review
 
-Follow [Go Code Review Comments](https://go.dev/wiki/CodeReviewComments) and [Go Test Comments](https://go.dev/wiki/TestComments) for style. Gombit-specific bars outrank generic style nits.
+Follow [references/adversarial-review.md](references/adversarial-review.md) exactly.
 
-Prefer findings over praise. Do not re-litigate locked decisions (Huma, feature-packages, Atlas, JWT-in-memory, D10 envelope, AST-only generators). If the author did re-litigate one, that is a **blocker**.
+Technical analysis comes first. Personality is presentation only. Do not invent a problem to produce an entertaining review. Do not re-litigate locked decisions (Huma, feature-packages, Atlas, JWT-in-memory, D10 envelope, AST-only generators, Cobra, ADR-013). If the author did re-litigate one, that is **BLOCKING**.
 
-## Output format
+The review you write must begin with exactly one of `# APPROVE`, `# COMMENT`, or `# REQUEST CHANGES`, then a short opening assessment, numbered findings, and `# VERDICT`. Do not use a different heading scheme.
 
-Write the review in this order:
-
-```markdown
-## Verdict
-Approve | Request changes | Comment-only
-
-## Issue / AC
-- Issue: [ID] ...
-- AC covered: ...
-- AC missing: ...
-
-## Blockers
-- ...
-
-## Major
-- ...
-
-## Minor / nits
-- ...
-
-## Questions
-- ...
-```
-
-Severity:
-
-| Severity | Meaning |
-| --- | --- |
-| **Blocker** | Violates the working agreement, a locked decision, a security invariant, or stated AC. Must fix before merge. |
-| **Major** | Correctness, test gap, contract drift, or extraction-turned-rewrite. Should fix in this PR. |
-| **Minor** | Idiom, naming, docs. Fix if cheap; do not expand scope. |
-
-Cite `path:line` (or a hunk) for every finding. Suggest the fix; do not implement unless the user asked.
-
-## What "approve" requires
-
-All of build plan §5 / `AGENTS.md` working agreement:
-
-1. Tests for new behavior; DB changes green on SQLite + PostgreSQL + MySQL.
-2. Docs + example for stable features.
-3. Extraction, not rewrite, of code that already passes tests.
-4. Generator safety (`go/ast`, idempotent, `--dry-run` / `--force`, no silent overwrite).
-5. No secrets in generated frontend; `VITE_*` is public; Appendix C prod checks still fail loudly.
-6. API changes regenerate OpenAPI + TS client in the same PR.
-7. Scope stays in-milestone; no M6 batteries.
-8. PR links its issue and lists satisfied AC.
-
-If the change is docs-only or pre-code, apply the subset that still makes sense (scope, decisions, AC, no invented APIs).
+Suggest the fix; do not implement unless the user asked.
