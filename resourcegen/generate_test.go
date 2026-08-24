@@ -127,6 +127,15 @@ func TestGenerateBookFeaturePackage(t *testing.T) {
 	if strings.Contains(listTS, "@mui/material") {
 		t.Fatal("default make resource must stay headless")
 	}
+	if strings.Contains(listTS, `to="/">Products</Link>`) {
+		t.Fatal("generated Book list.tsx hardcodes a Products home link; AppLayout already exposes that nav")
+	}
+	if strings.Contains(listTS, "Products") {
+		t.Fatalf("generated Book list.tsx still mentions Products:\n%s", listTS)
+	}
+	if !strings.Contains(listTS, `to="/books/new">New Book</Link>`) {
+		t.Fatal("generated Book list.tsx missing New Book link")
+	}
 	formTS := readFile(t, filepath.Join(appDir, "frontend", "src", "book", "form.tsx"))
 	if !strings.Contains(formTS, "applyContractErrors") || !strings.Contains(formTS, "setError") {
 		t.Fatal("form.tsx does not map D10 field errors through applyContractErrors")

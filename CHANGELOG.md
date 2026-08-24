@@ -27,6 +27,10 @@ version.
 
 ### Fixed
 
+- `gombit make resource` no longer hardcodes a **Products** home link on
+  generated list pages. AppLayout already exposes that nav; Books (and any
+  other resource) keep a New link only
+  ([#112](https://github.com/gombit-dev/gombit/issues/112)).
 - Generated get/create handlers map GORM errors to D10 categories instead of
   collapsing every load failure to `not_found` and every persist failure to
   `internal`. Missing rows are 404 `not_found`; unique/duplicate keys are 409
