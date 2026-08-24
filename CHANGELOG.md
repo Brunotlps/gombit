@@ -27,6 +27,9 @@ version.
 
 ### Fixed
 
+- Generated SPA 401 interceptor no longer clones a consumed `Request` after
+  silent refresh. POST/PATCH retries now resend the buffered JSON body
+  ([#106](https://github.com/gombit-dev/gombit/issues/106)).
 - XSS JSON sanitization no longer `io.ReadAll`s request bodies without a
   bound: JSON sanitizer buffering is capped at 8MiB (HTTP 413, D10
   `payload_too_large`), and `http.Server.ReadTimeout` follows

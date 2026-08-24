@@ -18,7 +18,8 @@ export const ApiClientContext = createContext<ApiClient | null>(null);
  *
  * On 401, rotate the in-memory refresh token once and retry. Concurrent
  * 401s share that refresh instead of returning stale failures. Tokens are
- * never written to web storage.
+ * never written to web storage. The retry rebuilds fetch() from buffered
+ * body bytes so POST/PATCH JSON survives silent refresh.
  */
 export function createAppClient(): ApiClient {
   const baseUrl = import.meta.env.VITE_API_URL ?? "";
@@ -28,6 +29,7 @@ export function createAppClient(): ApiClient {
   });
 
   let refreshInFlight: Promise<boolean> | null = null;
+  const retryBodies = new WeakMap<Request, ArrayBuffer>();
 
   async function refreshSession(): Promise<boolean> {
     if (refreshInFlight) {
@@ -57,6 +59,14 @@ export function createAppClient(): ApiClient {
   }
 
   client.use({
+    async onRequest({ request }) {
+      // Fetch consumes request.body; buffer bytes so a 401 retry can resend
+      // POST/PATCH JSON after silent refresh.
+      if (request.body != null) {
+        retryBodies.set(request, await request.clone().arrayBuffer());
+      }
+      return request;
+    },
     async onResponse({ request, response }) {
       if (response.status !== 401 || isAuthURL(request.url)) {
         return response;
@@ -65,14 +75,12 @@ export function createAppClient(): ApiClient {
       if (!ok) {
         return response;
       }
-      const retry = new Request(request, {
-        headers: new Headers(request.headers),
-      });
+      const headers = new Headers(request.headers);
       const access = getAccessToken();
       if (access) {
-        retry.headers.set("Authorization", `Bearer ${access}`);
+        headers.set("Authorization", `Bearer ${access}`);
       }
-      return fetch(retry);
+      return fetch(request.url, retryInit(request, headers, retryBodies.get(request)));
     },
   });
   return client;
@@ -84,6 +92,18 @@ export function useApiClient(): ApiClient {
     throw new Error("useApiClient must be used within AppProviders");
   }
   return client;
+}
+
+function retryInit(request: Request, headers: Headers, body: ArrayBuffer | undefined): RequestInit {
+  const init: RequestInit = {
+    method: request.method,
+    headers,
+    credentials: request.credentials,
+  };
+  if (body !== undefined && request.method !== "GET" && request.method !== "HEAD") {
+    init.body = body;
+  }
+  return init;
 }
 
 function isAuthURL(url: string): boolean {

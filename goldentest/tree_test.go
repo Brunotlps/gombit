@@ -89,6 +89,7 @@ func assertFrontendInvariants(t *testing.T, files fileMap) {
 	if !strings.Contains(client, "refreshInFlight") {
 		t.Error("client.ts missing shared refresh promise")
 	}
+	assert401RetryReusesBufferedBody(t, client, []string{`headers.set("Authorization", ` + "`Bearer ${access}`" + `)`})
 }
 
 // assertCookieFrontendInvariants is assertFrontendInvariants' counterpart for
@@ -141,6 +142,7 @@ func assertCookieFrontendInvariants(t *testing.T, files fileMap) {
 	if !strings.Contains(client, "X-CSRF-Token") {
 		t.Error("cookie-mode client.ts missing X-CSRF-Token double-submit")
 	}
+	assert401RetryReusesBufferedBody(t, client, []string{`headers.set("X-CSRF-Token", token)`})
 }
 
 func assertMUIFrontendInvariants(t *testing.T, files fileMap) {
@@ -173,6 +175,27 @@ func assertMUIFrontendInvariants(t *testing.T, files fileMap) {
 	}
 	if !strings.Contains(login, "TextField") && !strings.Contains(login, "Paper") {
 		t.Error("MUI LoginPage.tsx missing Paper/TextField")
+	}
+}
+
+// assert401RetryReusesBufferedBody is the #106 contract: 401 retries must
+// not clone a consumed Request, and must resend the buffered body.
+func assert401RetryReusesBufferedBody(t *testing.T, src string, extra []string) {
+	t.Helper()
+	if strings.Contains(src, "new Request(request") {
+		t.Error("client.ts 401 retry clones a consumed Request; rebuild from buffered body bytes instead")
+	}
+	for _, want := range append([]string{
+		"refreshInFlight",
+		"isAuthURL",
+		"WeakMap<Request, ArrayBuffer>",
+		"request.clone().arrayBuffer()",
+		"fetch(request.url",
+		"init.body = body",
+	}, extra...) {
+		if !strings.Contains(src, want) {
+			t.Errorf("client.ts missing %q", want)
+		}
 	}
 }
 

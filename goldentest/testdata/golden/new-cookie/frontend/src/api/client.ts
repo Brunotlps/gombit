@@ -20,7 +20,8 @@ const REFRESH_PATH = "/api/v1/auth/refresh";
  * (M5-3). Session cookies (HttpOnly) and the CSRF cookie are managed by the
  * browser on same-origin requests; this wiring adds the X-CSRF-Token
  * double-submit header on state-changing requests and retries once after a
- * silent cookie refresh on 401. See docs/auth-cookie.md.
+ * silent cookie refresh on 401. The retry rebuilds fetch() from buffered
+ * body bytes so POST/PATCH JSON survives that refresh. See docs/auth-cookie.md.
  *
  * The CSRF bootstrap and refresh calls below use fetch directly instead of
  * the typed client: they are session infrastructure, not part of the
@@ -43,6 +44,7 @@ export function createAppClient(): ApiClient {
   });
 
   let refreshInFlight: Promise<boolean> | null = null;
+  const retryBodies = new WeakMap<Request, ArrayBuffer>();
 
   async function refreshSession(): Promise<boolean> {
     if (refreshInFlight) {
@@ -71,6 +73,14 @@ export function createAppClient(): ApiClient {
   }
 
   client.use({
+    async onRequest({ request }) {
+      // Fetch consumes request.body; buffer bytes so a 401 retry can resend
+      // POST/PATCH JSON after silent refresh.
+      if (request.body != null) {
+        retryBodies.set(request, await request.clone().arrayBuffer());
+      }
+      return request;
+    },
     async onResponse({ request, response }) {
       if (response.status !== 401 || isAuthURL(request.url)) {
         return response;
@@ -79,12 +89,12 @@ export function createAppClient(): ApiClient {
       if (!ok) {
         return response;
       }
-      const retry = new Request(request, { headers: new Headers(request.headers) });
+      const headers = new Headers(request.headers);
       const token = getCSRFToken();
       if (token) {
-        retry.headers.set("X-CSRF-Token", token);
+        headers.set("X-CSRF-Token", token);
       }
-      return fetch(retry);
+      return fetch(request.url, retryInit(request, headers, retryBodies.get(request)));
     },
   });
   return client;
@@ -122,6 +132,18 @@ export function useApiClient(): ApiClient {
 
 function isUnsafeMethod(method: string): boolean {
   return method !== "GET" && method !== "HEAD" && method !== "OPTIONS";
+}
+
+function retryInit(request: Request, headers: Headers, body: ArrayBuffer | undefined): RequestInit {
+  const init: RequestInit = {
+    method: request.method,
+    headers,
+    credentials: request.credentials,
+  };
+  if (body !== undefined && request.method !== "GET" && request.method !== "HEAD") {
+    init.body = body;
+  }
+  return init;
 }
 
 function isAuthURL(url: string): boolean {

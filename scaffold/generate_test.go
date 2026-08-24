@@ -468,6 +468,67 @@ func TestGenerateRecordsAuthAndUIChoices(t *testing.T) {
 	}
 }
 
+// TestGenerate401RetryReusesBufferedBody is the #106 contract: after fetch
+// consumes request.body, `new Request(request, ...)` throws in the browser
+// (or retries POST/PATCH with an empty body). Both auth branches must buffer
+// the body in onRequest and rebuild the retry from those bytes.
+func TestGenerate401RetryReusesBufferedBody(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		auth string
+		want []string
+	}{
+		{
+			name: "jwt",
+			auth: "jwt",
+			want: []string{`headers.set("Authorization", ` + "`Bearer ${access}`" + `)`},
+		},
+		{
+			name: "cookie",
+			auth: "cookie",
+			want: []string{`headers.set("X-CSRF-Token", token)`},
+		},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			workDir := t.TempDir()
+			err := Generate(context.Background(), Options{
+				Name:     "demo",
+				Database: "sqlite",
+				Auth:     tt.auth,
+				WorkDir:  workDir,
+			})
+			if err != nil {
+				t.Fatalf("Generate() error = %v", err)
+			}
+			src := readFile(t, filepath.Join(workDir, "demo", "frontend", "src", "api", "client.ts"))
+			assert401RetryReusesBufferedBody(t, src, tt.want)
+		})
+	}
+}
+
+func assert401RetryReusesBufferedBody(t *testing.T, src string, extra []string) {
+	t.Helper()
+	if strings.Contains(src, "new Request(request") {
+		t.Error("api/client.ts 401 retry clones a consumed Request; rebuild from buffered body bytes instead")
+	}
+	for _, want := range append([]string{
+		"refreshInFlight",
+		"isAuthURL",
+		"WeakMap<Request, ArrayBuffer>",
+		"request.clone().arrayBuffer()",
+		"fetch(request.url",
+		"init.body = body",
+	}, extra...) {
+		if !strings.Contains(src, want) {
+			t.Errorf("api/client.ts missing %q", want)
+		}
+	}
+	lower := strings.ToLower(src)
+	if strings.Contains(lower, "localstorage") || strings.Contains(lower, "sessionstorage") {
+		t.Error("api/client.ts uses web storage")
+	}
+}
+
 func TestGenerateMUIPreset(t *testing.T) {
 	workDir := t.TempDir()
 	err := Generate(context.Background(), Options{

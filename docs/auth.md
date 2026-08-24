@@ -75,7 +75,9 @@ Generated `.env.example` keeps a short development placeholder so
 `frontend/src/auth/session.ts` holds both tokens in module variables.
 `createAppClient` sends the access token and, on 401, rotates `/auth/refresh`
 once. Concurrent 401s wait on that same refresh and retry instead of failing
-with the stale response. `RequireAuth` sends anonymous users to `/login`.
+with the stale response. The retry rebuilds the request from buffered body
+bytes so POST/PATCH JSON is resent after silent refresh. `RequireAuth`
+sends anonymous users to `/login`.
 Logout clears memory and revokes the refresh token.
 
 Product pages sit behind `RequireAuth`. Register from the login page is a
