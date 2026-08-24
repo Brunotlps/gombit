@@ -6,6 +6,7 @@ import {
   setAuthenticated,
   setCSRFToken,
 } from "../auth/session";
+import { apiPath, rewriteAPIRequest } from "./apiPrefix";
 import { createGombitClient } from "./generated/client";
 import { bufferRetryBody, retryInit } from "./retry";
 
@@ -13,8 +14,7 @@ export type ApiClient = ReturnType<typeof createGombitClient>;
 
 export const ApiClientContext = createContext<ApiClient | null>(null);
 
-const CSRF_PATH = "/api/v1/auth/csrf";
-const REFRESH_PATH = "/api/v1/auth/refresh";
+export { apiPath, apiPrefix, DEFAULT_API_PREFIX, rewriteAPIRequest } from "./apiPrefix";
 
 /**
  * Wire the generated openapi-fetch client for cookie-mode session auth
@@ -27,6 +27,10 @@ const REFRESH_PATH = "/api/v1/auth/refresh";
  * The CSRF bootstrap and refresh calls below use fetch directly instead of
  * the typed client: they are session infrastructure, not part of the
  * generated application contract that `gombit client generate` produces.
+ * Those URLs go through apiPath() so they follow GOMBIT_API_PREFIX.
+ *
+ * Typed openapi-fetch calls still use `/api/v1/...` path keys (placeholder
+ * OpenAPI). rewriteAPIRequest maps that default prefix to the live one.
  */
 export function createAppClient(): ApiClient {
   const baseUrl = import.meta.env.VITE_API_URL ?? "";
@@ -34,6 +38,7 @@ export function createAppClient(): ApiClient {
 
   client.use({
     onRequest({ request }) {
+      request = rewriteAPIRequest(request);
       if (isUnsafeMethod(request.method)) {
         const token = getCSRFToken();
         if (token) {
@@ -53,7 +58,7 @@ export function createAppClient(): ApiClient {
     }
     refreshInFlight = (async () => {
       try {
-        const response = await fetch(baseUrl + REFRESH_PATH, {
+        const response = await fetch(baseUrl + apiPath("/auth/refresh"), {
           method: "POST",
           credentials: "same-origin",
           headers: csrfRequestHeaders(),
@@ -117,7 +122,7 @@ export function bootstrapCSRF(): Promise<void> {
   csrfInFlight = (async () => {
     try {
       const baseUrl = import.meta.env.VITE_API_URL ?? "";
-      const response = await fetch(baseUrl + CSRF_PATH, {
+      const response = await fetch(baseUrl + apiPath("/auth/csrf"), {
         credentials: "same-origin",
       });
       if (!response.ok) {
@@ -165,3 +170,4 @@ function isAuthURL(url: string): boolean {
     return url.includes("/auth/");
   }
 }
+

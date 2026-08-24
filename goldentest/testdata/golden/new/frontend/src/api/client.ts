@@ -6,6 +6,7 @@ import {
   getAccessToken,
   getRefreshToken,
 } from "../auth/session";
+import { rewriteAPIRequest } from "./apiPrefix";
 import { createGombitClient, unwrap } from "./generated/client";
 import { bufferRetryBody, retryInit } from "./retry";
 
@@ -13,9 +14,15 @@ export type ApiClient = ReturnType<typeof createGombitClient>;
 
 export const ApiClientContext = createContext<ApiClient | null>(null);
 
+export { apiPath, apiPrefix, DEFAULT_API_PREFIX, rewriteAPIRequest } from "./apiPrefix";
+
 /**
  * Wire the generated openapi-fetch client. VITE_API_URL is public; empty
  * means same-origin so the Vite `/api` proxy used by `gombit dev` works.
+ *
+ * Typed calls use `/api/v1/...` OpenAPI path keys. rewriteAPIRequest maps
+ * that default prefix to the live GOMBIT_API_PREFIX so changing `.env`
+ * does not require regenerating frontend source.
  *
  * On 401, rotate the in-memory refresh token once and retry. Concurrent
  * 401s share that refresh instead of returning stale failures. Tokens are
@@ -61,6 +68,7 @@ export function createAppClient(): ApiClient {
 
   client.use({
     async onRequest({ request }) {
+      request = rewriteAPIRequest(request);
       await bufferRetryBody(request, retryBodies);
       return request;
     },
@@ -104,3 +112,4 @@ function isAuthURL(url: string): boolean {
     return url.includes("/auth/");
   }
 }
+
