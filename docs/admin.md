@@ -83,6 +83,9 @@ but not linked). List/detail/create/edit/delete honor both `actions.*` and
 the current user's `can.*`. Field widgets cover the closed
 ADMIN-1 types; `belongs_to` is an FK input; `has_many` is read-only.
 `datetime-local` values are converted to RFC3339 before POST/PATCH.
+Empty optional (non-boolean) inputs — string, text, date, datetime, json,
+number, relation — are sent as JSON `null` so a partial PATCH can clear
+them. Booleans and numeric `0` are always included.
 401 (including session expiry on list/detail/edit) returns to login;
 catalog 403 shows a forbidden page; other catalog errors show the D10
 message.
@@ -213,8 +216,12 @@ List query parameters:
 Row JSON is keyed by registered field names, plus implicit `created_at` /
 `updated_at` when the GORM model has them and they were omitted from
 `Fields`. Create/update accept only writable (non-readonly) fields.
-Unknown keys, readonly keys, and type failures render D10
-`validation_error` with `fields`.
+`PATCH` is partial: omitted keys are left unchanged. A present JSON `null`
+(or `""` for string/text) clears an optional field — pointer dests become
+SQL NULL, non-pointer strings become `""`, `time.Time` becomes zero,
+`json.RawMessage` / `[]byte` become nil. Required fields with `null` still
+422 (`is required`). Unknown keys, readonly keys, and type failures render
+D10 `validation_error` with `fields`.
 
 The application's public CRUD API stays the feature's own typed Huma
 routes. Admin does not replace them.

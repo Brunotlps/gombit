@@ -210,9 +210,6 @@ func makeSetter(index []int, ft FieldType, destType reflect.Type) func(any, any)
 		if err != nil {
 			return err
 		}
-		if coerced == nil {
-			return nil
-		}
 		rv := reflect.ValueOf(inst)
 		if rv.Kind() == reflect.Pointer {
 			rv = rv.Elem()
@@ -221,6 +218,9 @@ func makeSetter(index []int, ft FieldType, destType reflect.Type) func(any, any)
 		if !field.CanSet() {
 			return fmt.Errorf("field is not settable")
 		}
+		// JSON null (coerced == nil) clears the dest: nil pointer, "", zero
+		// time, or a nil json.RawMessage/[]byte. Missing PATCH keys never
+		// reach this setter, so the update stays partial.
 		assigned, err := convertTo(coerced, destType)
 		if err != nil {
 			return err
@@ -231,6 +231,9 @@ func makeSetter(index []int, ft FieldType, destType reflect.Type) func(any, any)
 }
 
 func convertTo(val any, dest reflect.Type) (reflect.Value, error) {
+	if val == nil {
+		return reflect.Zero(dest), nil
+	}
 	if dest.Kind() == reflect.Pointer {
 		inner, err := convertTo(val, dest.Elem())
 		if err != nil {

@@ -56,6 +56,9 @@ export function formValuesToBody(values: Row, fields: FieldMeta[]): { body: Row;
     if (field.type === "json") {
       const text = raw === undefined || raw === null ? "" : String(raw).trim();
       if (text === "") {
+        // Include null so PATCH can clear an optional JSON column. Omit
+        // would leave the previous value (applyWrite is key-present).
+        body[field.name] = null;
         continue;
       }
       try {
@@ -70,7 +73,8 @@ export function formValuesToBody(values: Row, fields: FieldMeta[]): { body: Row;
       continue;
     }
     if (field.type === "integer" || field.type === "float" || field.type === "decimal") {
-      if (raw === "" || raw === undefined || raw === null) {
+      if (isEmptyFormValue(raw)) {
+        body[field.name] = null;
         continue;
       }
       const n = Number(raw);
@@ -81,7 +85,8 @@ export function formValuesToBody(values: Row, fields: FieldMeta[]): { body: Row;
       body[field.name] = field.type === "integer" ? Math.trunc(n) : n;
       continue;
     }
-    if (raw === "" || raw === undefined || raw === null) {
+    if (isEmptyFormValue(raw)) {
+      body[field.name] = null;
       continue;
     }
     if (field.type === "datetime") {
@@ -96,6 +101,10 @@ export function formValuesToBody(values: Row, fields: FieldMeta[]): { body: Row;
     body[field.name] = raw;
   }
   return { body, jsonErrors };
+}
+
+function isEmptyFormValue(raw: unknown): boolean {
+  return raw === "" || raw === undefined || raw === null;
 }
 
 /**
