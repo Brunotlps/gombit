@@ -89,7 +89,11 @@ func assertFrontendInvariants(t *testing.T, files fileMap) {
 	if !strings.Contains(client, "refreshInFlight") {
 		t.Error("client.ts missing shared refresh promise")
 	}
-	assert401RetryReusesBufferedBody(t, client, []string{`headers.set("Authorization", ` + "`Bearer ${access}`" + `)`})
+	retry := string(files["frontend/src/api/retry.ts"])
+	if retry == "" {
+		t.Fatal("missing frontend/src/api/retry.ts")
+	}
+	assert401RetryReusesBufferedBody(t, client, retry, []string{`headers.set("Authorization", ` + "`Bearer ${access}`" + `)`})
 }
 
 // assertCookieFrontendInvariants is assertFrontendInvariants' counterpart for
@@ -142,7 +146,11 @@ func assertCookieFrontendInvariants(t *testing.T, files fileMap) {
 	if !strings.Contains(client, "X-CSRF-Token") {
 		t.Error("cookie-mode client.ts missing X-CSRF-Token double-submit")
 	}
-	assert401RetryReusesBufferedBody(t, client, []string{`headers.set("X-CSRF-Token", token)`})
+	retry := string(files["frontend/src/api/retry.ts"])
+	if retry == "" {
+		t.Fatal("missing frontend/src/api/retry.ts")
+	}
+	assert401RetryReusesBufferedBody(t, client, retry, []string{`headers.set("X-CSRF-Token", token)`})
 }
 
 func assertMUIFrontendInvariants(t *testing.T, files fileMap) {
@@ -179,22 +187,45 @@ func assertMUIFrontendInvariants(t *testing.T, files fileMap) {
 }
 
 // assert401RetryReusesBufferedBody is the #106 contract: 401 retries must
-// not clone a consumed Request, and must resend the buffered body.
-func assert401RetryReusesBufferedBody(t *testing.T, src string, extra []string) {
+// not clone a consumed Request, must not gate on Request.body (Firefox),
+// and must resend the buffered body.
+func assert401RetryReusesBufferedBody(t *testing.T, client, retry string, extra []string) {
 	t.Helper()
-	if strings.Contains(src, "new Request(request") {
+	if strings.Contains(client, "new Request(request") {
 		t.Error("client.ts 401 retry clones a consumed Request; rebuild from buffered body bytes instead")
+	}
+	for _, src := range []string{client, retry} {
+		if strings.Contains(src, "request.body !=") || strings.Contains(src, "request.body !==") {
+			t.Error("401 retry must not gate on Request.body (undefined in Firefox); gate on method")
+		}
 	}
 	for _, want := range append([]string{
 		"refreshInFlight",
 		"isAuthURL",
-		"WeakMap<Request, ArrayBuffer>",
-		"request.clone().arrayBuffer()",
+		`from "./retry"`,
+		"bufferRetryBody",
 		"fetch(request.url",
-		"init.body = body",
+		"retryInit(",
 	}, extra...) {
-		if !strings.Contains(src, want) {
+		if !strings.Contains(client, want) {
 			t.Errorf("client.ts missing %q", want)
+		}
+	}
+	for _, want := range []string{
+		`request.method !== "GET" && request.method !== "HEAD"`,
+		"request.clone().arrayBuffer()",
+		"init.body = body",
+		"signal: request.signal",
+		"mode: request.mode",
+		"cache: request.cache",
+		"redirect: request.redirect",
+		"referrer: request.referrer",
+		"referrerPolicy: request.referrerPolicy",
+		"integrity: request.integrity",
+		"keepalive: request.keepalive",
+	} {
+		if !strings.Contains(retry, want) {
+			t.Errorf("retry.ts missing %q", want)
 		}
 	}
 }

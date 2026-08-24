@@ -5,8 +5,10 @@ import (
 	"context"
 	"errors"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -49,6 +51,7 @@ func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
 		"frontend/src/app/providers.tsx",
 		"frontend/src/app/router.tsx",
 		"frontend/src/api/client.ts",
+		"frontend/src/api/retry.ts",
 		"frontend/src/api/formErrors.ts",
 		"frontend/src/api/generated/client.ts",
 		"frontend/src/api/generated/error.ts",
@@ -500,30 +503,86 @@ func TestGenerate401RetryReusesBufferedBody(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Generate() error = %v", err)
 			}
-			src := readFile(t, filepath.Join(workDir, "demo", "frontend", "src", "api", "client.ts"))
-			assert401RetryReusesBufferedBody(t, src, tt.want)
+			apiDir := filepath.Join(workDir, "demo", "frontend", "src", "api")
+			assert401RetryReusesBufferedBody(t, readFile(t, filepath.Join(apiDir, "client.ts")), readFile(t, filepath.Join(apiDir, "retry.ts")), tt.want)
 		})
 	}
 }
 
-func assert401RetryReusesBufferedBody(t *testing.T, src string, extra []string) {
+func TestRetryBodyResentWhenRequestBodyUndefined(t *testing.T) {
+	if _, err := exec.LookPath("node"); err != nil {
+		t.Skip("node not available")
+	}
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		t.Fatal("runtime.Caller failed")
+	}
+	harness := filepath.Join(filepath.Dir(thisFile), "testdata", "retry_body_harness.mjs")
+	for _, auth := range []string{"jwt", "cookie"} {
+		t.Run(auth, func(t *testing.T) {
+			workDir := t.TempDir()
+			err := Generate(context.Background(), Options{
+				Name:     "demo",
+				Database: "sqlite",
+				Auth:     auth,
+				WorkDir:  workDir,
+			})
+			if err != nil {
+				t.Fatalf("Generate() error = %v", err)
+			}
+			retryPath := filepath.Join(workDir, "demo", "frontend", "src", "api", "retry.ts")
+			cmd := exec.Command("node", "--experimental-strip-types", "--no-warnings", harness, retryPath) //nolint:gosec // fixed harness argv
+			out, err := cmd.CombinedOutput()
+			if err != nil {
+				t.Fatalf("retry body harness: %v\n%s", err, out)
+			}
+			if !strings.Contains(string(out), "ok") {
+				t.Fatalf("retry body harness stdout = %q, want ok", out)
+			}
+		})
+	}
+}
+
+func assert401RetryReusesBufferedBody(t *testing.T, client, retry string, extra []string) {
 	t.Helper()
-	if strings.Contains(src, "new Request(request") {
+	if strings.Contains(client, "new Request(request") {
 		t.Error("api/client.ts 401 retry clones a consumed Request; rebuild from buffered body bytes instead")
+	}
+	for _, src := range []string{client, retry} {
+		if strings.Contains(src, "request.body !=") || strings.Contains(src, "request.body !==") {
+			t.Error("401 retry must not gate on Request.body (undefined in Firefox); gate on method")
+		}
 	}
 	for _, want := range append([]string{
 		"refreshInFlight",
 		"isAuthURL",
-		"WeakMap<Request, ArrayBuffer>",
-		"request.clone().arrayBuffer()",
+		`from "./retry"`,
+		"bufferRetryBody",
 		"fetch(request.url",
-		"init.body = body",
+		"retryInit(",
 	}, extra...) {
-		if !strings.Contains(src, want) {
+		if !strings.Contains(client, want) {
 			t.Errorf("api/client.ts missing %q", want)
 		}
 	}
-	lower := strings.ToLower(src)
+	for _, want := range []string{
+		`request.method !== "GET" && request.method !== "HEAD"`,
+		"request.clone().arrayBuffer()",
+		"init.body = body",
+		"signal: request.signal",
+		"mode: request.mode",
+		"cache: request.cache",
+		"redirect: request.redirect",
+		"referrer: request.referrer",
+		"referrerPolicy: request.referrerPolicy",
+		"integrity: request.integrity",
+		"keepalive: request.keepalive",
+	} {
+		if !strings.Contains(retry, want) {
+			t.Errorf("api/retry.ts missing %q", want)
+		}
+	}
+	lower := strings.ToLower(client + retry)
 	if strings.Contains(lower, "localstorage") || strings.Contains(lower, "sessionstorage") {
 		t.Error("api/client.ts uses web storage")
 	}

@@ -7,6 +7,7 @@ import {
   getRefreshToken,
 } from "../auth/session";
 import { createGombitClient, unwrap } from "./generated/client";
+import { bufferRetryBody, retryInit } from "./retry";
 
 export type ApiClient = ReturnType<typeof createGombitClient>;
 
@@ -60,11 +61,7 @@ export function createAppClient(): ApiClient {
 
   client.use({
     async onRequest({ request }) {
-      // Fetch consumes request.body; buffer bytes so a 401 retry can resend
-      // POST/PATCH JSON after silent refresh.
-      if (request.body != null) {
-        retryBodies.set(request, await request.clone().arrayBuffer());
-      }
+      await bufferRetryBody(request, retryBodies);
       return request;
     },
     async onResponse({ request, response }) {
@@ -92,18 +89,6 @@ export function useApiClient(): ApiClient {
     throw new Error("useApiClient must be used within AppProviders");
   }
   return client;
-}
-
-function retryInit(request: Request, headers: Headers, body: ArrayBuffer | undefined): RequestInit {
-  const init: RequestInit = {
-    method: request.method,
-    headers,
-    credentials: request.credentials,
-  };
-  if (body !== undefined && request.method !== "GET" && request.method !== "HEAD") {
-    init.body = body;
-  }
-  return init;
 }
 
 function isAuthURL(url: string): boolean {

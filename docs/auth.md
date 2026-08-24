@@ -76,7 +76,8 @@ Generated `.env.example` keeps a short development placeholder so
 `createAppClient` sends the access token and, on 401, rotates `/auth/refresh`
 once. Concurrent 401s wait on that same refresh and retry instead of failing
 with the stale response. The retry rebuilds the request from buffered body
-bytes so POST/PATCH JSON is resent after silent refresh. `RequireAuth`
+bytes so POST/PATCH JSON is resent after silent refresh (buffering is gated
+on method because Firefox's Request.body getter is unimplemented). `RequireAuth`
 sends anonymous users to `/login`.
 Logout clears memory and revokes the refresh token.
 
