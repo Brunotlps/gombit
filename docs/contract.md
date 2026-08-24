@@ -150,6 +150,12 @@ Helpers: `Validation`, `Authentication`, `Authorization`, `NotFound`,
 `New(category, message)`. Always wrap with `WithContext` in handlers so
 `request_id` is set — constructors alone leave it empty.
 
+Gin middleware may also emit D10 errors that are not §41 categories.
+`contract.PayloadTooLarge` (`error.code` `payload_too_large`, HTTP 413) is
+used by XSS JSON sanitizer buffering (see [`docs/router.md`](router.md));
+cookie CSRF uses `Authorization` (403). Do not treat 413 as a handler-level
+§41 category or add it to the table above.
+
 `WithFields` attaches D10 `fields` without forcing the code to
 `validation_error` (for example a `conflict` with a field detail). Huma tag
 validation still uses the Install path and always yields `validation_error`.

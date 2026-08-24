@@ -13,6 +13,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/danielgtaylor/huma/v2/adapters/humagin"
+	"github.com/gin-gonic/gin"
 	"github.com/gombit-dev/gombit/admin"
 	"github.com/gombit-dev/gombit/auth"
 	"github.com/gombit-dev/gombit/cache"
@@ -21,9 +24,6 @@ import (
 	"github.com/gombit-dev/gombit/database"
 	"github.com/gombit-dev/gombit/internal/adminui"
 	"github.com/gombit-dev/gombit/logging"
-	"github.com/danielgtaylor/huma/v2"
-	"github.com/danielgtaylor/huma/v2/adapters/humagin"
-	"github.com/gin-gonic/gin"
 	"github.com/redis/go-redis/v9"
 	"go.uber.org/zap"
 	"gorm.io/gorm"
@@ -353,6 +353,7 @@ func RunContext(ctx context.Context, app *App) error {
 	server := &http.Server{
 		Handler:           app.Router(),
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       app.Config().HTTP.RequestTimeout,
 		WriteTimeout:      app.Config().HTTP.RequestTimeout,
 		IdleTimeout:       app.Config().HTTP.RequestTimeout,
 	}

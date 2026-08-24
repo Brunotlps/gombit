@@ -10,12 +10,18 @@ import (
 	"strings"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gombit-dev/gombit/contract"
 	"golang.org/x/net/html"
 )
 
 // xssPasswordField is exempt from sanitization (exact JSON/query key match,
 // case-sensitive). Keys like "Password" or nested paths still get stripped.
 const xssPasswordField = "password"
+
+// maxJSONBodyBytes caps XSS JSON body buffering (issue #137). A first-class
+// body-size middleware is still deferred (docs/router.md); this keeps
+// sanitizeJSONBody from io.ReadAll-ing an attacker-controlled stream.
+const maxJSONBodyBytes int64 = 8 << 20
 
 // Elements whose text content must not reach handlers (matched to HTML
 // sanitizer "strict" expectations: tags stripped, dangerous element bodies
@@ -45,8 +51,23 @@ func xssMiddleware() gin.HandlerFunc {
 		case http.MethodPost, http.MethodPut, http.MethodPatch:
 			sanitizeJSONBody(c)
 		}
+		if c.IsAborted() {
+			return
+		}
 		c.Next()
 	}
+}
+
+func writeXSSError(c *gin.Context, env *contract.ErrorEnvelope) {
+	env = contract.WithContext(c.Request.Context(), env)
+	if env == nil {
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	c.Abort()
+	c.Header("Content-Type", "application/json")
+	c.Status(env.GetStatus())
+	_ = json.NewEncoder(c.Writer).Encode(env)
 }
 
 func sanitizeQuery(c *gin.Context) {
@@ -78,10 +99,18 @@ func sanitizeJSONBody(c *gin.Context) {
 		return
 	}
 
-	raw, err := io.ReadAll(c.Request.Body)
+	limited := io.LimitReader(c.Request.Body, maxJSONBodyBytes+1)
+	raw, err := io.ReadAll(limited)
 	_ = c.Request.Body.Close()
 	if err != nil {
+		// Leave an empty body so Gin/Huma can emit a normal D10 validation
+		// error. Aborting with a bare 400 would skip the envelope (D10).
 		c.Request.Body = io.NopCloser(bytes.NewReader(nil))
+		return
+	}
+	if int64(len(raw)) > maxJSONBodyBytes {
+		c.Request.Body = io.NopCloser(bytes.NewReader(nil))
+		writeXSSError(c, contract.PayloadTooLarge("JSON body exceeds the 8MiB sanitizer buffer"))
 		return
 	}
 	if len(bytes.TrimSpace(raw)) == 0 {

@@ -70,4 +70,15 @@ func TestNewConstructors(t *testing.T) {
 	if val.Body.Message != validationMessage {
 		t.Fatalf("validation message = %q", val.Body.Message)
 	}
+
+	tooLarge := PayloadTooLarge("")
+	if tooLarge.GetStatus() != http.StatusRequestEntityTooLarge {
+		t.Fatalf("payload too large status = %d, want 413", tooLarge.GetStatus())
+	}
+	if tooLarge.Body.Code != CodePayloadTooLarge {
+		t.Fatalf("payload too large code = %q, want %s", tooLarge.Body.Code, CodePayloadTooLarge)
+	}
+	if tooLarge.Body.Message == "" {
+		t.Fatal("payload too large message is empty")
+	}
 }

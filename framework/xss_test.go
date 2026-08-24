@@ -9,8 +9,10 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/gombit-dev/gombit/contract"
 )
 
 func TestStripHTML(t *testing.T) {
@@ -98,6 +100,111 @@ func TestSanitizeJSONBodyEmptyBodyNoop(t *testing.T) {
 	}
 	if string(got) != "   " {
 		t.Fatalf("body = %q, want unchanged whitespace", got)
+	}
+}
+
+func TestSanitizeJSONBodyRejectsOversized(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	body := bytes.Repeat([]byte("x"), int(maxJSONBodyBytes)+1)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(body))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	sanitizeJSONBody(c)
+
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusRequestEntityTooLarge)
+	}
+	if !c.IsAborted() {
+		t.Fatal("expected XSS sanitizer to abort an oversized JSON body")
+	}
+	assertXSSPayloadTooLarge(t, rec)
+}
+
+type infiniteJSONReader struct{}
+
+func (infiniteJSONReader) Read(p []byte) (int, error) {
+	for i := range p {
+		p[i] = 'x'
+	}
+	return len(p), nil
+}
+
+func TestSanitizeJSONBodyDoesNotBlockOnInfiniteBody(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", infiniteJSONReader{})
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	done := make(chan struct{})
+	go func() {
+		sanitizeJSONBody(c)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("sanitizeJSONBody blocked on unbounded ReadAll")
+	}
+	if rec.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusRequestEntityTooLarge)
+	}
+	if !c.IsAborted() {
+		t.Fatal("expected XSS sanitizer to abort an unbounded JSON body")
+	}
+	assertXSSPayloadTooLarge(t, rec)
+}
+
+type errJSONReader struct{}
+
+func (errJSONReader) Read([]byte) (int, error) {
+	return 0, io.ErrUnexpectedEOF
+}
+
+func TestSanitizeJSONBodyReadErrorLeavesEmptyBody(t *testing.T) {
+	t.Parallel()
+
+	gin.SetMode(gin.TestMode)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", errJSONReader{})
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	sanitizeJSONBody(c)
+
+	if c.IsAborted() {
+		t.Fatal("read error should not abort; Huma/Gin emit D10 for the empty body")
+	}
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want recorder default %d (no abort)", rec.Code, http.StatusOK)
+	}
+	got, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("body = %q, want empty so handlers can reject it", got)
+	}
+}
+
+func assertXSSPayloadTooLarge(t *testing.T, rec *httptest.ResponseRecorder) {
+	t.Helper()
+	var env contract.ErrorEnvelope
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode D10 envelope: %v; body: %s", err, rec.Body.String())
+	}
+	if env.Body.Code != contract.CodePayloadTooLarge {
+		t.Fatalf("error.code = %q, want %q; body: %s", env.Body.Code, contract.CodePayloadTooLarge, rec.Body.String())
+	}
+	if env.Body.Message == "" {
+		t.Fatalf("error.message empty; body: %s", rec.Body.String())
 	}
 }
 

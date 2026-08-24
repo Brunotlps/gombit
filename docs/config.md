@@ -82,7 +82,7 @@ are ignored. Production config rejects values that trust all proxies, such as
 `0.0.0.0/0`.
 `GOMBIT_HTTP_REQUEST_TIMEOUT` uses Go duration syntax such as `30s` or `2m`.
 The value sets the cooperative per-request context deadline and the
-`http.Server` write/idle timeouts; `0` disables all three.
+`http.Server` read/write/idle timeouts; `0` disables all four.
 `GOMBIT_DATABASE_CONN_MAX_LIFETIME` uses Go duration syntax such as `30m` or
 `1h`.
 Redis timeout values use the same Go duration syntax.

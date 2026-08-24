@@ -88,10 +88,17 @@ Other behavior notes:
   Callers that hash the raw body must hash the bytes handlers actually see.
 - Unclosed dangerous elements (for example a truncated `<script>...`) discard
   the remainder of the string (fail-closed).
+- JSON sanitizer buffering is capped at 8MiB. Larger JSON bodies abort with
+  HTTP 413 and a D10 error envelope (`payload_too_large`) and never reach
+  handlers. `http.Server.ReadTimeout` matches `GOMBIT_HTTP_REQUEST_TIMEOUT`
+  (`0` disables it). The request-timeout middleware is a context deadline; it
+  does not abort `Body.Read`. The connection read deadline and the sanitizer
+  cap are the brakes on a slow or never-ending JSON body (#137).
 
 Canonical design order (draft §13.3) also includes CORS, body-size limit, rate
-limiting, and auth context. Those remain deferred; when body-size lands it
-inserts immediately before XSS.
+limiting, and auth context. Those remain deferred; when a first-class body-size
+middleware lands it still inserts immediately before XSS. The 8MiB XSS cap is
+only a bound on sanitizer buffering, not that middleware.
 
 Request IDs use the `X-Request-Id` header. If the caller provides one, the
 runtime preserves it; otherwise it generates one and stores it on both Gin's

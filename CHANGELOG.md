@@ -27,6 +27,10 @@ version.
 
 ### Fixed
 
+- XSS JSON sanitization no longer `io.ReadAll`s request bodies without a
+  bound: JSON sanitizer buffering is capped at 8MiB (HTTP 413, D10
+  `payload_too_large`), and `http.Server.ReadTimeout` follows
+  `GOMBIT_HTTP_REQUEST_TIMEOUT` ([#137](https://github.com/gombit-dev/gombit/issues/137)).
 - `AtlasURL` now converts Postgres unix-socket and IPv6 libpq DSNs, and
   SQLite `file:///abs` URIs, into Atlas `--url` values that parse
   ([#135](https://github.com/gombit-dev/gombit/issues/135)).
