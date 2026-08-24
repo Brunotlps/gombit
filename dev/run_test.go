@@ -207,6 +207,39 @@ func waitStarts(t *testing.T, startedCh <-chan struct{}, n int) {
 	}
 }
 
+// waitChildEnvAssigned waits until n captured cmds have a non-empty Env.
+// opts.Command signals startedCh before runOne/runProcesses assigns cmd.Env,
+// so reading Env immediately after waitStarts can observe a nil overlay.
+func waitChildEnvAssigned(t *testing.T, mu *sync.Mutex, cmds *[]*exec.Cmd, n int) []*exec.Cmd {
+	t.Helper()
+	deadline := time.After(3 * time.Second)
+	ticker := time.NewTicker(5 * time.Millisecond)
+	defer ticker.Stop()
+	var captured []*exec.Cmd
+	for {
+		mu.Lock()
+		captured = append([]*exec.Cmd(nil), *cmds...)
+		ready := len(captured) >= n
+		if ready {
+			for _, cmd := range captured {
+				if len(cmd.Env) == 0 {
+					ready = false
+					break
+				}
+			}
+		}
+		mu.Unlock()
+		if ready {
+			return captured
+		}
+		select {
+		case <-deadline:
+			t.Fatalf("timed out waiting for child Env overlay (got %d cmds)", len(captured))
+		case <-ticker.C:
+		}
+	}
+}
+
 func TestPlanBackendPrefersAir(t *testing.T) {
 	t.Parallel()
 	plan, err := planBackend(t.TempDir(), func(file string) (string, error) {
@@ -500,12 +533,7 @@ func TestRunChildEnvReplacesParentHTTPAddr(t *testing.T) {
 	}()
 
 	waitStarts(t, startedCh, 2)
-	mu.Lock()
-	captured := append([]*exec.Cmd(nil), cmds...)
-	mu.Unlock()
-	if len(captured) < 2 {
-		t.Fatalf("started %d commands, want 2", len(captured))
-	}
+	captured := waitChildEnvAssigned(t, &mu, &cmds, 2)
 	for _, cmd := range captured {
 		if values := envKeyValues(cmd.Env, "GOMBIT_HTTP_ADDR"); len(values) != 1 || values[0] != ":9090" {
 			t.Fatalf("child Env GOMBIT_HTTP_ADDR = %v, want single :9090", values)
