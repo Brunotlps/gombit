@@ -51,10 +51,16 @@ type listWidgetsOutput struct {
 Pass a non-nil pointer when meta should appear; a nil `Meta` is omitted.
 A non-nil zero `PageMeta` still serializes (JSON `omitempty` does not drop empty structs).
 
+Generated list handlers (`gombit new` product, `gombit make resource`, and
+`examples/tutorial`) honor `page` / `per_page` query parameters the same way
+the admin data plane does: default page 1, per_page 20, max 100
+(`contract.ClampPage`). `meta.total` is a separate `COUNT`; `data` is the
+`LIMIT`/`OFFSET` slice, so `len(data)` never exceeds `meta.per_page`.
+
 ```go
 Body: contract.DataMeta[[]Widget, contract.PageMeta]{
     Data: items,
-    Meta: &contract.PageMeta{Page: 1, PerPage: 20, Total: 125},
+    Meta: &contract.PageMeta{Page: page, PerPage: perPage, Total: total},
 },
 ```
 

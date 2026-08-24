@@ -484,7 +484,10 @@ export interface operations {
   };
   "list-products": {
     parameters: {
-      query?: never;
+      query?: {
+        page?: number;
+        per_page?: number;
+      };
       header?: never;
       path?: never;
       cookie?: never;

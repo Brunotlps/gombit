@@ -86,6 +86,18 @@ func TestGenerateBookFeaturePackage(t *testing.T) {
 	if !strings.Contains(handlerSrc, `contract.Internal("list books")`) {
 		t.Fatalf("handler Internal message = %q, want list books", handlerSrc)
 	}
+	if !strings.Contains(handlerSrc, `query:"page"`) || !strings.Contains(handlerSrc, `query:"per_page"`) {
+		t.Fatal("generated list handler missing page/per_page query params")
+	}
+	if !strings.Contains(handlerSrc, "contract.ClampPage") || !strings.Contains(handlerSrc, "contract.PageOffset") {
+		t.Fatal("generated list handler does not clamp page/per_page")
+	}
+	if !strings.Contains(handlerSrc, ".Limit(") || !strings.Contains(handlerSrc, "Count(&total)") {
+		t.Fatal("generated list handler does not LIMIT/OFFSET or count total separately")
+	}
+	if strings.Contains(handlerSrc, "PerPage: 20, Total: int64(len(items))") {
+		t.Fatal("generated list handler still advertises hardcoded per_page=20 from len(items)")
+	}
 	if _, err := os.Stat(filepath.Join(appDir, "internal", "book", "service.go")); !os.IsNotExist(err) {
 		t.Fatal("default generate wrote service.go")
 	}

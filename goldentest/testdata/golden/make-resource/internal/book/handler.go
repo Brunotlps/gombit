@@ -23,6 +23,11 @@ type listBooksOutput struct {
 	Body contract.DataMeta[[]bookData, contract.PageMeta]
 }
 
+type listBooksInput struct {
+	Page    int `query:"page" doc:"1-based page"`
+	PerPage int `query:"per_page" doc:"Page size"`
+}
+
 type getBookInput struct {
 	ID string `path:"id" doc:"Book identifier"`
 }
@@ -41,9 +46,15 @@ type createBookOutput struct {
 	Body contract.Data[bookData]
 }
 
-func (h *Handler) list(ctx context.Context, _ *struct{}) (*listBooksOutput, error) {
+func (h *Handler) list(ctx context.Context, input *listBooksInput) (*listBooksOutput, error) {
+	page, perPage := contract.ClampPage(input.Page, input.PerPage)
+	q := h.DB.WithContext(ctx).Model(&Book{})
+	var total int64
+	if err := q.Session(&gorm.Session{}).Count(&total).Error; err != nil {
+		return nil, contract.WithContext(ctx, contract.Internal("list books"))
+	}
 	var rows []Book
-	if err := h.DB.WithContext(ctx).Order("id").Find(&rows).Error; err != nil {
+	if err := q.Order("id").Offset(contract.PageOffset(page, perPage)).Limit(perPage).Find(&rows).Error; err != nil {
 		return nil, contract.WithContext(ctx, contract.Internal("list books"))
 	}
 	items := make([]bookData, 0, len(rows))
@@ -53,7 +64,7 @@ func (h *Handler) list(ctx context.Context, _ *struct{}) (*listBooksOutput, erro
 	return &listBooksOutput{
 		Body: contract.DataMeta[[]bookData, contract.PageMeta]{
 			Data: items,
-			Meta: &contract.PageMeta{Page: 1, PerPage: 20, Total: int64(len(items))},
+			Meta: &contract.PageMeta{Page: page, PerPage: perPage, Total: total},
 		},
 	}, nil
 }

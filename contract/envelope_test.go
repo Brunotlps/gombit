@@ -84,3 +84,44 @@ func TestDataMetaZeroPageMetaStillSerializes(t *testing.T) {
 		t.Fatalf("non-nil zero PageMeta should serialize; got %s", raw)
 	}
 }
+
+func TestClampPage(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		page, perPage     int
+		wantPage, wantPer int
+	}{
+		{0, 0, DefaultPage, DefaultPerPage},
+		{1, 20, 1, 20},
+		{2, 50, 2, 50},
+		{3, 100, 3, 100},
+		{1, 101, 1, MaxPerPage},
+		{-5, -10, DefaultPage, DefaultPerPage},
+		{0, 1000, DefaultPage, MaxPerPage},
+	}
+	for _, tt := range tests {
+		gotPage, gotPer := ClampPage(tt.page, tt.perPage)
+		if gotPage != tt.wantPage || gotPer != tt.wantPer {
+			t.Fatalf("ClampPage(%d, %d) = (%d, %d), want (%d, %d)",
+				tt.page, tt.perPage, gotPage, gotPer, tt.wantPage, tt.wantPer)
+		}
+	}
+}
+
+func TestPageOffset(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		page, perPage, want int
+	}{
+		{1, 20, 0},
+		{2, 20, 20},
+		{3, 10, 20},
+	}
+	for _, tt := range tests {
+		if got := PageOffset(tt.page, tt.perPage); got != tt.want {
+			t.Fatalf("PageOffset(%d, %d) = %d, want %d", tt.page, tt.perPage, got, tt.want)
+		}
+	}
+}
