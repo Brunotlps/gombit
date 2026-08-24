@@ -220,9 +220,10 @@ mode is not supported. Node.js is required for Vite.
 `.env.example` cannot keep the API on `:8080` while the service table
 prints `--http :9090`. Empty `VITE_API_URL` is same-origin so OpenAPI
 path keys such as `/api/v1/products` hit the Vite proxy; `createAppClient`
-rewrites them to the live `GOMBIT_API_PREFIX`. Vite also replaces
-`__GOMBIT_API_PREFIX__` in `index.html` during `vite dev` (production
-builds leave the placeholder for `gombit build --embed`).
+rewrites them to the live `GOMBIT_API_PREFIX`. Vite replaces
+`__GOMBIT_API_PREFIX__` in `index.html` during `vite dev`. Production
+Vite builds leave the placeholder so `gombit build --embed` can inject
+it; a split/CDN host must substitute that token itself.
 
 SIGINT/SIGTERM stops the child processes. On Unix, Gombit signals the process
 group so air/npm grandchildren exit. On Windows, teardown uses

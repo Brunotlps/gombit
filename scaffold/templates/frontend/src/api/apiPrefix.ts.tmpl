@@ -4,9 +4,11 @@
  * `<meta name="gombit-api-prefix">`), not from VITE_* (that would freeze
  * the prefix in the Vite bundle). Default remains `/api/v1`.
  *
- * openapi-fetch types paths as `/api/v1/...` from the placeholder OpenAPI
- * document. Callers keep those typed keys; rewriteAPIRequest maps them to
- * the live prefix on the way out.
+ * openapi-fetch types paths as `/api/v1/...`. `gombit client generate`
+ * rewrites live Huma paths to that default before openapi-typescript, so
+ * scaffolded `client.GET("/api/v1/...")` calls stay typed after
+ * GOMBIT_API_PREFIX changes. rewriteAPIRequest maps them to the live
+ * prefix on the way out.
  */
 
 export const DEFAULT_API_PREFIX = "/api/v1";

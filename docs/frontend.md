@@ -63,25 +63,44 @@ path keys** from the generated placeholder client (D8 default `/api/v1`)
 `createAppClient` rewrites that typed `/api/v1` prefix to the live
 `config.API.Prefix` / `GOMBIT_API_PREFIX` on the way out
 (`rewriteAPIRequest` in `src/api/apiPrefix.ts`). Changing `.env` and
-restarting does **not** require regenerating frontend source. Cookie-mode
-CSRF/refresh `fetch()` URLs go through `apiPath("/auth/csrf")` the same
-way.
+restarting does **not** require regenerating frontend **page** source.
+`gombit client generate` / `gombit dev` rewrite live Huma paths in a
+temporary spec copy to `/api/v1` before `openapi-typescript`, so
+`schema.ts` keys stay `/api/v1/...` and `tsc` still accepts the
+scaffolded calls. The committed `openapi.json` keeps the live prefix
+(contract-drift compares that document). Cookie-mode CSRF/refresh
+`fetch()` URLs go through `apiPath("/auth/csrf")` the same way.
 
-The prefix is injected at serve time, matching the admin SPA:
+The prefix is injected at serve time, matching the admin SPA, **only**
+when Gombit serves `index.html`:
 
 - `gombit build --embed`: Gin replaces `__GOMBIT_API_PREFIX__` in
   `index.html` when it serves the SPA.
 - `gombit dev`: Vite's `transformIndexHtml` plugin does the same from
   `GOMBIT_API_PREFIX` (passed in the child environment). Production Vite
-  builds leave the placeholder so embed can inject the live value.
+  builds **leave the placeholder** so embed can inject the live value.
+
+**Split deploy (C5, the default) does not inject automatically.** A CDN
+or static host is not Gin. After `vite build`, replace
+`__GOMBIT_API_PREFIX__` in `dist/index.html` with the live prefix before
+uploading, or set `window.__GOMBIT_API_PREFIX__` to the same value.
+Leaving the placeholder makes `apiPrefix()` fall back to `/api/v1`. Do
+not put the prefix in `VITE_*`.
+
+```sh
+# same token Gin substitutes for gombit build --embed
+sed "s|__GOMBIT_API_PREFIX__|${GOMBIT_API_PREFIX:-/api/v1}|g" \
+  dist/index.html > dist/index.html.tmp && mv dist/index.html.tmp dist/index.html
+```
 
 `createGombitClient` `baseUrl` is `import.meta.env.VITE_API_URL` (public).
 Empty means same-origin so the Vite `/api` proxy used by `gombit dev`
 works. For a split deploy, set the API **origin only** (for example
-`http://127.0.0.1:8080`); OpenAPI path keys stay `/api/v1/...` and the
-rewrite maps them to the live prefix. Prefixes that still start with
-`/api` (such as `/api/v2`) hit the existing `/api` proxy; a prefix that
-does not (`/svc/v2`) gets an extra Vite proxy entry.
+`http://127.0.0.1:8080`); OpenAPI path keys stay `/api/v1/...` and
+`rewriteAPIRequest` maps them to the prefix injected (or substituted) in
+`index.html`. Prefixes that still start with `/api` (such as `/api/v2`)
+hit the existing `/api` proxy during `gombit dev`; a prefix that does not
+(`/svc/v2`) gets an extra Vite proxy entry.
 
 `VITE_*` values are baked into the browser bundle. Never put JWT secrets,
 database passwords, or other server credentials there. Do not put

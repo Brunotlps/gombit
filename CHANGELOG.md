@@ -28,9 +28,13 @@ version.
 ### Fixed
 
 - Generated application SPA honors `GOMBIT_API_PREFIX` / `config.API.Prefix`
-  at runtime (HTML `__GOMBIT_API_PREFIX__` injection + `rewriteAPIRequest`),
-  matching the admin SPA. Changing `.env` no longer 404s `/api/v1/...`
-  while Go routes moved
+  at runtime (HTML `__GOMBIT_API_PREFIX__` injection + `rewriteAPIRequest`)
+  for `gombit dev` and `gombit build --embed`. `gombit client generate`
+  rewrites live OpenAPI path keys to `/api/v1` before `openapi-typescript`
+  so scaffolded `client.GET("/api/v1/...")` still typechecks after the
+  prefix changes. Split/CDN deploys must substitute the same placeholder
+  in `dist/index.html` (or set `window.__GOMBIT_API_PREFIX__`); it is not
+  injected automatically
   ([#109](https://github.com/gombit-dev/gombit/issues/109)).
 - Admin edit forms can clear optional fields. The SPA now sends JSON `null`
   for emptied string/text/date/datetime/json/number inputs instead of

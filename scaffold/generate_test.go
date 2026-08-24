@@ -708,6 +708,15 @@ func assertSPAHonorsRuntimeAPIPrefix(t *testing.T, dest, auth string) {
 			t.Error("cookie client.ts refresh must use apiPath(\"/auth/refresh\")")
 		}
 	}
+
+	readme := readFile(t, filepath.Join(dest, "frontend", "README.md"))
+	if !strings.Contains(readme, "A CDN must replace __GOMBIT_API_PREFIX__") {
+		t.Error("frontend/README.md must document split-deploy placeholder substitution")
+	}
+	envExample := readFile(t, filepath.Join(dest, ".env.example"))
+	if !strings.Contains(envExample, "A CDN must replace __GOMBIT_API_PREFIX__") {
+		t.Error(".env.example must document split-deploy placeholder substitution")
+	}
 }
 
 // TestGenerateCookieCSRFBootstrapIsSerialized is the #107 regression: GET

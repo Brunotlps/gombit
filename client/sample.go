@@ -4,11 +4,11 @@ import (
 	"context"
 	"net/http"
 
+	"github.com/danielgtaylor/huma/v2"
+	"github.com/gin-gonic/gin"
 	"github.com/gombit-dev/gombit/config"
 	"github.com/gombit-dev/gombit/contract"
 	"github.com/gombit-dev/gombit/framework"
-	"github.com/danielgtaylor/huma/v2"
-	"github.com/gin-gonic/gin"
 )
 
 type sampleWidget struct {
@@ -25,9 +25,16 @@ type sampleCreateBody struct {
 // SampleApp returns a framework app with the contract-example widget routes.
 // Tests and the client example use it as the sample OpenAPI source.
 func SampleApp() (*framework.App, error) {
+	return sampleAppWithPrefix("")
+}
+
+func sampleAppWithPrefix(prefix string) (*framework.App, error) {
 	gin.SetMode(gin.TestMode)
 	cfg := config.DefaultFor(config.EnvironmentTest)
 	cfg.HTTP.Addr = "127.0.0.1:0"
+	if prefix != "" {
+		cfg.API.Prefix = prefix
+	}
 	app, err := framework.New(framework.WithConfig(cfg))
 	if err != nil {
 		return nil, err

@@ -27,8 +27,11 @@ SPA fallback. Unknown paths stay 404.
 
 `VITE_API_URL` is public. For a split deploy, set it to the API **origin
 only**. OpenAPI path keys stay `/api/v1/...`; `createAppClient` rewrites
-them to the live `GOMBIT_API_PREFIX`. Do not bake the prefix into `VITE_*`.
-Never put JWT secrets in `VITE_*`. Access tokens stay in memory.
+them to the prefix from `index.html`. Embed injects that prefix; a CDN
+must replace `__GOMBIT_API_PREFIX__` in `dist/index.html` (or set
+`window.__GOMBIT_API_PREFIX__`) before serving. Do not bake the prefix
+into `VITE_*`. Never put JWT secrets in `VITE_*`. Access tokens stay in
+memory.
 
 ## Opt-in: `gombit build --embed`
 

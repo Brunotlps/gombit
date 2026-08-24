@@ -42,8 +42,8 @@ of the UI preset. See [frontend.md](frontend.md) and
 reads `database:`. When `ui: mui`, generated
 `frontend/src/<feature>/list.tsx` and `form.tsx` use MUI Table/TextField
 instead of raw `<table>` / `<input>`. OpenAPI path keys stay `/api/v1/...`;
-the live `GOMBIT_API_PREFIX` is applied at request time, not baked into
-those pages.
+`createAppClient` rewrites them to the prefix from `index.html` (injected
+by embed/`gombit dev`, or substituted on a split deploy).
 
 Access tokens stay **in memory**. `VITE_*` values are public; never put
 JWT secrets in the frontend.
