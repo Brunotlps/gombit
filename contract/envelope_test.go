@@ -2,6 +2,7 @@ package contract
 
 import (
 	"encoding/json"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -101,11 +102,14 @@ func TestClampPage(t *testing.T) {
 		{0, 1000, DefaultPage, MaxPerPage},
 	}
 	for _, tt := range tests {
-		gotPage, gotPer := ClampPage(tt.page, tt.perPage)
-		if gotPage != tt.wantPage || gotPer != tt.wantPer {
-			t.Fatalf("ClampPage(%d, %d) = (%d, %d), want (%d, %d)",
-				tt.page, tt.perPage, gotPage, gotPer, tt.wantPage, tt.wantPer)
-		}
+		t.Run(fmt.Sprintf("page=%d,per_page=%d", tt.page, tt.perPage), func(t *testing.T) {
+			t.Parallel()
+			gotPage, gotPer := ClampPage(tt.page, tt.perPage)
+			if gotPage != tt.wantPage || gotPer != tt.wantPer {
+				t.Fatalf("ClampPage(%d, %d) = (%d, %d), want (%d, %d)",
+					tt.page, tt.perPage, gotPage, gotPer, tt.wantPage, tt.wantPer)
+			}
+		})
 	}
 }
 
@@ -120,8 +124,11 @@ func TestPageOffset(t *testing.T) {
 		{3, 10, 20},
 	}
 	for _, tt := range tests {
-		if got := PageOffset(tt.page, tt.perPage); got != tt.want {
-			t.Fatalf("PageOffset(%d, %d) = %d, want %d", tt.page, tt.perPage, got, tt.want)
-		}
+		t.Run(fmt.Sprintf("page=%d,per_page=%d", tt.page, tt.perPage), func(t *testing.T) {
+			t.Parallel()
+			if got := PageOffset(tt.page, tt.perPage); got != tt.want {
+				t.Fatalf("PageOffset(%d, %d) = %d, want %d", tt.page, tt.perPage, got, tt.want)
+			}
+		})
 	}
 }
