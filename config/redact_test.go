@@ -57,6 +57,34 @@ func TestRedactDSNHidesQueryPassword(t *testing.T) {
 	}
 }
 
+func TestRedactDSNHidesLibpqKeywordPassword(t *testing.T) {
+	t.Parallel()
+
+	dsn := "host=localhost user=gombit password=s3cret dbname=app sslmode=disable" // #nosec G101 -- fake local test DSN.
+	got := RedactDSN(dsn)
+	if strings.Contains(got, "s3cret") {
+		t.Fatalf("RedactDSN() = %q, still contains password", got)
+	}
+	want := "host=localhost user=gombit password=" + RedactedSecret + " dbname=app sslmode=disable"
+	if got != want {
+		t.Fatalf("RedactDSN() = %q, want %q", got, want)
+	}
+}
+
+func TestRedactDSNHidesQuotedLibpqPassword(t *testing.T) {
+	t.Parallel()
+
+	dsn := `host=localhost password='has spaces' dbname=app` // #nosec G101 -- fake local test DSN.
+	got := RedactDSN(dsn)
+	if strings.Contains(got, "has spaces") {
+		t.Fatalf("RedactDSN() = %q, still contains password", got)
+	}
+	want := "host=localhost password=" + RedactedSecret + " dbname=app"
+	if got != want {
+		t.Fatalf("RedactDSN() = %q, want %q", got, want)
+	}
+}
+
 func TestConfigRedactedHidesRedisPassword(t *testing.T) {
 	t.Parallel()
 
@@ -95,5 +123,20 @@ func TestSanitizeErrorRemovesSecrets(t *testing.T) {
 	got := SanitizeError(err, cfg)
 	if strings.Contains(got, "db-secret") || strings.Contains(got, "redis-secret") || strings.Contains(got, "jwt-super-secret") {
 		t.Fatalf("SanitizeError() = %q, still contains secrets", got)
+	}
+}
+
+func TestSanitizeErrorRemovesLibpqKeywordPassword(t *testing.T) {
+	t.Parallel()
+
+	cfg := Default()
+	cfg.Database.DSN = "host=localhost user=gombit password=s3cret dbname=app sslmode=disable" // #nosec G101 -- fake local test DSN.
+
+	got := SanitizeError(errors.New("pq: password=s3cret authentication failed"), cfg)
+	if strings.Contains(got, "s3cret") {
+		t.Fatalf("SanitizeError() = %q, still contains libpq password", got)
+	}
+	if !strings.Contains(got, RedactedSecret) {
+		t.Fatalf("SanitizeError() = %q, want redacted password", got)
 	}
 }

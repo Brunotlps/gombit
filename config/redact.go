@@ -9,7 +9,11 @@ import (
 // RedactedSecret is the placeholder used in place of passwords and DSN userinfo.
 const RedactedSecret = "*****"
 
-var querySecretPattern = regexp.MustCompile(`(?i)((?:password|pwd|pass)=)([^&]*)`)
+// keywordSecretPattern matches password-like keys in URL query strings and
+// libpq keyword/value DSNs. Values stop at '&' or whitespace so
+// `password=secret dbname=app` does not swallow the rest of the DSN (#136).
+// Quoted libpq values (`password='has spaces'`) are consumed as one token.
+var keywordSecretPattern = regexp.MustCompile(`(?i)((?:password|pwd|pass)=)('[^']*'|"[^"]*"|[^&\s]*)`)
 
 // Redacted returns a copy of c with secret-bearing fields replaced so it is
 // safe to print (DSN userinfo/passwords and Redis password).
@@ -25,8 +29,9 @@ func (c Config) Redacted() Config {
 	return out
 }
 
-// RedactDSN returns dsn with userinfo passwords and password-like query
-// parameters replaced. SQLite file paths without userinfo are unchanged.
+// RedactDSN returns dsn with userinfo passwords, libpq keyword passwords
+// (password=/pwd=/pass=), and password-like query parameters replaced.
+// SQLite file paths without those keys are unchanged.
 func RedactDSN(dsn string) string {
 	trimmed := strings.TrimSpace(dsn)
 	if trimmed == "" {
@@ -83,6 +88,9 @@ func SanitizeSecretText(text string, cfg Config) string {
 				}
 			}
 		}
+		for _, secret := range keywordSecretValues(dsn) {
+			text = strings.ReplaceAll(text, secret, RedactedSecret)
+		}
 	}
 	if password := cfg.Cache.Redis.Password; password != "" {
 		text = strings.ReplaceAll(text, password, RedactedSecret)
@@ -94,7 +102,30 @@ func SanitizeSecretText(text string, cfg Config) string {
 }
 
 func redactQuerySecrets(value string) string {
-	return querySecretPattern.ReplaceAllString(value, "${1}"+RedactedSecret)
+	return keywordSecretPattern.ReplaceAllString(value, "${1}"+RedactedSecret)
+}
+
+func keywordSecretValues(dsn string) []string {
+	matches := keywordSecretPattern.FindAllStringSubmatch(dsn, -1)
+	out := make([]string, 0, len(matches))
+	for _, match := range matches {
+		if len(match) < 3 {
+			continue
+		}
+		if secret := unquoteDSNValue(match[2]); secret != "" {
+			out = append(out, secret)
+		}
+	}
+	return out
+}
+
+func unquoteDSNValue(value string) string {
+	if len(value) >= 2 {
+		if (value[0] == '\'' && value[len(value)-1] == '\'') || (value[0] == '"' && value[len(value)-1] == '"') {
+			return value[1 : len(value)-1]
+		}
+	}
+	return value
 }
 
 func redactURL(u *url.URL) string {
