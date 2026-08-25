@@ -1,6 +1,8 @@
 package admin
 
 import (
+	"database/sql"
+	"encoding"
 	"encoding/json"
 	"fmt"
 	"reflect"
@@ -9,6 +11,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/google/uuid"
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
 )
@@ -98,6 +101,8 @@ func inferFieldType(sf *schema.Field) FieldType {
 		return TypeDateTime
 	case reflect.TypeOf(json.RawMessage{}):
 		return TypeJSON
+	case reflect.TypeOf(uuid.UUID{}):
+		return TypeUUID
 	}
 	switch t.Kind() {
 	case reflect.String:
@@ -256,7 +261,85 @@ func convertTo(val any, dest reflect.Type) (reflect.Value, error) {
 	if dest.Kind() == reflect.String {
 		return reflect.ValueOf(fmt.Sprint(val)).Convert(dest), nil
 	}
+
+	out := reflect.New(dest)
+	if tu, ok := out.Interface().(encoding.TextUnmarshaler); ok {
+		if text, err := asTextBytes(val); err == nil {
+			if err := tu.UnmarshalText(text); err != nil {
+				return reflect.Value{}, err
+			}
+			return out.Elem(), nil
+		}
+	}
+
+	payload, jsonErr := asJSONBytes(val)
+	if dest.Kind() == reflect.Slice && dest.Elem().Kind() == reflect.Uint8 {
+		if jsonErr != nil {
+			return reflect.Value{}, fmt.Errorf("cannot assign %T to %s", val, dest)
+		}
+		slice := reflect.MakeSlice(dest, len(payload), len(payload))
+		reflect.Copy(slice, reflect.ValueOf(payload))
+		return slice, nil
+	}
+	if ju, ok := out.Interface().(json.Unmarshaler); ok && jsonErr == nil {
+		if err := ju.UnmarshalJSON(payload); err != nil {
+			return reflect.Value{}, err
+		}
+		return out.Elem(), nil
+	}
+	switch dest.Kind() {
+	case reflect.Struct, reflect.Map, reflect.Slice, reflect.Array:
+		if jsonErr != nil {
+			return reflect.Value{}, fmt.Errorf("cannot assign %T to %s", val, dest)
+		}
+		if err := json.Unmarshal(payload, out.Interface()); err != nil {
+			return reflect.Value{}, fmt.Errorf("cannot assign %T to %s", val, dest)
+		}
+		return out.Elem(), nil
+	}
+	if scanner, ok := out.Interface().(sql.Scanner); ok {
+		if err := scanner.Scan(val); err != nil {
+			return reflect.Value{}, err
+		}
+		return out.Elem(), nil
+	}
 	return reflect.Value{}, fmt.Errorf("cannot assign %T to %s", val, dest)
+}
+
+func asTextBytes(val any) ([]byte, error) {
+	switch v := val.(type) {
+	case string:
+		return []byte(v), nil
+	case []byte:
+		return v, nil
+	case json.RawMessage:
+		return v, nil
+	default:
+		return nil, fmt.Errorf("not text")
+	}
+}
+
+func asJSONBytes(val any) ([]byte, error) {
+	switch v := val.(type) {
+	case json.RawMessage:
+		if json.Valid(v) {
+			return v, nil
+		}
+		return json.Marshal(v)
+	case []byte:
+		if json.Valid(v) {
+			return v, nil
+		}
+		return json.Marshal(v)
+	case string:
+		b := []byte(v)
+		if json.Valid(b) {
+			return b, nil
+		}
+		return json.Marshal(v)
+	default:
+		return json.Marshal(val)
+	}
 }
 
 func makeNewInstance(elem reflect.Type) func() any {

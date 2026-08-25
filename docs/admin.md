@@ -232,7 +232,11 @@ Row JSON is keyed by registered field names, plus implicit `created_at` /
 SQL NULL, non-pointer strings become `""`, `time.Time` becomes zero,
 `json.RawMessage` / `[]byte` become nil. Required fields with `null` still
 422 (`is required`). Unknown keys, readonly keys, and type failures render
-D10 `validation_error` with `fields`.
+D10 `validation_error` with `fields`. JSON object/array values populate
+`json.RawMessage`, `[]byte`, and nested structs (`json.Unmarshal` /
+`json.Unmarshaler`). UUID strings populate `uuid.UUID`
+(`encoding.TextUnmarshaler` / `sql.Scanner`). `FieldsFrom` infers
+`uuid.UUID` as `uuid`, not `json`.
 
 The application's public CRUD API stays the feature's own typed Huma
 routes. Admin does not replace them.

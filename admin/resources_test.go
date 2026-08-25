@@ -19,6 +19,7 @@ import (
 	"github.com/gombit-dev/gombit/auth"
 	"github.com/gombit-dev/gombit/contract"
 	"github.com/gombit-dev/gombit/framework"
+	"github.com/google/uuid"
 )
 
 type rowEnvelope struct {
@@ -190,6 +191,66 @@ func TestResourcePatchClearsNullablePointerAndJSON(t *testing.T) {
 	}
 	if stored.Due != nil {
 		t.Fatalf("due = %#v, want nil", stored.Due)
+	}
+}
+
+func TestResourceJSONAndUUIDWrites(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	type Token struct {
+		ID      uint            `gorm:"primaryKey" json:"id"`
+		Token   uuid.UUID       `gorm:"type:uuid;not null" json:"token"`
+		Payload json.RawMessage `json:"payload"`
+		Title   string          `json:"title"`
+	}
+	app := newCookieApp(t)
+	if err := app.DB().AutoMigrate(&Token{}); err != nil {
+		t.Fatalf("AutoMigrate: %v", err)
+	}
+	if err := admin.Register(app, Token{}, admin.Options{
+		Slug: "tokens",
+		Fields: []admin.Field{
+			{Name: "id", Type: admin.TypeInteger, ReadOnly: true},
+			{Name: "token", Type: admin.TypeUUID, Required: true},
+			{Name: "payload", Type: admin.TypeJSON},
+			{Name: "title", Type: admin.TypeString, Required: true},
+		},
+	}); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	jar := loginSuperuser(t, app)
+
+	exampleUUID := uuid.MustParse("550e8400-e29b-41d4-a716-446655440000")
+	create := doRequest(app, jar, http.MethodPost, "/api/v1/admin/resources/tokens",
+		fmt.Sprintf(`{"title":"k","token":"%s","payload":{"a":1}}`, exampleUUID))
+	if create.Code != http.StatusOK {
+		t.Fatalf("create status = %d; body: %s", create.Code, create.Body.String())
+	}
+	var created rowEnvelope
+	if err := json.Unmarshal(create.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode create: %v", err)
+	}
+	id := fmt.Sprint(asInt(created.Data["id"]))
+
+	var stored Token
+	if err := app.DB().First(&stored, created.Data["id"]).Error; err != nil {
+		t.Fatalf("reload: %v", err)
+	}
+	if stored.Token != exampleUUID {
+		t.Fatalf("token = %s, want %s", stored.Token, exampleUUID)
+	}
+	if string(stored.Payload) != `{"a":1}` {
+		t.Fatalf("payload = %s, want {\"a\":1}", stored.Payload)
+	}
+
+	patch := doRequest(app, jar, http.MethodPatch, "/api/v1/admin/resources/tokens/"+id, `{"payload":{"b":2}}`)
+	if patch.Code != http.StatusOK {
+		t.Fatalf("patch status = %d; body: %s", patch.Code, patch.Body.String())
+	}
+	if err := app.DB().First(&stored, created.Data["id"]).Error; err != nil {
+		t.Fatalf("reload after patch: %v", err)
+	}
+	if string(stored.Payload) != `{"b":2}` {
+		t.Fatalf("patched payload = %s, want {\"b\":2}", stored.Payload)
 	}
 }
 
