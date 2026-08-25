@@ -186,10 +186,17 @@ func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
 	}
 
 	viteConfig := readFile(t, filepath.Join(dest, "frontend", "vite.config.ts"))
-	for _, want := range []string{"/api", "/openapi.json", "/docs", "GOMBIT_DEV_FRONTEND_HOST", "GOMBIT_API_PREFIX", "__GOMBIT_API_PREFIX__", "injectAPIPrefix"} {
+	for _, want := range []string{"/api", "/openapi.json", "/docs", "/admin", "GOMBIT_DEV_FRONTEND_HOST", "GOMBIT_API_PREFIX", "__GOMBIT_API_PREFIX__", "injectAPIPrefix"} {
 		if !strings.Contains(viteConfig, want) {
 			t.Fatalf("vite.config.ts missing %q:\n%s", want, viteConfig)
 		}
+	}
+	appReadme := readFile(t, filepath.Join(dest, "README.md"))
+	if !strings.Contains(appReadme, "Backend, Frontend, OpenAPI, API docs") {
+		t.Fatal("README.md missing gombit dev service table description")
+	}
+	if strings.Contains(appReadme, "API docs, Admin") {
+		t.Fatal("jwt README.md must not list Admin in the gombit dev service table")
 	}
 	indexHTML := readFile(t, filepath.Join(dest, "frontend", "index.html"))
 	if !strings.Contains(indexHTML, `content="__GOMBIT_API_PREFIX__"`) {
@@ -447,6 +454,10 @@ func TestGenerateRecordsAuthAndUIChoices(t *testing.T) {
 			t.Fatalf("gombit.yaml missing %q:\n%s", want, yaml)
 		}
 	}
+	appReadme := readFile(t, filepath.Join(workDir, "shop", "README.md"))
+	if !strings.Contains(appReadme, "API docs, Admin") {
+		t.Fatal("cookie README.md missing Admin in the gombit dev service table")
+	}
 	envExample := readFile(t, filepath.Join(workDir, "shop", ".env.example"))
 	if !strings.Contains(envExample, "GOMBIT_DATABASE_DRIVER=postgres") {
 		t.Fatalf(".env.example missing postgres driver:\n%s", envExample)
@@ -684,7 +695,7 @@ func assertSPAHonorsRuntimeAPIPrefix(t *testing.T, dest, auth string) {
 	}
 
 	viteConfig := readFile(t, filepath.Join(dest, "frontend", "vite.config.ts"))
-	for _, want := range []string{"GOMBIT_API_PREFIX", "transformIndexHtml", "injectAPIPrefix"} {
+	for _, want := range []string{"GOMBIT_API_PREFIX", "transformIndexHtml", "injectAPIPrefix", `"/admin"`} {
 		if !strings.Contains(viteConfig, want) {
 			t.Errorf("vite.config.ts missing %q", want)
 		}
@@ -729,6 +740,9 @@ func assertSPAHonorsRuntimeAPIPrefix(t *testing.T, dest, auth string) {
 	readme := readFile(t, filepath.Join(dest, "frontend", "README.md"))
 	if !strings.Contains(readme, "A CDN must replace `__GOMBIT_API_PREFIX__`") {
 		t.Error("frontend/README.md must document split-deploy placeholder substitution")
+	}
+	if !strings.Contains(readme, "`/admin`") {
+		t.Error("frontend/README.md must mention the Vite /admin proxy")
 	}
 	envExample := readFile(t, filepath.Join(dest, ".env.example"))
 	if !strings.Contains(envExample, "A CDN must replace __GOMBIT_API_PREFIX__") {

@@ -58,6 +58,7 @@ func Run(ctx context.Context, opts Options) error {
 	services := Services{
 		Backend:  originFromAddr(opts.HTTPAddr),
 		Frontend: frontendOrigin(opts.FrontendHost, opts.FrontendPort),
+		Admin:    opts.AdminURL,
 	}
 	if _, err := fmt.Fprint(opts.Stdout, FormatServiceTable(services)); err != nil {
 		return err

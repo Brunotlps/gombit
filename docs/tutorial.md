@@ -99,7 +99,7 @@ gombit dev
 ```
 
 `gombit dev` runs the Go API and the Vite dev server together, proxies `/api`,
-`/openapi.json`, and `/docs` to the backend, and regenerates the TypeScript
+`/openapi.json`, `/docs`, and `/admin` to the backend, and regenerates the TypeScript
 client whenever the live spec changes. It prints a service table with the URLs.
 
 Open:
@@ -497,7 +497,8 @@ Registration is explicit and typed — `Options` is concrete data, resolved once
 at startup. Leave `Fields` empty and they're derived from the struct at
 registration time, still once, never per request.
 
-Now visit **<http://127.0.0.1:8080/admin/>** and log in as your superuser. The
+Now visit **<http://127.0.0.1:5173/admin/>** (Vite proxies `/admin` to the Go
+server) or **<http://127.0.0.1:8080/admin/>** and log in as your superuser. The
 SPA is framework-owned and served from the binary; you don't build or maintain
 it.
 

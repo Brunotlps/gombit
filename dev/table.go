@@ -9,15 +9,22 @@ import (
 type Services struct {
 	Backend  string
 	Frontend string
+	// Admin is the cookie-mode admin SPA URL. Empty omits the row (JWT apps
+	// do not mount /admin/).
+	Admin string
 }
 
 // FormatServiceTable renders the Backend / Frontend / OpenAPI / API docs table.
+// Cookie-mode apps also get an Admin row when Admin is set.
 func FormatServiceTable(services Services) string {
 	rows := [][2]string{
 		{"Backend", services.Backend},
 		{"Frontend", services.Frontend},
 		{"OpenAPI", services.Backend + "/openapi.json"},
 		{"API docs", services.Backend + "/docs"},
+	}
+	if services.Admin != "" {
+		rows = append(rows, [2]string{"Admin", services.Admin})
 	}
 	width := 0
 	for _, row := range rows {

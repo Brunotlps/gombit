@@ -33,7 +33,7 @@ func TestRunDevHelp(t *testing.T) {
 		t.Fatalf("run(dev --help) error = %v", err)
 	}
 	got := stdout.String()
-	for _, want := range []string{"--http", "--frontend-port", "--frontend-host", "--poll", "--client-out", "/docs"} {
+	for _, want := range []string{"--http", "--frontend-port", "--frontend-host", "--poll", "--client-out", "/docs", "/admin"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("dev help missing %q:\n%s", want, got)
 		}
@@ -126,6 +126,34 @@ func TestRunDevHTTPFlagOverridesConfig(t *testing.T) {
 	}
 	if got.PollInterval != time.Second {
 		t.Fatalf("PollInterval = %s, want 1s", got.PollInterval)
+	}
+	if got.AdminURL != "" {
+		t.Fatalf("AdminURL = %q, want empty for JWT default", got.AdminURL)
+	}
+}
+
+func TestRunDevCookieConfigPrintsAdminURL(t *testing.T) {
+	cfg := config.Default()
+	cfg.Auth.Mode = config.AuthModeCookie
+	cfg.Auth.JWTSecret = "dev-secret-at-least-thirty-two-chars"
+	cfg.HTTP.Addr = "127.0.0.1:19090"
+	stubConfig(t, cfg)
+
+	var got dev.Options
+	previous := cli.RunDev
+	cli.RunDev = func(ctx context.Context, opts dev.Options) error {
+		got = opts
+		return errors.New("stopped")
+	}
+	t.Cleanup(func() { cli.RunDev = previous })
+
+	chdir(t, t.TempDir())
+	err := run(context.Background(), []string{"dev"}, ioDiscard{}, ioDiscard{})
+	if err == nil || !strings.Contains(err.Error(), "stopped") {
+		t.Fatalf("run() error = %v, want stopped", err)
+	}
+	if got.AdminURL != "http://127.0.0.1:19090/admin/" {
+		t.Fatalf("AdminURL = %q, want cookie admin SPA URL", got.AdminURL)
 	}
 }
 

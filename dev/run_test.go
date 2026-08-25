@@ -107,6 +107,9 @@ func TestRunPrintsServiceTableAndShutsDown(t *testing.T) {
 	if !strings.Contains(got, "http://127.0.0.1:15173") {
 		t.Fatalf("stdout missing frontend URL:\n%s", got)
 	}
+	if strings.Contains(got, "Admin") {
+		t.Fatalf("stdout included Admin without AdminURL:\n%s", got)
+	}
 	if !strings.Contains(stderr.String(), "without reload") {
 		t.Fatalf("stderr = %q, want reload hint", stderr.String())
 	}

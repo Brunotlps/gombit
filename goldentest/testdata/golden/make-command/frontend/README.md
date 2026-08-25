@@ -14,7 +14,8 @@ gombit dev
 ```
 
 That starts the Go API, Vite HMR, and live `gombit client generate` into
-`src/api/generated`. Vite proxies `/api`, `/openapi.json`, and `/docs`.
+`src/api/generated`. Vite proxies `/api`, `/openapi.json`, `/docs`, and
+`/admin`.
 
 Optional single-binary production (split remains the default):
 
