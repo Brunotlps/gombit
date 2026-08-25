@@ -6,6 +6,7 @@ package nethttp
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 
@@ -36,8 +37,8 @@ func NewHandler() http.Handler {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
 			return
 		}
-		if err := validate(body); err != "" {
-			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err})
+		if err := validate(body); err != nil {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
 			return
 		}
 		writeJSON(w, http.StatusCreated, scenario.BenchUser{ID: "user-1", Name: body.Name, Email: body.Email})
@@ -46,14 +47,19 @@ func NewHandler() http.Handler {
 	return mux
 }
 
-func validate(body scenario.CreateBenchUserBody) string {
+var (
+	errNameRequired  = errors.New("name is required")
+	errEmailRequired = errors.New("email must be a valid address")
+)
+
+func validate(body scenario.CreateBenchUserBody) error {
 	if strings.TrimSpace(body.Name) == "" {
-		return "name is required"
+		return errNameRequired
 	}
 	if strings.TrimSpace(body.Email) == "" || !strings.Contains(body.Email, "@") {
-		return "email must be a valid address"
+		return errEmailRequired
 	}
-	return ""
+	return nil
 }
 
 func writeJSON(w http.ResponseWriter, status int, body any) {
