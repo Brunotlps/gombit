@@ -1,129 +1,42 @@
-package contractspike
+// External test package: benchassert imports contractspike, so a test file
+// declared as `package contractspike` (white-box) importing benchassert
+// would create an import cycle for this test binary. Nothing here needs
+// contractspike's unexported surface, so black-box works fine.
+package contractspike_test
 
 import (
 	"net/http"
-	"net/http/httptest"
-	"strings"
 	"testing"
+
+	"github.com/gombit-dev/gombit/internal/contractspike"
+	"github.com/gombit-dev/gombit/internal/contractspike/benchassert"
 )
 
-// benchStack is one row of the framework-tax matrix: net/http -> Gin ->
-// Huma+Gin (issue #141 "1. Go abstraction-overhead microbenchmarks"). The
-// fourth row, Gombit, lives in the sibling internal/contractspike/gombitbench
-// package — see RegisterBenchRoutes for why it can't share this test binary.
-type benchStack struct {
-	name    string
-	handler http.Handler
-}
-
-func benchStacks(tb testing.TB) []benchStack {
+// benchStacks returns the net/http -> Gin -> Huma+Gin rows of the
+// framework-tax matrix (issue #141 "1. Go abstraction-overhead
+// microbenchmarks"). The fourth row, Gombit, lives in the sibling
+// internal/contractspike/gombitbench package — see
+// contractspike.RegisterBenchRoutes for why it can't share this test binary.
+func benchStacks(tb testing.TB) []benchassert.Stack {
 	tb.Helper()
 
-	return []benchStack{
-		{name: "net-http", handler: NewNetHTTPHandler()},
-		{name: "gin", handler: NewBenchGinRouter()},
-		{name: "huma-gin", handler: NewBenchHumaGinServer()},
+	return []benchassert.Stack{
+		{Name: "net-http", Handler: contractspike.NewNetHTTPHandler(), Envelope: false},
+		{Name: "gin", Handler: contractspike.NewBenchGinRouter(), Envelope: false},
+		{Name: "huma-gin", Handler: contractspike.NewBenchHumaGinServer(), Envelope: true},
 	}
 }
-
-const (
-	validCreateUserBody   = `{"name":"Ada Lovelace","email":"ada@example.com"}`
-	invalidCreateUserBody = `{"name":"","email":"not-an-email"}`
-)
 
 // TestBenchStacksServeEquivalentScenarios checks that every stack in the
 // framework-tax matrix implements the same five scenarios correctly before
 // they're used for benchmarking: a benchmark over a broken handler is
-// meaningless.
+// meaningless. See benchassert.Scenarios for what "correctly" means.
 func TestBenchStacksServeEquivalentScenarios(t *testing.T) {
 	for _, stack := range benchStacks(t) {
-		t.Run(stack.name, func(t *testing.T) {
-			assertBenchPlaintext(t, stack)
-			assertBenchJSON(t, stack)
-			assertBenchGetUser(t, stack)
-			assertBenchValidPost(t, stack)
-			assertBenchInvalidPost(t, stack)
+		t.Run(stack.Name, func(t *testing.T) {
+			benchassert.Scenarios(t, stack)
 		})
 	}
-}
-
-func assertBenchPlaintext(t *testing.T, stack benchStack) {
-	t.Helper()
-
-	response := doBenchRequest(stack.handler, http.MethodGet, "/plaintext", "")
-	if response.Code != http.StatusOK {
-		t.Fatalf("%s: GET /plaintext status = %d, want %d", stack.name, response.Code, http.StatusOK)
-	}
-	if got := response.Body.String(); got != "Hello, World!" {
-		t.Fatalf("%s: GET /plaintext body = %q, want %q", stack.name, got, "Hello, World!")
-	}
-}
-
-func assertBenchJSON(t *testing.T, stack benchStack) {
-	t.Helper()
-
-	response := doBenchRequest(stack.handler, http.MethodGet, "/json", "")
-	if response.Code != http.StatusOK {
-		t.Fatalf("%s: GET /json status = %d, want %d; body: %s", stack.name, response.Code, http.StatusOK, response.Body.String())
-	}
-	if !strings.Contains(response.Body.String(), "Hello, World!") {
-		t.Fatalf("%s: GET /json body = %s, want it to contain %q", stack.name, response.Body.String(), "Hello, World!")
-	}
-}
-
-func assertBenchGetUser(t *testing.T, stack benchStack) {
-	t.Helper()
-
-	response := doBenchRequest(stack.handler, http.MethodGet, "/users/user-42", "")
-	if response.Code != http.StatusOK {
-		t.Fatalf("%s: GET /users/user-42 status = %d, want %d; body: %s", stack.name, response.Code, http.StatusOK, response.Body.String())
-	}
-	if !strings.Contains(response.Body.String(), "user-42") {
-		t.Fatalf("%s: GET /users/user-42 body = %s, want it to echo the path parameter", stack.name, response.Body.String())
-	}
-}
-
-func assertBenchValidPost(t *testing.T, stack benchStack) {
-	t.Helper()
-
-	response := doBenchRequest(stack.handler, http.MethodPost, "/users", validCreateUserBody)
-	if response.Code != http.StatusOK && response.Code != http.StatusCreated {
-		t.Fatalf("%s: POST /users (valid) status = %d, want 200 or 201; body: %s", stack.name, response.Code, response.Body.String())
-	}
-	if !strings.Contains(response.Body.String(), "Ada Lovelace") {
-		t.Fatalf("%s: POST /users (valid) body = %s, want it to echo the created user", stack.name, response.Body.String())
-	}
-}
-
-// assertBenchInvalidPost only checks that every stack rejects the payload
-// with a client error. It deliberately does not assert a specific error
-// envelope shape: contract.Install (M3-2) replaces Huma's package-level
-// huma.NewError process-wide the first time any framework.App boots, so
-// within one `go test` binary the bare Huma+Gin stack's error shape depends
-// on whether a Gombit stack ran first. That's a real, documented Huma/Gombit
-// interaction (see docs/spikes/M0-2_HUMA_GIN_SPIKE.md), not something this
-// benchmark should paper over or make flaky assertions about.
-func assertBenchInvalidPost(t *testing.T, stack benchStack) {
-	t.Helper()
-
-	response := doBenchRequest(stack.handler, http.MethodPost, "/users", invalidCreateUserBody)
-	if response.Code < 400 || response.Code >= 500 {
-		t.Fatalf("%s: POST /users (invalid) status = %d, want a 4xx validation error; body: %s", stack.name, response.Code, response.Body.String())
-	}
-}
-
-func doBenchRequest(handler http.Handler, method, path, body string) *httptest.ResponseRecorder {
-	var request *http.Request
-	if body == "" {
-		request = httptest.NewRequest(method, path, nil)
-	} else {
-		request = httptest.NewRequest(method, path, strings.NewReader(body))
-		request.Header.Set("Content-Type", "application/json")
-	}
-
-	response := httptest.NewRecorder()
-	handler.ServeHTTP(response, request)
-	return response
 }
 
 // -- Framework-tax microbenchmarks (issue #141 "1. Go abstraction-overhead
@@ -139,21 +52,20 @@ func doBenchRequest(handler http.Handler, method, path, body string) *httptest.R
 
 func BenchmarkFrameworkTax(b *testing.B) {
 	for _, stack := range benchStacks(b) {
-		stack := stack
-		b.Run(stack.name+"/plaintext", func(b *testing.B) {
-			runBenchScenario(b, stack.handler, http.MethodGet, "/plaintext", "")
+		b.Run(stack.Name+"/plaintext", func(b *testing.B) {
+			runBenchScenario(b, stack.Handler, http.MethodGet, "/plaintext", "")
 		})
-		b.Run(stack.name+"/json", func(b *testing.B) {
-			runBenchScenario(b, stack.handler, http.MethodGet, "/json", "")
+		b.Run(stack.Name+"/json", func(b *testing.B) {
+			runBenchScenario(b, stack.Handler, http.MethodGet, "/json", "")
 		})
-		b.Run(stack.name+"/path-param", func(b *testing.B) {
-			runBenchScenario(b, stack.handler, http.MethodGet, "/users/user-42", "")
+		b.Run(stack.Name+"/path-param", func(b *testing.B) {
+			runBenchScenario(b, stack.Handler, http.MethodGet, "/users/user-42", "")
 		})
-		b.Run(stack.name+"/valid-post", func(b *testing.B) {
-			runBenchScenario(b, stack.handler, http.MethodPost, "/users", validCreateUserBody)
+		b.Run(stack.Name+"/valid-post", func(b *testing.B) {
+			runBenchScenario(b, stack.Handler, http.MethodPost, "/users", benchassert.ValidCreateUserBody)
 		})
-		b.Run(stack.name+"/invalid-post", func(b *testing.B) {
-			runBenchScenario(b, stack.handler, http.MethodPost, "/users", invalidCreateUserBody)
+		b.Run(stack.Name+"/invalid-post", func(b *testing.B) {
+			runBenchScenario(b, stack.Handler, http.MethodPost, "/users", benchassert.InvalidCreateUserBody)
 		})
 	}
 }
@@ -163,7 +75,7 @@ func runBenchScenario(b *testing.B, handler http.Handler, method, path, body str
 	b.ReportAllocs()
 
 	for range b.N {
-		response := doBenchRequest(handler, method, path, body)
+		response := benchassert.Do(handler, method, path, body)
 		if response.Code >= 500 {
 			b.Fatalf("%s %s status = %d, want < 500; body: %s", method, path, response.Code, response.Body.String())
 		}

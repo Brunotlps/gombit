@@ -1,0 +1,189 @@
+// Package benchassert holds the shared correctness assertions for the
+// framework-tax benchmark matrix (issue #141): the same five scenarios
+// (plaintext, JSON, path parameter, valid POST, invalid POST) checked
+// structurally against every stack before it's trusted for benchmarking.
+//
+// It exists as its own package because Go test files (_test.go) are not
+// part of an importable package: internal/contractspike/gombitbench's tests
+// cannot call helpers defined in internal/contractspike's _test.go files
+// directly. Rather than copy the assertions into both packages, they live
+// here once and both test suites call in.
+package benchassert
+
+import (
+	"encoding/json"
+	"net/http"
+	"net/http/httptest"
+	"strings"
+	"testing"
+
+	"github.com/gombit-dev/gombit/internal/contractspike"
+)
+
+// Fixture request bodies shared by every stack's POST /users scenarios.
+const (
+	ValidCreateUserBody   = `{"name":"Ada Lovelace","email":"ada@example.com"}`
+	InvalidCreateUserBody = `{"name":"","email":"not-an-email"}`
+)
+
+// Stack is one row of the framework-tax matrix under test.
+type Stack struct {
+	Name    string
+	Handler http.Handler
+	// Envelope is true for stacks that wrap JSON responses in the D10
+	// SuccessEnvelope (Huma, Gombit); false for stacks that return the
+	// resource bare (net/http, Gin) — each idiomatic to its own stack.
+	Envelope bool
+}
+
+// Scenarios exercises the five framework-tax benchmark scenarios against
+// stack.Handler and fails tb if the stack doesn't implement them correctly.
+// It decodes and checks JSON structurally (not by substring), so a handler
+// that stops doing real JSON serialization work can't silently keep passing:
+// a benchmark over a broken or short-circuited handler is meaningless.
+func Scenarios(tb testing.TB, stack Stack) {
+	tb.Helper()
+
+	assertPlaintext(tb, stack)
+	assertJSONMessage(tb, stack)
+	assertGetUser(tb, stack)
+	assertValidPost(tb, stack)
+	assertInvalidPost(tb, stack)
+}
+
+func assertPlaintext(tb testing.TB, stack Stack) {
+	tb.Helper()
+
+	response := Do(stack.Handler, http.MethodGet, "/plaintext", "")
+	if response.Code != http.StatusOK {
+		tb.Fatalf("%s: GET /plaintext status = %d, want %d", stack.Name, response.Code, http.StatusOK)
+	}
+	if got := response.Body.String(); got != "Hello, World!" {
+		tb.Fatalf("%s: GET /plaintext body = %q, want %q", stack.Name, got, "Hello, World!")
+	}
+}
+
+func assertJSONMessage(tb testing.TB, stack Stack) {
+	tb.Helper()
+
+	response := Do(stack.Handler, http.MethodGet, "/json", "")
+	if response.Code != http.StatusOK {
+		tb.Fatalf("%s: GET /json status = %d, want %d; body: %s", stack.Name, response.Code, http.StatusOK, response.Body.String())
+	}
+
+	message := decodeMessage(tb, stack, response.Body.Bytes())
+	if message != "Hello, World!" {
+		tb.Fatalf("%s: GET /json decoded message = %q, want %q", stack.Name, message, "Hello, World!")
+	}
+}
+
+func assertGetUser(tb testing.TB, stack Stack) {
+	tb.Helper()
+
+	response := Do(stack.Handler, http.MethodGet, "/users/user-42", "")
+	if response.Code != http.StatusOK {
+		tb.Fatalf("%s: GET /users/user-42 status = %d, want %d; body: %s", stack.Name, response.Code, http.StatusOK, response.Body.String())
+	}
+
+	user := decodeUser(tb, stack, response.Body.Bytes())
+	if user.ID != "user-42" {
+		tb.Fatalf("%s: GET /users/user-42 decoded id = %q, want %q", stack.Name, user.ID, "user-42")
+	}
+	if user.Name == "" {
+		tb.Fatalf("%s: GET /users/user-42 decoded name is empty", stack.Name)
+	}
+}
+
+func assertValidPost(tb testing.TB, stack Stack) {
+	tb.Helper()
+
+	response := Do(stack.Handler, http.MethodPost, "/users", ValidCreateUserBody)
+	if response.Code != http.StatusOK && response.Code != http.StatusCreated {
+		tb.Fatalf("%s: POST /users (valid) status = %d, want 200 or 201; body: %s", stack.Name, response.Code, response.Body.String())
+	}
+
+	user := decodeUser(tb, stack, response.Body.Bytes())
+	if user.Name != "Ada Lovelace" {
+		tb.Fatalf("%s: POST /users (valid) decoded name = %q, want %q", stack.Name, user.Name, "Ada Lovelace")
+	}
+	if user.Email != "ada@example.com" {
+		tb.Fatalf("%s: POST /users (valid) decoded email = %q, want %q", stack.Name, user.Email, "ada@example.com")
+	}
+	if user.ID == "" {
+		tb.Fatalf("%s: POST /users (valid) decoded id is empty", stack.Name)
+	}
+}
+
+// assertInvalidPost only checks that every stack rejects the payload with a
+// well-formed-JSON client error. It deliberately does not assert a specific
+// error envelope shape: contract.Install (M3-2) replaces Huma's
+// package-level huma.NewError process-wide the first time any framework.App
+// boots, so within one `go test` binary the bare Huma+Gin stack's error
+// shape depends on whether a Gombit stack ran first in that process. That's
+// a real, documented Huma/Gombit interaction (see
+// docs/spikes/M0-2_HUMA_GIN_SPIKE.md), not something this benchmark should
+// paper over or make flaky assertions about.
+func assertInvalidPost(tb testing.TB, stack Stack) {
+	tb.Helper()
+
+	response := Do(stack.Handler, http.MethodPost, "/users", InvalidCreateUserBody)
+	if response.Code < 400 || response.Code >= 500 {
+		tb.Fatalf("%s: POST /users (invalid) status = %d, want a 4xx validation error; body: %s", stack.Name, response.Code, response.Body.String())
+	}
+	if !json.Valid(response.Body.Bytes()) {
+		tb.Fatalf("%s: POST /users (invalid) body is not valid JSON: %s", stack.Name, response.Body.String())
+	}
+}
+
+func decodeUser(tb testing.TB, stack Stack, body []byte) contractspike.BenchUser {
+	tb.Helper()
+
+	if stack.Envelope {
+		var envelope contractspike.SuccessEnvelope[contractspike.BenchUser]
+		if err := json.Unmarshal(body, &envelope); err != nil {
+			tb.Fatalf("%s: decode enveloped user response: %v; body: %s", stack.Name, err, body)
+		}
+		return envelope.Data
+	}
+
+	var user contractspike.BenchUser
+	if err := json.Unmarshal(body, &user); err != nil {
+		tb.Fatalf("%s: decode bare user response: %v; body: %s", stack.Name, err, body)
+	}
+	return user
+}
+
+func decodeMessage(tb testing.TB, stack Stack, body []byte) string {
+	tb.Helper()
+
+	if stack.Envelope {
+		var envelope contractspike.SuccessEnvelope[map[string]string]
+		if err := json.Unmarshal(body, &envelope); err != nil {
+			tb.Fatalf("%s: decode enveloped json response: %v; body: %s", stack.Name, err, body)
+		}
+		return envelope.Data["message"]
+	}
+
+	var payload map[string]string
+	if err := json.Unmarshal(body, &payload); err != nil {
+		tb.Fatalf("%s: decode bare json response: %v; body: %s", stack.Name, err, body)
+	}
+	return payload["message"]
+}
+
+// Do sends a request through handler and returns the recorded response. It
+// is exported so benchmark loops (not just Scenarios) can reuse the exact
+// same request construction the correctness checks use.
+func Do(handler http.Handler, method, path, body string) *httptest.ResponseRecorder {
+	var request *http.Request
+	if body == "" {
+		request = httptest.NewRequest(method, path, nil)
+	} else {
+		request = httptest.NewRequest(method, path, strings.NewReader(body))
+		request.Header.Set("Content-Type", "application/json")
+	}
+
+	response := httptest.NewRecorder()
+	handler.ServeHTTP(response, request)
+	return response
+}
