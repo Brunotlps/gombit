@@ -27,6 +27,7 @@ export function setCSRFToken(token: string | undefined): void {
 
 export function clearSession(): void {
   authenticated = false;
+  csrfToken = undefined;
 }
 {{else}}/**
  * In-memory access and refresh tokens. Never persist them in web storage.

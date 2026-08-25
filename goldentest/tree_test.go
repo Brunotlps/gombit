@@ -140,6 +140,9 @@ func assertCookieFrontendInvariants(t *testing.T, files fileMap) {
 	if strings.Contains(session, "getAccessToken") {
 		t.Error("cookie-mode session.ts must not expose getAccessToken")
 	}
+	if !strings.Contains(session, "csrfToken = undefined") {
+		t.Error("cookie-mode clearSession must drop the in-memory CSRF token")
+	}
 	login := string(files["frontend/src/pages/LoginPage.tsx"])
 	if login == "" {
 		t.Fatal("missing frontend/src/pages/LoginPage.tsx")
@@ -167,6 +170,13 @@ func assertCookieFrontendInvariants(t *testing.T, files fileMap) {
 	}
 	if !strings.Contains(client, "if (getCSRFToken())") {
 		t.Error("cookie-mode client.ts missing skip-if-token-exists no-op")
+	}
+	providers := string(files["frontend/src/app/providers.tsx"])
+	if !strings.Contains(providers, "void bootstrapCSRF()") {
+		t.Error("cookie-mode AppProviders must bootstrap CSRF on mount")
+	}
+	if !strings.Contains(client, "await bootstrapCSRF()") {
+		t.Error("cookie-mode client.ts must await bootstrapCSRF before unsafe requests")
 	}
 	assertNumberInputEmptyIsZero(t, string(files["frontend/src/pages/ProductFormPage.tsx"]))
 	assertRuntimeAPIPrefix(t, files, "cookie")

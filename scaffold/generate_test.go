@@ -269,6 +269,10 @@ func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
 	if strings.Contains(appClient, "csrfInFlight") || strings.Contains(appClient, "bootstrapCSRF") {
 		t.Fatal("jwt api/client.ts must not include cookie CSRF bootstrap")
 	}
+	providers := readFile(t, filepath.Join(dest, "frontend", "src", "app", "providers.tsx"))
+	if strings.Contains(providers, "bootstrapCSRF") {
+		t.Fatal("jwt AppProviders must not import bootstrapCSRF")
+	}
 	assertSPAHonorsRuntimeAPIPrefix(t, dest, "jwt")
 	router := readFile(t, filepath.Join(dest, "frontend", "src", "app", "router.tsx"))
 	if !strings.Contains(router, "RequireAuth") || !strings.Contains(router, "LoginPage") {
@@ -760,6 +764,18 @@ func TestGenerateCookieCSRFBootstrapIsSerialized(t *testing.T) {
 	}
 	if !strings.Contains(login, "void bootstrapCSRF()") {
 		t.Fatal("cookie LoginPage.tsx missing eager CSRF bootstrap on mount")
+	}
+
+	providers := readFile(t, filepath.Join(workDir, "shop", "frontend", "src", "app", "providers.tsx"))
+	if !strings.Contains(providers, "void bootstrapCSRF()") {
+		t.Fatal("cookie AppProviders must bootstrap CSRF on mount so reload on a gated route still has X-CSRF-Token")
+	}
+	session := readFile(t, filepath.Join(workDir, "shop", "frontend", "src", "auth", "session.ts"))
+	if !strings.Contains(session, "csrfToken = undefined") {
+		t.Fatal("cookie clearSession must drop the in-memory CSRF token")
+	}
+	if !strings.Contains(client, "await bootstrapCSRF()") {
+		t.Fatal("cookie client.ts must await bootstrapCSRF before unsafe requests / refresh")
 	}
 }
 

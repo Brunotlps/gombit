@@ -27,4 +27,5 @@ export function setCSRFToken(token: string | undefined): void {
 
 export function clearSession(): void {
   authenticated = false;
+  csrfToken = undefined;
 }
