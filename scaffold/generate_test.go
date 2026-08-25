@@ -198,6 +198,12 @@ func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
 	if strings.Contains(appReadme, "API docs, Admin") {
 		t.Fatal("jwt README.md must not list Admin in the gombit dev service table")
 	}
+	if strings.Contains(appReadme, "cp .env.example .env") {
+		t.Fatal("README.md must not copy .env.example over the generated .env JWT secret")
+	}
+	if !strings.Contains(appReadme, "go run ./cmd/server") {
+		t.Fatal("README.md missing go run ./cmd/server")
+	}
 	indexHTML := readFile(t, filepath.Join(dest, "frontend", "index.html"))
 	if !strings.Contains(indexHTML, `content="__GOMBIT_API_PREFIX__"`) {
 		t.Fatal("frontend/index.html missing __GOMBIT_API_PREFIX__ placeholder")

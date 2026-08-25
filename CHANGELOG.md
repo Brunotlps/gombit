@@ -27,6 +27,9 @@ version.
 
 ### Fixed
 
+- Generated README Run snippet no longer copies `.env.example` over the
+  per-project `.env` JWT secret
+  ([#126](https://github.com/gombit-dev/gombit/issues/126)).
 - `gombit make resource` refuses `Product` / `product`, the scaffold
   feature-package every `gombit new` app already owns
   ([#125](https://github.com/gombit-dev/gombit/issues/125)).

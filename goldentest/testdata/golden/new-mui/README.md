@@ -6,9 +6,8 @@ Scaffolded by `gombit new`. Feature-package layout is build plan §3.2.
 
 ```sh
 # gombit new already wrote a gitignored .env with a generated JWT secret.
-# Copy .env.example only if you need to recreate it; replace the JWT
-# placeholder before production (production rejects the development value).
-cp .env.example .env
+# Do not copy .env.example over it — that file uses the public development
+# placeholder, which production rejects. Recreate .env only if it is missing.
 go run ./cmd/server
 ```
 
