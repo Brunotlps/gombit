@@ -154,10 +154,7 @@ func dialectorFor(driver Driver, dsn string) (gorm.Dialector, error) {
 	case DriverPostgres:
 		return postgres.Open(dsn), nil
 	case DriverMySQL:
-		return mysql.New(mysql.Config{
-			DSN:                       dsn,
-			SkipInitializeWithVersion: true,
-		}), nil
+		return mysql.Open(dsn), nil
 	default:
 		return nil, fmt.Errorf("database: unsupported driver %q", driver)
 	}

@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/gombit-dev/gombit/config"
+	"gorm.io/driver/mysql"
 )
 
 type testWidget struct {
@@ -177,6 +178,24 @@ func TestOpenRejectsInvalidConfig(t *testing.T) {
 	})
 	if err == nil {
 		t.Fatal("Open() error = nil, want invalid driver error")
+	}
+}
+
+func TestMySQLDialectorInitializesFromServerVersion(t *testing.T) {
+	t.Parallel()
+	d, err := dialectorFor(DriverMySQL, "user:pass@tcp(127.0.0.1:3306)/app?parseTime=true")
+	if err != nil {
+		t.Fatalf("dialectorFor() error = %v", err)
+	}
+	md, ok := d.(*mysql.Dialector)
+	if !ok {
+		t.Fatalf("dialector type = %T, want *mysql.Dialector", d)
+	}
+	if md.Config == nil {
+		t.Fatal("mysql dialector Config is nil")
+	}
+	if md.SkipInitializeWithVersion {
+		t.Fatal("SkipInitializeWithVersion = true, want false so GORM probes SELECT VERSION() and sets DontSupportRenameColumn on MySQL 5.7/MariaDB")
 	}
 }
 
