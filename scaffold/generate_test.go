@@ -385,6 +385,11 @@ func TestGenerateFlagValidation(t *testing.T) {
 			want: "auth",
 		},
 		{
+			name: "auth none not implemented",
+			opts: Options{Name: "demo", Auth: "none"},
+			want: "auth",
+		},
+		{
 			name: "unknown ui",
 			opts: Options{Name: "demo", UI: "bootstrap"},
 			want: "ui",

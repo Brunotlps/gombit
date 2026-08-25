@@ -80,7 +80,7 @@ at your framework checkout. Override with --framework-version.`,
 	})
 	cmd.Flags().StringVar(&database, "database", scaffold.DefaultDatabase, "database driver: sqlite, postgres, or mysql")
 	cmd.Flags().StringVar(&cache, "cache", scaffold.DefaultCache, "cache driver: memory, redis, or noop")
-	cmd.Flags().StringVar(&auth, "auth", scaffold.DefaultAuth, "auth mode: jwt (Bearer default), cookie (HttpOnly session + CSRF), or none")
+	cmd.Flags().StringVar(&auth, "auth", scaffold.DefaultAuth, "auth mode: jwt (Bearer default) or cookie (HttpOnly session + CSRF)")
 	cmd.Flags().StringVar(&ui, "ui", scaffold.DefaultUI, "UI preset: minimal (headless default) or mui (MUI CRUD screens)")
 	cmd.Flags().StringVar(&module, "module", "", "Go module path (default github.com/example/<name>)")
 	cmd.Flags().StringVar(&frameworkVersion, "framework-version", "",

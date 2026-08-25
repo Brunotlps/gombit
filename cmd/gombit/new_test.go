@@ -90,6 +90,7 @@ func TestRunNewFlagValidation(t *testing.T) {
 		{name: "unknown database", args: []string{"new", "demo", "--database", "oracle"}, want: "database"},
 		{name: "unknown cache", args: []string{"new", "demo", "--cache", "memcached"}, want: "cache"},
 		{name: "unknown auth", args: []string{"new", "demo", "--auth", "oauth"}, want: "auth"},
+		{name: "auth none", args: []string{"new", "demo", "--auth", "none"}, want: "auth"},
 		{name: "unknown ui", args: []string{"new", "demo", "--ui", "bootstrap"}, want: "ui"},
 		{name: "invalid name", args: []string{"new", "../evil", "--database", "sqlite"}, want: "project name"},
 	}

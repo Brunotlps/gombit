@@ -109,7 +109,7 @@ go mod tidy
 | --- | --- | --- |
 | `--database` | `sqlite`, `postgres`, `mysql` | `sqlite` |
 | `--cache` | `memory`, `redis`, `noop` | `memory` |
-| `--auth` | `jwt`, `cookie`, `none` | `jwt` |
+| `--auth` | `jwt`, `cookie` | `jwt` |
 | `--ui` | `minimal`, `mui` | `minimal` |
 | `--module` | Go module path | `github.com/example/<name>` |
 | `--framework-version` | gombit version the generated `go.mod` requires | this binary's version |
