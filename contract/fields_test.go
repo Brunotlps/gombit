@@ -56,9 +56,9 @@ func TestFieldsFromErrors(t *testing.T) {
 			want: map[string][]string{"email": {"required", "invalid format"}},
 		},
 		{
-			name: "plain error falls back",
+			name: "plain error is not a field detail",
 			errs: []error{errString("boom")},
-			want: map[string][]string{"_error": {"boom"}},
+			want: nil,
 		},
 		{
 			name: "required property inferred from message",

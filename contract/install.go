@@ -17,9 +17,9 @@ type InstallOptions struct {
 }
 
 var (
-	installOnce    sync.Once
-	requestIDFrom  func(context.Context) string
-	requestIDMu    sync.RWMutex
+	installOnce   sync.Once
+	requestIDFrom func(context.Context) string
+	requestIDMu   sync.RWMutex
 )
 
 // Install replaces Huma's default RFC 9457 Problem Details errors with the D10
@@ -73,7 +73,10 @@ func WithContext(ctx context.Context, err *ErrorEnvelope) *ErrorEnvelope {
 
 func newEnvelope(status int, msg, requestID string, errs ...error) *ErrorEnvelope {
 	fields := FieldsFromErrors(errs...)
-	code, message := classifyError(status, msg, fields)
+	if isValidationFailure(status) {
+		status = http.StatusUnprocessableEntity
+	}
+	code, message := classifyError(status, msg)
 	return &ErrorEnvelope{
 		status: status,
 		Body: ErrorBody{
@@ -85,9 +88,9 @@ func newEnvelope(status int, msg, requestID string, errs ...error) *ErrorEnvelop
 	}
 }
 
-func classifyError(status int, msg string, fields map[string][]string) (code, message string) {
+func classifyError(status int, msg string) (code, message string) {
 	msg = strings.TrimSpace(msg)
-	if isValidationFailure(status, msg, fields) {
+	if isValidationFailure(status) {
 		message = validationMessage
 		if msg != "" && !strings.EqualFold(msg, "validation failed") {
 			message = msg
@@ -100,23 +103,26 @@ func classifyError(status int, msg string, fields map[string][]string) (code, me
 	if msg == "" {
 		msg = "request failed"
 	}
-	return statusCodeSlug(status), msg
+	return codeForHTTPStatus(status), msg
 }
 
-func isValidationFailure(status int, msg string, fields map[string][]string) bool {
-	// Huma Install path only: field details or 422/validation-failed indicate
-	// request validation. Application constructors (New/NotFound/...) bypass
-	// this function entirely.
-	if len(fields) > 0 {
-		return true
+func isValidationFailure(status int) bool {
+	// Install only classifies Huma NewError hooks. 5xx is never request
+	// validation — Huma's last-resort path is NewErrorWithContext(500,
+	// "unexpected error occurred", err) and must stay D10 internal.
+	if status >= 500 {
+		return false
 	}
-	if status == http.StatusUnprocessableEntity {
-		return true
+	return status == http.StatusUnprocessableEntity || status == http.StatusBadRequest
+}
+
+func codeForHTTPStatus(status int) string {
+	for cat, s := range categoryStatus {
+		if s == status {
+			return CodeFor(cat)
+		}
 	}
-	if status == http.StatusBadRequest && strings.EqualFold(msg, "validation failed") {
-		return true
-	}
-	return false
+	return statusCodeSlug(status)
 }
 
 func statusCodeSlug(status int) string {

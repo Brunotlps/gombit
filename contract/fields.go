@@ -61,7 +61,10 @@ func fieldFromError(err error) (key, message string) {
 	if inferred := fieldFromMessage(message); inferred != "" {
 		return inferred, message
 	}
-	return "_error", message
+	// Generic errors are not field-level validation details. Huma's
+	// unexpected-500 path wraps the handler error here; putting it in
+	// fields._error would classify the response as validation_error.
+	return "", ""
 }
 
 func fieldKey(location string) string {
