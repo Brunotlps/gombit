@@ -9,7 +9,7 @@ import { useApiClient } from "../api/client";
 import { applyContractErrors } from "../api/formErrors";
 import { ContractError } from "../api/error";
 import { FieldWidget } from "../components/FieldWidget";
-import { canCreate, canUpdate, canViewDetail } from "../capabilities";
+import { canCreate, canPopulateEditForm, canUpdate, canViewDetail } from "../capabilities";
 import { emptyFormValue, formValuesToBody, rowToFormValues, writableFields } from "../fields";
 import type { Row } from "../api/types";
 
@@ -25,6 +25,7 @@ export function ResourceFormPage({ mode }: Props) {
   const navigate = useNavigate();
   const [status, setStatus] = useState("");
   const [loading, setLoading] = useState(mode === "edit");
+  const [rowLoaded, setRowLoaded] = useState(false);
   const [forbidden, setForbidden] = useState(false);
   const [unauthorized, setUnauthorized] = useState(false);
 
@@ -50,11 +51,13 @@ export function ResourceFormPage({ mode }: Props) {
   });
 
   useEffect(() => {
-    if (!model || mode !== "edit" || !canUpdate(model) || !canViewDetail(model)) {
+    if (mode !== "edit" || !model || !canPopulateEditForm(model)) {
       setLoading(false);
       return;
     }
     let cancelled = false;
+    setLoading(true);
+    setRowLoaded(false);
     client
       .detail(slug, id)
       .then((envelope) => {
@@ -62,6 +65,7 @@ export function ResourceFormPage({ mode }: Props) {
           return;
         }
         reset(rowToFormValues(envelope.data, model.fields));
+        setRowLoaded(true);
       })
       .catch((err: unknown) => {
         if (cancelled) {
@@ -89,6 +93,9 @@ export function ResourceFormPage({ mode }: Props) {
 
   async function onSubmit(values: FieldValues) {
     if (!model) {
+      return;
+    }
+    if (mode === "edit" && !rowLoaded) {
       return;
     }
     setStatus("");
@@ -150,6 +157,13 @@ export function ResourceFormPage({ mode }: Props) {
   if (mode === "edit" && !canUpdate(model)) {
     return <Alert severity="warning">You do not have permission to edit this {model.singular}.</Alert>;
   }
+  if (mode === "edit" && !canPopulateEditForm(model)) {
+    return (
+      <Alert severity="info">
+        Edit requires viewing this {model.singular}. Detail is disabled or not permitted.
+      </Alert>
+    );
+  }
   if (forbidden) {
     return (
       <Alert severity="warning">
@@ -163,6 +177,9 @@ export function ResourceFormPage({ mode }: Props) {
         <CircularProgress />
       </Box>
     );
+  }
+  if (mode === "edit" && !rowLoaded) {
+    return <Alert severity="error">{status || "Not found."}</Alert>;
   }
 
   const fields = model.fields.filter((field) => mode === "edit" || writableFields([field]).length > 0);
