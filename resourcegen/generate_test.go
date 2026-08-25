@@ -484,6 +484,114 @@ func readModulePathMust(t *testing.T, dir string) string {
 	return mod
 }
 
+func TestReadModulePathStripsLineComment(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		gomod string
+		want  string
+	}{
+		{
+			name:  "trailing comment",
+			gomod: "module github.com/example/demo // app\n\ngo 1.25\n",
+			want:  "github.com/example/demo",
+		},
+		{
+			name:  "quoted path with comment",
+			gomod: "module \"github.com/example/demo\" // app\n",
+			want:  "github.com/example/demo",
+		},
+		{
+			name:  "no comment",
+			gomod: "module github.com/example/demo\n",
+			want:  "github.com/example/demo",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			dir := t.TempDir()
+			if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(tt.gomod), 0o600); err != nil {
+				t.Fatalf("write go.mod: %v", err)
+			}
+			got, err := readModulePath(dir)
+			if err != nil {
+				t.Fatalf("readModulePath() error = %v", err)
+			}
+			if got != tt.want {
+				t.Fatalf("readModulePath() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestGenerateStripsGoModLineCommentFromImports(t *testing.T) {
+	workDir := t.TempDir()
+	if err := scaffold.Generate(context.Background(), scaffold.Options{
+		Name:     "demo",
+		Database: "sqlite",
+		WorkDir:  workDir,
+		Stdout:   ioDiscard{},
+	}); err != nil {
+		t.Fatalf("scaffold: %v", err)
+	}
+	appDir := filepath.Join(workDir, "demo")
+	appendGoModModuleComment(t, appDir, "app")
+
+	previousLook := lookPath
+	lookPath = func(string) (string, error) { return "", errors.New("atlas missing") }
+	t.Cleanup(func() { lookPath = previousLook })
+
+	err := Generate(context.Background(), Options{
+		WorkDir:   appDir,
+		Name:      "Book",
+		Fields:    []string{"title:string:required"},
+		Stdout:    ioDiscard{},
+		skipAtlas: true,
+	})
+	if err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+	mod := readModulePathMust(t, appDir)
+	if strings.Contains(mod, "//") {
+		t.Fatalf("readModulePath() = %q, want comment stripped", mod)
+	}
+	wantImport := `"` + mod + `/internal/book"`
+	mainSrc := readFile(t, filepath.Join(appDir, "cmd", "server", "main.go"))
+	if !strings.Contains(mainSrc, wantImport) {
+		t.Fatalf("cmd/server/main.go missing import %s:\n%s", wantImport, mainSrc)
+	}
+	if strings.Contains(mainSrc, "// app/") {
+		t.Fatalf("cmd/server/main.go kept go.mod comment in an import:\n%s", mainSrc)
+	}
+	platformSrc := readFile(t, filepath.Join(appDir, "internal", "platform", "database.go"))
+	if strings.Contains(platformSrc, "// app/") {
+		t.Fatalf("internal/platform/database.go kept go.mod comment in an import:\n%s", platformSrc)
+	}
+}
+
+func appendGoModModuleComment(t *testing.T, appDir, comment string) {
+	t.Helper()
+	path := filepath.Join(appDir, "go.mod")
+	data := readFile(t, path)
+	lines := strings.Split(data, "\n")
+	found := false
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "module ") {
+			lines[i] = strings.TrimSpace(line) + " // " + comment
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("go.mod missing module line")
+	}
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o600); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+}
+
 // TestGenerateFrontendKeepsTypedDefaultPrefix is the #109 contract for
 // make-resource pages: gombit.yaml api_prefix is not baked into list/form
 // OpenAPI path keys. createAppClient rewrites /api/v1 to the live prefix.

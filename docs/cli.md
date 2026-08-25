@@ -313,7 +313,9 @@ Route registration is appended in `cmd/server/main.go` via `go/ast` +
 `internal/platform` AutoMigrate is updated the same way. Re-running does not
 duplicate the `Register` call. A second resource whose plural HTTP path
 collides with an existing feature-package (`Bus` and `Buse` both become
-`/buses`) is refused.
+`/buses`) is refused. The module path is read from `go.mod` with trailing
+`//` comments stripped, so `module example.com/demo // app` does not leak
+into generated imports.
 
 Frontend pages are React + TypeScript (list/table + React Hook Form create)
 under `frontend/src/<feature>/`. They import types from
@@ -396,6 +398,9 @@ Default package is `internal/commands`. `--package hello` writes
 | `internal/<pkg>/<name>.go` | `New<Name>Command() *cli.Command` |
 | `internal/<pkg>/commands.go` | `RegisterCommands(root *cli.Command)` calling `cli.AddCommand` |
 | `cmd/gombit/main.go` | AST-appends `<pkg>.RegisterCommands(root)` next to `product.RegisterCommands(root)` |
+
+The module path is read from `go.mod` with trailing `//` comments stripped
+(same as `make resource`).
 
 `cli.AddCommand` is a thin wrapper around Cobra `AddCommand` (D13 /
 [ADR-014](adr/014-cli-cobra.md)). Generated apps do not invent a second
