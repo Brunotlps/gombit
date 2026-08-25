@@ -51,7 +51,7 @@ type updateProjectRequest struct {
 
 // list handles GET /api/projects?page=&limit=: a single page of projects,
 // deterministically ordered (id DESC), owner preloaded in the same query
-// set (one query for the page, one for its distinct owners — GORM's
+// set (one query for the page, one for its distinct owners: GORM's
 // .Preload, not one owner query per row) so this endpoint never N+1s.
 func (h *Handler) list(c *gin.Context) {
 	page, limit := clampPage(queryInt(c, "page"), queryInt(c, "limit"))
