@@ -396,6 +396,68 @@ func writeFile(t *testing.T, path, content string) {
 	}
 }
 
+func TestReadModulePathStripsLineComment(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte("module github.com/example/demo // app\n"), 0o600)
+	if err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+	got, err := readModulePath(dir)
+	if err != nil {
+		t.Fatalf("readModulePath() error = %v", err)
+	}
+	if got != "github.com/example/demo" {
+		t.Fatalf("readModulePath() = %q, want github.com/example/demo", got)
+	}
+}
+
+func TestGenerateStripsGoModLineCommentFromImports(t *testing.T) {
+	appDir := scaffoldApp(t)
+	path := filepath.Join(appDir, "go.mod")
+	data := readFile(t, path)
+	lines := strings.Split(data, "\n")
+	found := false
+	for i, line := range lines {
+		if strings.HasPrefix(strings.TrimSpace(line), "module ") {
+			lines[i] = strings.TrimSpace(line) + " // app"
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatal("go.mod missing module line")
+	}
+	if err := os.WriteFile(path, []byte(strings.Join(lines, "\n")), 0o600); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+
+	err := Generate(context.Background(), Options{
+		WorkDir: appDir,
+		Name:    "greet",
+		Stdout:  ioDiscard{},
+	})
+	if err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+	mod, err := readModulePath(appDir)
+	if err != nil {
+		t.Fatalf("readModulePath: %v", err)
+	}
+	if strings.Contains(mod, "//") {
+		t.Fatalf("readModulePath() = %q, want comment stripped", mod)
+	}
+	wantImport := `"` + mod + `/internal/commands"`
+	mainSrc := readFile(t, filepath.Join(appDir, "cmd", "gombit", "main.go"))
+	if !strings.Contains(mainSrc, wantImport) {
+		t.Fatalf("cmd/gombit/main.go missing import %s:\n%s", wantImport, mainSrc)
+	}
+	if strings.Contains(mainSrc, "// app/") {
+		t.Fatalf("cmd/gombit/main.go kept go.mod comment in an import:\n%s", mainSrc)
+	}
+}
+
 type ioDiscard struct{}
 
 func (ioDiscard) Write(p []byte) (int, error) {

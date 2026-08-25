@@ -27,6 +27,10 @@ version.
 
 ### Fixed
 
+- `gombit make resource` and `gombit make command` strip trailing `//`
+  comments from the `go.mod` module line, so
+  `module example.com/demo // app` does not produce invalid imports
+  ([#123](https://github.com/gombit-dev/gombit/issues/123)).
 - `gombit make resource` refuses a second name whose plural HTTP path
   collides with an existing feature-package (`Bus` and `Buse` both become
   `/buses`) instead of registering two resources on one URL

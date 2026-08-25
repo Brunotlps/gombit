@@ -167,7 +167,7 @@ func readModulePath(workDir string) (string, error) {
 	for _, line := range strings.Split(string(data), "\n") {
 		line = strings.TrimSpace(line)
 		if strings.HasPrefix(line, "module ") {
-			module := strings.TrimSpace(strings.TrimPrefix(line, "module "))
+			module := modulePathFromGoModLine(line)
 			if module == "" {
 				break
 			}
@@ -175,6 +175,24 @@ func readModulePath(workDir string) (string, error) {
 		}
 	}
 	return "", errors.New("commandgen: go.mod is missing a module path")
+}
+
+// modulePathFromGoModLine returns the module path from a `module …` line,
+// stripping a trailing // comment and optional quotes the way go list -m does.
+func modulePathFromGoModLine(line string) string {
+	rest := strings.TrimSpace(strings.TrimPrefix(line, "module "))
+	inQuote := false
+	for i := 0; i < len(rest); i++ {
+		switch rest[i] {
+		case '"':
+			inQuote = !inQuote
+		case '/':
+			if !inQuote && i+1 < len(rest) && rest[i+1] == '/' {
+				return strings.Trim(strings.TrimSpace(rest[:i]), `"`)
+			}
+		}
+	}
+	return strings.Trim(strings.TrimSpace(rest), `"`)
 }
 
 func displayPath(workDir, full string) (string, error) {
