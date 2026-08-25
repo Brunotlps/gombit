@@ -122,6 +122,10 @@ func (h *Handler) create(c *gin.Context) {
 		writeError(c, shared.ValidationError(err.Error(), nil))
 		return
 	}
+	if envelope := blankNameError(body.Name); envelope != nil {
+		writeError(c, envelope)
+		return
+	}
 
 	row := Project{
 		OwnerID:     body.OwnerID,
@@ -158,12 +162,14 @@ func (h *Handler) update(c *gin.Context) {
 	// binding's `omitempty` on a *string skips `max=255` when the pointed-to
 	// value is empty, not just when the pointer is nil — a client that sends
 	// {"name":""} (as opposed to omitting the field) would otherwise bypass
-	// the same non-blank-name rule POST /api/projects enforces via
-	// `required`. Checked explicitly since binding tags can't express "at
-	// least one non-whitespace character, only when provided" on a pointer.
-	if body.Name != nil && strings.TrimSpace(*body.Name) == "" {
-		writeError(c, shared.ValidationError("name must not be blank", nil))
-		return
+	// the same non-blank-name rule create enforces. Only checked when
+	// provided: PATCH's Name is optional, omitting it must not touch the
+	// existing name.
+	if body.Name != nil {
+		if envelope := blankNameError(*body.Name); envelope != nil {
+			writeError(c, envelope)
+			return
+		}
 	}
 
 	var row Project
@@ -242,6 +248,22 @@ func clampPage(page, limit int) (int, int) {
 		limit = 100
 	}
 	return page, limit
+}
+
+// blankNameError rejects a whitespace-only (or empty) project name, shared
+// by create and update so the rule can't drift between them the way it
+// already did once: create's `binding:"required,max=255"` only rejects the
+// empty string, not "   " — a POST with a whitespace-only name was
+// accepted verbatim (verified against live Postgres) while a PATCH with
+// the same value was rejected, teaching two different name contracts on
+// one resource. Binding tags can't express "at least one non-whitespace
+// character" directly, so both handlers call this explicitly instead of
+// leaning on struct tags alone for a rule struct tags can't fully state.
+func blankNameError(name string) *shared.ErrorEnvelope {
+	if strings.TrimSpace(name) == "" {
+		return shared.ValidationError("name must not be blank", nil)
+	}
+	return nil
 }
 
 // mapLoadError maps a GORM read error to a D10 category error: record-not-

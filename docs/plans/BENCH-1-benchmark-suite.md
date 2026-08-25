@@ -362,6 +362,25 @@ claim checked and found not applicable, three real gaps fixed:
   earlier), risking flakiness if two round trips ever land in the same
   timestamp-resolution window. Changed to `!updated.UpdatedAt.Before(...)`.
 
+**Post-landing correction, round 3 (PR review on #176,
+github.com/gombit-dev/gombit/pull/176#pullrequestreview-5022158018):** round
+2's blank-name fix was itself incomplete — applied to `update` only, not
+`create`, which taught the resource two different name contracts depending
+on which verb touched it. `create`'s `binding:"required,max=255"` rejects
+the empty string but not a whitespace-only one; verified directly against
+live Postgres before fixing: `POST {"owner_id":1,"name":"   "}` returned
+`201 Created` with the name stored as three spaces, while the identical
+value already failed on `PATCH`. Fixed by extracting `blankNameError` as a
+shared check both handlers call — the point being that a rule expressed
+identically in two places, the way the previous round's inline
+`strings.TrimSpace` check in `update` alone was, is exactly how this class
+of asymmetry gets introduced in the first place; a rule that can't drift
+between call sites because there's only one call site is the actual fix,
+not just symmetric coverage today. `TestCreateRejectsBlankName` and
+`TestUpdateRejectsBlankName` now share one `blankNames = []string{"",
+"   "}` table so the same asymmetry can't quietly return through one test
+being updated and the other not.
+
 **Phase 3b — still open:**
 
 - `benchmarks/apps/gombit`: the same canonical API as a normal Gombit app

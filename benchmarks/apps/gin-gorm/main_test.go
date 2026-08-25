@@ -161,15 +161,48 @@ func TestCreateRejectsInvalidOwnerID(t *testing.T) {
 	}
 }
 
-// TestUpdateRejectsBlankName checks that PATCH /api/projects/:id with
-// {"name":""} is rejected, matching POST's required-name rule. binding's
-// `omitempty` on a *string skips `max=255` once the pointed-to value is
-// empty, not just when the pointer itself is nil, so this needs an explicit
-// check in the handler rather than a binding tag alone (verified: a
-// binding-only omitempty,max=255 tag lets {"name":""} through unchanged).
+// blankNames covers both ways a client can submit a name with no real
+// content: outright empty, and whitespace-only. Shared by
+// TestCreateRejectsBlankName and TestUpdateRejectsBlankName because the
+// whole point of both tests is that create and update reject the same
+// inputs — a table one of the two forgot to update would silently
+// reintroduce the asymmetry that motivated blankNameError in the first
+// place (verified against live Postgres: POST used to accept "   "
+// verbatim as a 201 while PATCH already rejected it as 422).
+var blankNames = []string{"", "   "}
+
+// TestCreateRejectsBlankName checks that POST /api/projects rejects both an
+// empty name and a whitespace-only one. binding's `required` on a plain
+// string only rejects the empty string, not "   " -- verified directly
+// against live Postgres before blankNameError existed: POST with
+// {"name":"   "} returned 201 Created with the name stored as three
+// spaces, while the same value already failed on PATCH.
+func TestCreateRejectsBlankName(t *testing.T) {
+	db := testDB(t)
+	if err := db.Create(&User{Email: "blank-name-create-owner@example.com", Name: "Owner"}).Error; err != nil {
+		t.Fatalf("seed owner: %v", err)
+	}
+	router := testRouter(t, db)
+
+	for _, name := range blankNames {
+		t.Run(fmt.Sprintf("name=%q", name), func(t *testing.T) {
+			body, err := json.Marshal(map[string]any{"owner_id": 1, "name": name, "description": "desc"})
+			if err != nil {
+				t.Fatalf("marshal request body: %v", err)
+			}
+			response := doJSON(t, router, http.MethodPost, "/api/projects", string(body))
+			if response.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("POST with name=%q status = %d, want %d; body: %s", name, response.Code, http.StatusUnprocessableEntity, response.Body.String())
+			}
+		})
+	}
+}
+
+// TestUpdateRejectsBlankName is TestCreateRejectsBlankName's mirror for
+// PATCH /api/projects/:id.
 func TestUpdateRejectsBlankName(t *testing.T) {
 	db := testDB(t)
-	if err := db.Create(&User{Email: "blank-name-owner@example.com", Name: "Owner"}).Error; err != nil {
+	if err := db.Create(&User{Email: "blank-name-update-owner@example.com", Name: "Owner"}).Error; err != nil {
 		t.Fatalf("seed owner: %v", err)
 	}
 	router := testRouter(t, db)
@@ -181,18 +214,26 @@ func TestUpdateRejectsBlankName(t *testing.T) {
 	var created shared.ProjectData
 	decodeData(t, create.Body.Bytes(), &created)
 
-	response := doJSON(t, router, http.MethodPatch, fmt.Sprintf("/api/projects/%d", created.ID), `{"name":""}`)
-	if response.Code != http.StatusUnprocessableEntity {
-		t.Fatalf("PATCH with blank name status = %d, want %d; body: %s", response.Code, http.StatusUnprocessableEntity, response.Body.String())
-	}
+	for _, name := range blankNames {
+		t.Run(fmt.Sprintf("name=%q", name), func(t *testing.T) {
+			body, err := json.Marshal(map[string]any{"name": name})
+			if err != nil {
+				t.Fatalf("marshal request body: %v", err)
+			}
+			response := doJSON(t, router, http.MethodPatch, fmt.Sprintf("/api/projects/%d", created.ID), string(body))
+			if response.Code != http.StatusUnprocessableEntity {
+				t.Fatalf("PATCH with name=%q status = %d, want %d; body: %s", name, response.Code, http.StatusUnprocessableEntity, response.Body.String())
+			}
 
-	// The project must be unchanged -- a rejected update must not have
-	// partially applied.
-	get := doJSON(t, router, http.MethodGet, fmt.Sprintf("/api/projects/%d", created.ID), "")
-	var unchanged shared.ProjectData
-	decodeData(t, get.Body.Bytes(), &unchanged)
-	if unchanged.Name != "Original" {
-		t.Fatalf("project name after rejected PATCH = %q, want unchanged %q", unchanged.Name, "Original")
+			// The project must be unchanged -- a rejected update must not
+			// have partially applied.
+			get := doJSON(t, router, http.MethodGet, fmt.Sprintf("/api/projects/%d", created.ID), "")
+			var unchanged shared.ProjectData
+			decodeData(t, get.Body.Bytes(), &unchanged)
+			if unchanged.Name != "Original" {
+				t.Fatalf("project name after rejected PATCH (name=%q) = %q, want unchanged %q", name, unchanged.Name, "Original")
+			}
+		})
 	}
 }
 
