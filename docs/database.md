@@ -19,6 +19,13 @@ Gombit migration DSL.
 | PostgreSQL | `postgres` |
 | MySQL | `mysql` |
 
+The MySQL dialector uses GORM's default `mysql.Open` so it probes
+`SELECT VERSION()` and sets capability flags (`DontSupportRenameColumn`,
+`DontSupportDropConstraint`, …) for MySQL 5.7 / MariaDB. It does **not**
+set `SkipInitializeWithVersion`, which would leave those flags at the
+MySQL 8 defaults and emit `RENAME COLUMN` / `DROP CONSTRAINT` that older
+servers reject.
+
 The opened handle embeds `*gorm.DB` and exposes driver metadata:
 
 ```go
