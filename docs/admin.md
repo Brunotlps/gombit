@@ -90,7 +90,9 @@ number, relation — are sent as JSON `null` so a partial PATCH can clear
 them. Booleans and numeric `0` are always included.
 401 (including session expiry on list/detail/edit) returns to login;
 catalog 403 shows a forbidden page; other catalog errors show the D10
-message.
+message. Silent `POST /auth/refresh` after a 401 **awaits** CSRF bootstrap
+so a reload with an expired access cookie does not send refresh without
+`X-CSRF-Token` and drop a still-valid refresh cookie.
 
 The SPA does **not** bake `/api/v1` at Vite build time. Gin injects
 `config.API.Prefix` when serving `index.html` (placeholder

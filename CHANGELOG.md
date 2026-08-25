@@ -27,6 +27,9 @@ version.
 
 ### Fixed
 
+- Admin silent `POST /auth/refresh` on 401 awaits CSRF bootstrap, so a
+  reload with an expired access cookie does not 403 CSRF and drop a valid
+  refresh session ([#115](https://github.com/gombit-dev/gombit/issues/115)).
 - Admin resource lists remount when the model slug changes (`key={slug}`),
   so pagination, search, ordering, and filters do not carry over to the next
   model ([#114](https://github.com/gombit-dev/gombit/issues/114)).

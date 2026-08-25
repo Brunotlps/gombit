@@ -69,6 +69,9 @@ export function createAdminClient() {
     }
     refreshInFlight = (async () => {
       try {
+        // POST /auth/refresh is CSRF-protected. AppProviders fire-and-forget
+        // bootstrapCSRF; a 401 on GET /me can race that GET /auth/csrf.
+        await bootstrapCSRF();
         const response = await fetch(baseUrl + apiPath("/auth/refresh"), {
           method: "POST",
           credentials: "same-origin",
@@ -113,6 +116,10 @@ export function createAdminClient() {
         body: options?.body === undefined ? undefined : JSON.stringify(options.body),
       };
     };
+
+    if (isUnsafeMethod(method)) {
+      await bootstrapCSRF();
+    }
 
     let response = await fetch(url, init());
     if (response.status === 401 && !isAuthPath(path)) {
@@ -180,7 +187,8 @@ let csrfInFlight: Promise<void> | null = null;
  * desync the cookie from the in-memory X-CSRF-Token). If a token is already
  * in memory, this is a no-op so React StrictMode remounts do not mint a
  * second pair. After clearSession the token is gone and the next call
- * bootstraps again. Login must await this before POST.
+ * bootstraps again. Unsafe requests and silent refresh await this
+ * before POST so a 401 cannot race GET /auth/csrf.
  */
 export function bootstrapCSRF(): Promise<void> {
   if (getCSRFToken()) {

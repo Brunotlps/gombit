@@ -80,6 +80,7 @@ func TestCookieClientInvariants(t *testing.T) {
 		"credentials: \"same-origin\"",
 		"VITE_API_URL",
 		"apiPrefix",
+		"await bootstrapCSRF()",
 		"/auth/csrf",
 		"/auth/login",
 		"/admin/meta",
