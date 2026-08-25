@@ -381,6 +381,40 @@ not just symmetric coverage today. `TestCreateRejectsBlankName` and
 "   "}` table so the same asymmetry can't quietly return through one test
 being updated and the other not.
 
+**Post-landing correction, round 4 (Merge Warden review on #176,
+github.com/gombit-dev/gombit/pull/176#pullrequestreview-5024765519):**
+claimed, not applicable — `Project.Owner` being a value `User` rather than
+`*User` would supposedly make `db.Save(&row)` attempt to upsert a zero-value
+`User` whenever a `Project` is saved without `.Preload("Owner")` first
+(exactly what `create` and `update` both do). Checked three ways before
+concluding otherwise, not just reasoned about:
+
+- Source: `gorm@v1.31.1/callbacks/associations.go`'s `SaveBeforeAssociations`,
+  struct-kind branch — `if _, zero := rel.Field.ValueOf(ctx, reflectValue);
+  !zero { ... }` — explicitly skips saving a belongs-to association when
+  the field is GORM's own notion of the zero value, before any SQL is
+  built.
+- Empirical, the exact `update()` path: loaded a real `Project` via
+  `First` (no `Preload`, `Owner` left zero-value), mutated it, called
+  `Save`, with GORM's own verbose logger attached. One `UPDATE projects`
+  statement; no statement against `users` at all; `SELECT count(*) FROM
+  users` unchanged before/after; zero rows with `email = ''`.
+- Empirical, the exact `create()` path: built a `Project{OwnerID: 1, ...}`
+  with `Owner` left zero-value, called `Create`, same logger. One `INSERT
+  INTO projects` statement; same unchanged user-count and empty-email
+  checks.
+
+Both handlers' actual call patterns are covered by this, not just a
+similar-looking synthetic case. Not changing `Owner` to `*User`: doing so
+isn't free the way the round-2 `db.Session` swap was — every read site
+(`toProjectData`) would need a nil guard and a decision about what
+`OwnerName` means for an un-preloaded project, for a bug that doesn't
+exist on this GORM version against this exact code. `owner_id` is also a
+`NOT NULL` foreign key (`benchmarks/docs/schema.md`) — every `Project`
+genuinely always has an owner once preloaded, so a non-pointer association
+isn't a modeling mismatch either, just an ORM-level "not loaded yet" state
+a pointer wouldn't describe any more precisely.
+
 **Phase 3b — still open:**
 
 - `benchmarks/apps/gombit`: the same canonical API as a normal Gombit app
