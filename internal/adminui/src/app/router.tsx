@@ -1,4 +1,4 @@
-import { BrowserRouter, Route, Routes } from "react-router";
+import { BrowserRouter, Route, Routes, useParams } from "react-router";
 
 import { RequireAuth } from "../auth/RequireAuth";
 import { AdminLayout } from "../layouts/AdminLayout";
@@ -9,6 +9,13 @@ import { ResourceDetailPage } from "../pages/ResourceDetailPage";
 import { ResourceFormPage } from "../pages/ResourceFormPage";
 import { ResourceListPage } from "../pages/ResourceListPage";
 import { AdminGate } from "./providers";
+
+// React Router reuses one :slug match across models. key={slug} remounts the
+// list so page/search/ordering/filters do not leak onto the next resource.
+function ResourceListRoute() {
+  const { slug = "" } = useParams();
+  return <ResourceListPage key={slug} />;
+}
 
 export function AppRouter() {
   return (
@@ -23,7 +30,7 @@ export function AppRouter() {
               <Route path=":slug/new" element={<ResourceFormPage mode="create" />} />
               <Route path=":slug/:id/edit" element={<ResourceFormPage mode="edit" />} />
               <Route path=":slug/:id" element={<ResourceDetailPage />} />
-              <Route path=":slug" element={<ResourceListPage />} />
+              <Route path=":slug" element={<ResourceListRoute />} />
             </Route>
           </Route>
         </Route>
