@@ -157,4 +157,13 @@ func TestParseResourceName(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "reserved") {
 		t.Fatalf("web error = %v, want reserved", err)
 	}
+
+	_, err = parseResourceName("Product")
+	if err == nil || !strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("Product error = %v, want reserved package product", err)
+	}
+	_, err = parseResourceName("product")
+	if err == nil || !strings.Contains(err.Error(), "reserved") {
+		t.Fatalf("product error = %v, want reserved package product", err)
+	}
 }

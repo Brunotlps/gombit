@@ -27,6 +27,9 @@ version.
 
 ### Fixed
 
+- `gombit make resource` refuses `Product` / `product`, the scaffold
+  feature-package every `gombit new` app already owns
+  ([#125](https://github.com/gombit-dev/gombit/issues/125)).
 - `gombit make command` refuses `version` and `createsuperuser`, which
   `cli.NewRoot` already registers, so generated stubs cannot shadow the
   framework commands
