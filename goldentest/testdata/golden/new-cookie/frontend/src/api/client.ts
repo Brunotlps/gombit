@@ -37,9 +37,10 @@ export function createAppClient(): ApiClient {
   const client = createGombitClient({ baseUrl });
 
   client.use({
-    onRequest({ request }) {
+    async onRequest({ request }) {
       request = rewriteAPIRequest(request);
       if (isUnsafeMethod(request.method)) {
+        await bootstrapCSRF();
         const token = getCSRFToken();
         if (token) {
           request.headers.set("X-CSRF-Token", token);
@@ -58,6 +59,7 @@ export function createAppClient(): ApiClient {
     }
     refreshInFlight = (async () => {
       try {
+        await bootstrapCSRF();
         const response = await fetch(baseUrl + apiPath("/auth/refresh"), {
           method: "POST",
           credentials: "same-origin",
@@ -110,7 +112,8 @@ let csrfInFlight: Promise<void> | null = null;
  * desync the cookie from the in-memory X-CSRF-Token). If a token is already
  * in memory, this is a no-op so React StrictMode remounts do not mint a
  * second pair. After clearSession the token is gone and the next call
- * bootstraps again. Login must await this before POST.
+ * bootstraps again. Unsafe requests and silent refresh await this
+ * before POST so a reload cannot race GET /auth/csrf.
  */
 export function bootstrapCSRF(): Promise<void> {
   if (getCSRFToken()) {

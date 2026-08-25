@@ -130,10 +130,13 @@ that refresh (buffering is gated on method; Firefox does not implement
 the Request.body getter). `RequireAuth` confirms a session by calling
 `GET /me` (it cannot check an in-memory token, unlike Bearer mode).
 `LoginPage` warms the token with `bootstrapCSRF()` on mount and **awaits**
-it before `POST /auth/login` and `POST /auth/register`. Concurrent callers
+it before `POST /auth/login` and `POST /auth/register`. `AppProviders` also
+fires `bootstrapCSRF()` so a hard reload on a gated route still has an
+in-memory `X-CSRF-Token` before POST/PATCH/DELETE. Unsafe client requests
+and silent refresh await that in-flight pair. Concurrent callers
 share one in-flight promise (`csrfInFlight`); if a token is already in
 memory the call is a no-op so React StrictMode remounts do not mint a
-second pair. See the templates under
+second pair. `clearSession` drops the in-memory CSRF token. See the templates under
 [`scaffold/templates/frontend/src`](../scaffold/templates/frontend/src) for
 the exact `{{if eq .Auth "cookie"}}` branches.
 

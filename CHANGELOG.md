@@ -27,6 +27,11 @@ version.
 
 ### Fixed
 
+- Cookie-mode generated SPAs bootstrap CSRF in `AppProviders` (not only
+  on the login page) and await it before unsafe requests, so a reload on
+  a gated route does not POST without `X-CSRF-Token`. `clearSession` drops
+  the in-memory CSRF token
+  ([#119](https://github.com/gombit-dev/gombit/issues/119)).
 - XSS request sanitizer no longer truncates JSON/query strings that contain
   `<` without a complete HTML tag (e.g. `a<b` stayed `a`). Complete tags
   are still stripped ([#118](https://github.com/gombit-dev/gombit/issues/118)).
