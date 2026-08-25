@@ -528,7 +528,7 @@ func renderFormField(field Field) string {
 	case FieldBool:
 		b.WriteString("          <input type=\"checkbox\" {...register(\"" + field.JSONName + "\")} />\n")
 	case FieldInt, FieldInt64, FieldUint:
-		b.WriteString("          <input type=\"number\" {...register(\"" + field.JSONName + "\", { valueAsNumber: true })} />\n")
+		b.WriteString("          <input type=\"number\" {...register(\"" + field.JSONName + "\", { setValueAs: (value) => (value === \"\" ? 0 : Number(value)) })} />\n")
 	default:
 		b.WriteString("          <input type=\"text\" {...register(\"" + field.JSONName + "\"")
 		if field.Required {

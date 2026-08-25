@@ -27,6 +27,9 @@ version.
 
 ### Fixed
 
+- Minimal generated number inputs use RHF `setValueAs` so a cleared field
+  submits `0` instead of JSON `null` (`valueAsNumber` → `NaN`)
+  ([#116](https://github.com/gombit-dev/gombit/issues/116)).
 - Admin silent `POST /auth/refresh` on 401 awaits CSRF bootstrap, so a
   reload with an expired access cookie does not 403 CSRF and drop a valid
   refresh session ([#115](https://github.com/gombit-dev/gombit/issues/115)).

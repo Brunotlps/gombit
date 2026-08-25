@@ -113,7 +113,7 @@ export function ProductFormPage() {
         {errors.name?.message ? <p>{errors.name.message}</p> : null}
         <label>
           Price
-          <input type="number" {...register("price", { valueAsNumber: true })} />
+          <input type="number" {...register("price", { setValueAs: (value) => (value === "" ? 0 : Number(value)) })} />
         </label>
         {errors.price?.message ? <p>{errors.price.message}</p> : null}
         <button type="submit" disabled={isSubmitting}>
