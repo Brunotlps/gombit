@@ -27,6 +27,9 @@ version.
 
 ### Fixed
 
+- `gombit new --auth none` is rejected. v0.1 auth is `jwt` or `cookie` (C3);
+  `none` was accepted and silently scaffolded a JWT app
+  ([#120](https://github.com/gombit-dev/gombit/issues/120)).
 - Cookie-mode generated SPAs bootstrap CSRF in `AppProviders` (not only
   on the login page) and await it before unsafe requests, so a reload on
   a gated route does not POST without `X-CSRF-Token`. `clearSession` drops

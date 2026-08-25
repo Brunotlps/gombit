@@ -30,7 +30,7 @@ const (
 var (
 	validDatabases = []string{"sqlite", "postgres", "mysql"}
 	validCaches    = []string{"memory", "redis", "noop"}
-	validAuths     = []string{"jwt", "cookie", "none"}
+	validAuths     = []string{"jwt", "cookie"}
 	validUIs       = []string{"minimal", "mui"}
 )
 

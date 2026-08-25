@@ -42,7 +42,7 @@ func (opts *Options) resolveInteractive() error {
 	}
 	opts.Cache = cache
 
-	auth, err := promptLine(opts.Stdout, in, "Auth (jwt, cookie, none)", opts.Auth)
+	auth, err := promptLine(opts.Stdout, in, "Auth (jwt, cookie)", opts.Auth)
 	if err != nil {
 		return err
 	}
