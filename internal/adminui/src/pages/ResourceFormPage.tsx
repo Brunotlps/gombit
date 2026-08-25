@@ -10,6 +10,7 @@ import { applyContractErrors } from "../api/formErrors";
 import { ContractError } from "../api/error";
 import { FieldWidget } from "../components/FieldWidget";
 import { canCreate, canPopulateEditForm, canUpdate, canViewDetail } from "../capabilities";
+import { spaDetailPath, spaListPath } from "../api/paths";
 import { emptyFormValue, formValuesToBody, rowToFormValues, writableFields } from "../fields";
 import type { Row } from "../api/types";
 
@@ -112,17 +113,17 @@ export function ResourceFormPage({ mode }: Props) {
         const pk = model.pk || "id";
         const createdId = created.data[pk];
         if (canViewDetail(model) && createdId !== undefined) {
-          navigate(`/${slug}/${String(createdId)}`);
+          navigate(spaDetailPath(slug, String(createdId)));
         } else {
-          navigate(`/${slug}`);
+          navigate(spaListPath(slug));
         }
         return;
       }
       await client.update(slug, id, body);
       if (canViewDetail(model)) {
-        navigate(`/${slug}/${id}`);
+        navigate(spaDetailPath(slug, id));
       } else {
-        navigate(`/${slug}`);
+        navigate(spaListPath(slug));
       }
     } catch (err: unknown) {
       if (ContractError.unauthorized(err)) {
@@ -189,7 +190,7 @@ export function ResourceFormPage({ mode }: Props) {
       <Typography variant="h4" component="h1" sx={{ mb: 1 }}>
         {mode === "create" ? `New ${model.singular}` : `Edit ${model.singular}`}
       </Typography>
-      <Button component={Link} to={mode === "edit" ? `/${slug}/${id}` : `/${slug}`} sx={{ mb: 2 }}>
+      <Button component={Link} to={mode === "edit" ? spaDetailPath(slug, id) : spaListPath(slug)} sx={{ mb: 2 }}>
         Back
       </Button>
       <Paper sx={{ p: 3, maxWidth: 640 }}>

@@ -19,6 +19,7 @@ import { useApiClient } from "../api/client";
 import { ContractError } from "../api/error";
 import type { Row } from "../api/types";
 import { canDelete, canUpdate, canViewDetail } from "../capabilities";
+import { spaEditPath, spaListPath } from "../api/paths";
 import { formatCell } from "../fields";
 
 export function ResourceDetailPage() {
@@ -77,7 +78,7 @@ export function ResourceDetailPage() {
     }
     try {
       await client.remove(slug, id);
-      navigate(`/${slug}`);
+      navigate(spaListPath(slug));
     } catch (err: unknown) {
       if (ContractError.unauthorized(err)) {
         setUnauthorized(true);
@@ -130,11 +131,11 @@ export function ResourceDetailPage() {
         {model.singular}
       </Typography>
       <Box sx={{ display: "flex", gap: 1, mb: 2 }}>
-        <Button component={Link} to={`/${slug}`}>
+        <Button component={Link} to={spaListPath(slug)}>
           Back to list
         </Button>
         {canUpdate(model) ? (
-          <Button variant="contained" component={Link} to={`/${slug}/${id}/edit`}>
+          <Button variant="contained" component={Link} to={spaEditPath(slug, id)}>
             Edit
           </Button>
         ) : null}

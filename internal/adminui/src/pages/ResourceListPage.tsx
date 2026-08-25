@@ -25,6 +25,7 @@ import { useApiClient } from "../api/client";
 import { ContractError } from "../api/error";
 import type { Row } from "../api/types";
 import { canCreate, canList, canViewDetail } from "../capabilities";
+import { spaDetailPath, spaNewPath } from "../api/paths";
 import { formatCell } from "../fields";
 
 export function ResourceListPage() {
@@ -136,7 +137,7 @@ export function ResourceListPage() {
           {model.plural}
         </Typography>
         {canCreate(model) ? (
-          <Button variant="contained" component={Link} to={`/${slug}/new`} startIcon={<AddIcon />}>
+          <Button variant="contained" component={Link} to={spaNewPath(slug)} startIcon={<AddIcon />}>
             New {model.singular}
           </Button>
         ) : null}
@@ -245,7 +246,7 @@ export function ResourceListPage() {
                       hover={Boolean(canViewDetail(model) && id)}
                       sx={canViewDetail(model) && id ? { cursor: "pointer" } : undefined}
                       onClick={
-                        canViewDetail(model) && id ? () => navigate(`/${slug}/${id}`) : undefined
+                        canViewDetail(model) && id ? () => navigate(spaDetailPath(slug, id)) : undefined
                       }
                     >
                       {columns.map((column) => (

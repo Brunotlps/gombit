@@ -7,6 +7,7 @@ import {
   setCSRFToken,
 } from "../auth/session";
 import { ContractError } from "./error";
+import { apiMetaPath, apiResourcePath } from "./paths";
 import type { Catalog, CatalogAux, ModelMeta, PageMeta, Row } from "./types";
 
 export type Envelope<T, M = unknown> = {
@@ -153,17 +154,17 @@ export function createAdminClient() {
     logout: () => request<{ ok: boolean }>("POST", apiPath("/auth/logout")),
     me: () => request<{ id: number; email: string }>("GET", apiPath("/me")),
     catalog: () => request<Catalog, CatalogAux>("GET", apiPath("/admin/meta")),
-    model: (slug: string) => request<ModelMeta>("GET", apiPath(`/admin/meta/${slug}`)),
+    model: (slug: string) => request<ModelMeta>("GET", apiPath(apiMetaPath(slug))),
     list: (slug: string, query?: Record<string, string | number | undefined>) =>
-      request<Row[], PageMeta>("GET", apiPath(`/admin/resources/${slug}`), { query }),
+      request<Row[], PageMeta>("GET", apiPath(apiResourcePath(slug)), { query }),
     create: (slug: string, body: Row) =>
-      request<Row>("POST", apiPath(`/admin/resources/${slug}`), { body }),
+      request<Row>("POST", apiPath(apiResourcePath(slug)), { body }),
     detail: (slug: string, id: string) =>
-      request<Row>("GET", apiPath(`/admin/resources/${slug}/${id}`)),
+      request<Row>("GET", apiPath(apiResourcePath(slug, id))),
     update: (slug: string, id: string, body: Row) =>
-      request<Row>("PATCH", apiPath(`/admin/resources/${slug}/${id}`), { body }),
+      request<Row>("PATCH", apiPath(apiResourcePath(slug, id)), { body }),
     remove: (slug: string, id: string) =>
-      request<{ ok: boolean }>("DELETE", apiPath(`/admin/resources/${slug}/${id}`)),
+      request<{ ok: boolean }>("DELETE", apiPath(apiResourcePath(slug, id))),
   };
 }
 

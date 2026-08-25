@@ -11,6 +11,7 @@ import {
 } from "@mui/material";
 
 import { useCatalog } from "../app/providers";
+import { spaListPath } from "../api/paths";
 import { canList } from "../capabilities";
 
 export function CatalogPage() {
@@ -31,7 +32,7 @@ export function CatalogPage() {
           <List>
             {models.map((model) =>
               canList(model) ? (
-                <ListItemButton key={model.slug} component={Link} to={`/${model.slug}`}>
+                <ListItemButton key={model.slug} component={Link} to={spaListPath(model.slug)}>
                   <ListItemText primary={model.plural} secondary={model.slug} />
                 </ListItemButton>
               ) : (
