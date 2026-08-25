@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -109,8 +110,13 @@ func TestCRUDRoundTrip(t *testing.T) {
 	if updated.Name != "Renamed" || updated.Description != "desc" {
 		t.Fatalf("updated project = %+v, want Name=Renamed Description=desc (unchanged)", updated)
 	}
-	if !updated.UpdatedAt.After(created.UpdatedAt) {
-		t.Fatalf("updated.UpdatedAt = %v, want after created.UpdatedAt = %v", updated.UpdatedAt, created.UpdatedAt)
+	// Not a strict .After(): POST and PATCH are two separate DB round trips
+	// and almost certainly land on different timestamps in practice, but
+	// "strictly later" isn't actually the invariant that matters here --
+	// "not earlier" is, and asserting the stronger claim risks flaking if
+	// they ever land within the same timestamp resolution window.
+	if updated.UpdatedAt.Before(created.UpdatedAt) {
+		t.Fatalf("updated.UpdatedAt = %v, want not before created.UpdatedAt = %v", updated.UpdatedAt, created.UpdatedAt)
 	}
 
 	del := doJSON(t, router, http.MethodDelete, fmt.Sprintf("/api/projects/%d", created.ID), "")
@@ -152,6 +158,41 @@ func TestCreateRejectsInvalidOwnerID(t *testing.T) {
 	}
 	if envelope.Error.Code != "validation_error" {
 		t.Fatalf("error code = %q, want %q", envelope.Error.Code, "validation_error")
+	}
+}
+
+// TestUpdateRejectsBlankName checks that PATCH /api/projects/:id with
+// {"name":""} is rejected, matching POST's required-name rule. binding's
+// `omitempty` on a *string skips `max=255` once the pointed-to value is
+// empty, not just when the pointer itself is nil, so this needs an explicit
+// check in the handler rather than a binding tag alone (verified: a
+// binding-only omitempty,max=255 tag lets {"name":""} through unchanged).
+func TestUpdateRejectsBlankName(t *testing.T) {
+	db := testDB(t)
+	if err := db.Create(&User{Email: "blank-name-owner@example.com", Name: "Owner"}).Error; err != nil {
+		t.Fatalf("seed owner: %v", err)
+	}
+	router := testRouter(t, db)
+
+	create := doJSON(t, router, http.MethodPost, "/api/projects", `{"owner_id":1,"name":"Original","description":"desc"}`)
+	if create.Code != http.StatusCreated {
+		t.Fatalf("POST /api/projects status = %d, want %d; body: %s", create.Code, http.StatusCreated, create.Body.String())
+	}
+	var created shared.ProjectData
+	decodeData(t, create.Body.Bytes(), &created)
+
+	response := doJSON(t, router, http.MethodPatch, fmt.Sprintf("/api/projects/%d", created.ID), `{"name":""}`)
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("PATCH with blank name status = %d, want %d; body: %s", response.Code, http.StatusUnprocessableEntity, response.Body.String())
+	}
+
+	// The project must be unchanged -- a rejected update must not have
+	// partially applied.
+	get := doJSON(t, router, http.MethodGet, fmt.Sprintf("/api/projects/%d", created.ID), "")
+	var unchanged shared.ProjectData
+	decodeData(t, get.Body.Bytes(), &unchanged)
+	if unchanged.Name != "Original" {
+		t.Fatalf("project name after rejected PATCH = %q, want unchanged %q", unchanged.Name, "Original")
 	}
 }
 
@@ -220,23 +261,28 @@ func TestListPaginationAndOrdering(t *testing.T) {
 // pinned by TestListDoesNotN1EmptyPage below, not this test: the invariant
 // this repo actually needs is "count independent of N", not "always
 // exactly 3 no matter what."
+//
+// Counts via db.Session(&gorm.Session{Logger: counter}) on the already-open
+// connection from testDB, not a second gorm.Open: checked directly
+// (gorm.Open, then Ping, against this driver/version) that neither issues
+// any statement through the traced logger on its own, so a fresh gorm.Open
+// wasn't actually adding spurious queries to the count here — but Session
+// on an already-warm connection is the more robust pattern regardless
+// (guaranteed no first-connection cost of any kind, present or future
+// driver behavior), so it's what's used.
 func TestListDoesNotN1(t *testing.T) {
 	db := testDB(t)
 	seedFixture(t, db, 5, 20)
 
 	counter := &queryCounter{}
-	countingDB, err := gorm.Open(postgres.Open(*databaseDSN), &gorm.Config{Logger: counter})
-	if err != nil {
-		t.Fatalf("open counting db: %v", err)
-	}
-	router := testRouter(t, countingDB)
+	router := testRouter(t, db.Session(&gorm.Session{Logger: counter}))
 
 	response := doJSON(t, router, http.MethodGet, "/api/projects?page=1&limit=20", "")
 	if response.Code != http.StatusOK {
 		t.Fatalf("GET /api/projects status = %d, want %d; body: %s", response.Code, http.StatusOK, response.Body.String())
 	}
-	if counter.count != 3 {
-		t.Fatalf("list issued %d SQL statements, want exactly 3 (count + page + batched owner preload); got query log: %v", counter.count, counter.queries)
+	if got := counter.Count(); got != 3 {
+		t.Fatalf("list issued %d SQL statements, want exactly 3 (count + page + batched owner preload); got query log: %v", got, counter.Queries())
 	}
 }
 
@@ -251,18 +297,14 @@ func TestListDoesNotN1EmptyPage(t *testing.T) {
 	seedFixture(t, db, 5, 20)
 
 	counter := &queryCounter{}
-	countingDB, err := gorm.Open(postgres.Open(*databaseDSN), &gorm.Config{Logger: counter})
-	if err != nil {
-		t.Fatalf("open counting db: %v", err)
-	}
-	router := testRouter(t, countingDB)
+	router := testRouter(t, db.Session(&gorm.Session{Logger: counter}))
 
 	response := doJSON(t, router, http.MethodGet, "/api/projects?page=99&limit=20", "")
 	if response.Code != http.StatusOK {
 		t.Fatalf("GET /api/projects status = %d, want %d; body: %s", response.Code, http.StatusOK, response.Body.String())
 	}
-	if counter.count != 2 {
-		t.Fatalf("empty-page list issued %d SQL statements, want exactly 2 (count + empty page, no owners to preload); got query log: %v", counter.count, counter.queries)
+	if got := counter.Count(); got != 2 {
+		t.Fatalf("empty-page list issued %d SQL statements, want exactly 2 (count + empty page, no owners to preload); got query log: %v", got, counter.Queries())
 	}
 }
 
@@ -351,8 +393,14 @@ func seedFixture(t *testing.T, db *gorm.DB, userCount, projectCount int) {
 
 // queryCounter is a minimal gorm.Logger that counts SQL statements traced
 // via Trace, ignoring GORM's own log-level filtering entirely so the count
-// is exact regardless of configured log level.
+// is exact regardless of configured log level. Guarded by a mutex: even
+// though today's callers only ever drive it from one goroutine per test,
+// GORM does not guarantee Trace is called from the same goroutine that
+// issued the query (e.g. connection-pool maintenance, a driver retry), and
+// an unguarded field read/write racing with that would be a real data race
+// under -race, not just a theoretical one.
 type queryCounter struct {
+	mu      sync.Mutex
 	count   int
 	queries []string
 }
@@ -363,6 +411,25 @@ func (q *queryCounter) Warn(context.Context, string, ...interface{})  {}
 func (q *queryCounter) Error(context.Context, string, ...interface{}) {}
 func (q *queryCounter) Trace(_ context.Context, _ time.Time, fc func() (string, int64), _ error) {
 	sql, _ := fc()
+	q.mu.Lock()
+	defer q.mu.Unlock()
 	q.count++
 	q.queries = append(q.queries, sql)
+}
+
+// Count and Queries are the only reads of queryCounter's state (both from
+// test assertions after the handler call under test has returned), but
+// still go through the same mutex Trace uses rather than reading the fields
+// directly, so nothing about correctness here depends on happens-before
+// reasoning about when Trace's last call returns.
+func (q *queryCounter) Count() int {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return q.count
+}
+
+func (q *queryCounter) Queries() []string {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+	return append([]string(nil), q.queries...)
 }

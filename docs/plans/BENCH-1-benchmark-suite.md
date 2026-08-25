@@ -279,7 +279,7 @@ SQLite/PostgreSQL/MySQL matrix green throughout (AGENTS.md §5.1).
   fixed a real gap this way (`Project.Name`/timestamp columns were
   nullable; the schema doc requires `NOT NULL`).
 
-**Post-landing correction (PR review on #176, github.com/gombit-dev/gombit/pull/176#pullrequestreview-5017796308):**
+**Post-landing correction, round 1 (PR review on #176, github.com/gombit-dev/gombit/pull/176#pullrequestreview-5017796308):**
 Phase 3a's first landed version had a real specification contradiction and
 several fairness/coverage gaps; all fixed:
 
@@ -328,6 +328,39 @@ several fairness/coverage gaps; all fixed:
   on. Validated the exact CI command (`psql -c 'CREATE DATABASE ...'` then
   `go test -tags integration ...`) locally against a freshly created
   database before trusting the YAML, not just written and assumed correct.
+
+**Post-landing correction, round 2 (Merge Warden review on #176,
+github.com/gombit-dev/gombit/pull/176#pullrequestreview-5018114825):** one
+claim checked and found not applicable, three real gaps fixed:
+
+- Claimed `TestListDoesNotN1`'s exact-count assertions were unreliable
+  because `gorm.Open` issues initialization queries the counting logger
+  would pick up. Checked directly against this driver/version (`gorm.Open`,
+  then a forced `Ping()`, with a throwaway counting logger attached) — zero
+  queries traced either way, so the specific failure mode doesn't reproduce
+  here. Switched both counting tests to `db.Session(&gorm.Session{Logger:
+  counter})` on the already-open connection anyway: strictly more robust
+  regardless (no first-connection cost of any kind, present or future
+  driver behavior), and it was the suggested fix, so there was no reason
+  not to adopt the better pattern even without a reproducing bug.
+- `updateProjectRequest.Name`'s `binding:"omitempty,max=255"` skips
+  `max=255` once the pointed-to value is empty, not only when the pointer
+  is nil — checked directly (a standalone `omitempty,max=255` validator
+  call against `&""`) and confirmed `{"name":""}` passes binding
+  unchanged, silently bypassing the same non-blank-name rule `POST
+  /api/projects` enforces via `required`. Fixed with an explicit check in
+  the handler (`TestUpdateRejectsBlankName`, including that a rejected
+  PATCH doesn't partially apply).
+- `queryCounter` read/wrote its fields with no synchronization. Not
+  currently racing (every caller drives it from one goroutine per test),
+  but GORM doesn't guarantee `Trace` runs on the caller's goroutine, so
+  this was correct-by-accident, not correct-by-construction. Added a
+  mutex and thread-safe `Count()`/`Queries()` accessors; verified the full
+  suite still passes under `-race`.
+- `updated.UpdatedAt.After(created.UpdatedAt)` asserted a stronger
+  invariant (strictly later) than the one that actually matters (not
+  earlier), risking flakiness if two round trips ever land in the same
+  timestamp-resolution window. Changed to `!updated.UpdatedAt.Before(...)`.
 
 **Phase 3b — still open:**
 

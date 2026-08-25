@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gombit-dev/gombit/benchmarks/apps/shared"
@@ -152,6 +153,16 @@ func (h *Handler) update(c *gin.Context) {
 	var body updateProjectRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
 		writeError(c, shared.ValidationError(err.Error(), nil))
+		return
+	}
+	// binding's `omitempty` on a *string skips `max=255` when the pointed-to
+	// value is empty, not just when the pointer is nil — a client that sends
+	// {"name":""} (as opposed to omitting the field) would otherwise bypass
+	// the same non-blank-name rule POST /api/projects enforces via
+	// `required`. Checked explicitly since binding tags can't express "at
+	// least one non-whitespace character, only when provided" on a pointer.
+	if body.Name != nil && strings.TrimSpace(*body.Name) == "" {
+		writeError(c, shared.ValidationError("name must not be blank", nil))
 		return
 	}
 
