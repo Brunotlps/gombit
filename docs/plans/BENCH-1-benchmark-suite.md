@@ -30,7 +30,7 @@ concise, honest README section from it:
 **Definition of done** (full checklist is issue #141 §25; the load-bearing
 items are):
 
-- [ ] `[BENCH-1]` added to the build-plan backlog (§2)
+- [x] `[BENCH-1]` added to the build-plan backlog (§2)
 - [ ] `benchmarks/` harness runs end-to-end from a clean checkout with one
       command, and each family (`micro`, `crud`, `auth`, `techempower`,
       `footprint`) is independently runnable
@@ -45,7 +45,7 @@ items are):
 - [ ] Root `README.md` gets a `## Performance` section: framework-tax table,
       PostgreSQL CRUD table, footprint table, methodology link, no unqualified
       "fastest" claims
-- [ ] The existing M0 Huma/Gin spike benchmark (`internal/contractspike`,
+- [x] The existing M0 Huma/Gin spike benchmark (`internal/contractspike`,
       `docs/spikes/M0-2_HUMA_GIN_SPIKE.md`, ADR-011) is preserved as historical
       record, not deleted or silently reused as the final number
 
@@ -101,7 +101,7 @@ The issue deliberately leaves these open ("pick one and document why"). Recommen
 | --- | --- | --- |
 | Load generator | **k6** | Only one of {k6, wrk2, oha} with a built-in constant-arrival-rate executor (`ramping-arrival-rate`), so the coordinated-omission requirement (issue §"Load generator") is met natively instead of documented as a gap. JS scripting lets one workload script parametrize all 6 targets. Ships JSON summary export natively (`--summary-export`), feeding `results.json` directly. |
 | PostgreSQL pin | `postgres:16.4-alpine`, digest captured into `metadata.json` at run time via `docker inspect` | Repo's existing CI convention is `postgres:16-alpine` (major-only); issue requires major.minor or digest. Bump precision without diverging from the CI convention's major version. |
-| Go microbenchmark location | Extend `internal/contractspike` in place; add `net/http`-only and Gombit-runtime variants alongside the existing Huma/Gin and plain-Gin ones | Issue explicitly says reuse, not reimplement. Keeps `go test -bench` working the same way M0-3/ADR-011 already documented. |
+| Go microbenchmark location | `benchmarks/micro/{nethttp,gin,huma,gombit}`, one package per row, sharing types/route registration/assertions via `benchmarks/micro/scenario`; `internal/contractspike`'s M0-2 spike stays untouched as a historical, standalone artifact, cross-linked but not extended | Matches the issue's own suggested tree and keeps one discoverable home for all benchmark code. "Reuse, not reimplement" is satisfied by cross-linking the spike's result, not by physically colocating new code in `internal/`; the spike's widget routes were never going to be literally extended anyway. One package per row also gets Huma's `contract.Install` process-isolation requirement (the Gombit row mutates process-global `huma.NewError`) for free from `go test`'s one-process-per-package model, instead of needing a special-cased package boundary for just that row. |
 | Gombit/Gin+GORM benchmark *server* apps (real HTTP, not in-process) | Live in `benchmarks/apps/gombit` and `benchmarks/apps/gin-gorm` as `package main` inside the **root Go module** | They only need deps already in `go.sum` (Gin, Huma, GORM, `pgx`/`lib/pq`). Matches the existing precedent of `examples/` living in the root module and being covered by `go build ./...` in CI — no nested `go.mod` needed. |
 | Django/Rails/Laravel/NestJS apps | Own directories under `benchmarks/apps/`, each with its ecosystem's standard lockfile and a documented production server (gunicorn/uvicorn, Puma, PHP-FPM+Nginx, compiled Nest + `NODE_ENV=production`) | Not Go — no module question; production-server choice is fixed per issue §17 and documented per app. |
 | Orchestration language | Thin `bash` entrypoints (`scripts/run.sh`, `scripts/smoke.sh`) that shell out to a small Go CLI (`benchmarks/internal/...`, invoked via `go run`) for anything structured: metadata capture, result aggregation, schema/fairness checks, README generation | Issue explicitly forbids "one giant shell script." Go gives testable, typed result-schema code reusing the repo's existing tooling conventions (cf. `resourcegen`, `commandgen`); bash stays a thin process-orchestration layer only. |
@@ -122,6 +122,12 @@ benchmarks/
 ├── Makefile                   # benchmark-smoke / micro / crud / auth / techempower / footprint / benchmark / benchmark-report
 ├── compose.yml                # postgres + all 6 app services, resource limits
 ├── config/benchmark.env       # pinned versions, resource budgets, pool limits
+├── micro/                      # landed (Phase 2) — Go framework-tax microbenchmarks
+│   ├── scenario/                # shared resource types, Huma route registration, correctness assertions
+│   ├── nethttp/                  # net/http row
+│   ├── gin/                      # idiomatic plain-Gin row
+│   ├── huma/                     # bare Huma-over-Gin row
+│   └── gombit/                    # full framework.App row (own package: contract.Install isolation)
 ├── apps/
 │   ├── gombit/                # root-module package main; also built via `gombit build --embed` for footprint
 │   ├── gin-gorm/               # root-module package main; primary control
@@ -137,8 +143,8 @@ benchmarks/
 │   └── latest/{metadata.json, raw/, results.json, results.csv, summary.md}
 └── docs/methodology.md
 
-internal/contractspike/         # existing M0 spike — extended, not replaced
-docs/spikes/M0-2_HUMA_GIN_SPIKE.md   # preserved, cross-linked to benchmarks/docs/methodology.md
+internal/contractspike/         # existing M0 spike — historical, untouched, cross-linked only
+docs/spikes/M0-2_HUMA_GIN_SPIKE.md   # preserved, cross-linked to benchmarks/README.md
 .github/workflows/
 ├── ci.yml                      # + benchmark-smoke job
 └── benchmarks.yml              # new: workflow_dispatch full suite
@@ -154,33 +160,42 @@ SQLite/PostgreSQL/MySQL matrix green throughout (AGENTS.md §5.1).
 
 ### Phase 1 — Governance + scaffolding
 
-- Add the BENCH-1 backlog entry (§2).
-- Create the `benchmarks/` directory tree (§5), empty but structured.
+- Add the BENCH-1 backlog entry (§2). — **done**
+- Create the `benchmarks/` directory tree (§5); `micro/` landed in Phase 2,
+  the rest (`apps/`, `workloads/`, `scripts/`, `config/`, `results/`,
+  `docs/`) is still open.
 - Implement the result schema + metadata collector in `benchmarks/internal/`
   (Go structs matching the issue's `results.json` shape; a `metadata.json`
   collector reading `git rev-parse`, `uname`, `go version`, `docker version`,
-  `docker compose version`, CPU/RAM).
-- Pin and document the load generator (k6) and PostgreSQL image (§4).
-- **AC:** `go build ./benchmarks/...` succeeds (schema/collector code only,
-  no apps yet); `docs/GOMBIT_BUILD_PLAN.md` has the new entry.
+  `docker compose version`, CPU/RAM). — not yet done.
+- Pin and document the load generator (k6) and PostgreSQL image (§4). — not
+  yet done.
+- **AC:** `go build ./benchmarks/...` succeeds; `docs/GOMBIT_BUILD_PLAN.md`
+  has the new entry. Partially satisfied — the backlog entry and `micro/`
+  build, but the result-schema/metadata-collector/load-generator work is
+  still open.
 
-### Phase 2 — Go abstraction-overhead microbenchmarks
+### Phase 2 — Go abstraction-overhead microbenchmarks — **done**
 
-- Extend `internal/contractspike`: add `net/http`-only and Gombit-runtime
-  (real `framework.App` + Huma) variants alongside the existing plain-Gin and
-  Huma+Gin benchmarks.
-- Add the path-parameter, validated-POST, and invalid-POST scenarios the
-  issue requires (`BenchmarkNetHTTP*`, `BenchmarkGin*`, `BenchmarkHumaGin*`,
-  `BenchmarkGombit*`, each with `Plaintext/JSON/PathParam/ValidPost/InvalidPost`
-  sub-benchmarks).
-- Wire `benchstat`-based statistical summarization (`-count=10`) into
-  `benchmarks/scripts/` and `make benchmark-micro`.
-- Cross-link `docs/spikes/M0-2_HUMA_GIN_SPIKE.md` and ADR-011 to the new
-  canonical location; add a note that they're historical, not the current
-  number.
-- **AC:** `go test ./internal/contractspike -bench=. -benchmem -count=10`
-  runs all four stacks × five scenarios; `make benchmark-micro` produces
-  `ns/op`/`B/op`/`allocs/op` rows in `results.json`.
+- Added `benchmarks/micro/{nethttp,gin,huma,gombit}`, one package per row,
+  each carrying the plaintext/JSON/path-parameter/valid-POST/invalid-POST
+  scenarios via shared types and Huma route registration in
+  `benchmarks/micro/scenario`. `internal/contractspike`'s M0-2 spike is
+  untouched, not extended (see §4's Go-microbenchmark-location decision).
+- Each row's `TestScenarios` structurally decodes and checks responses
+  (`benchmarks/micro/scenario/assert.go`), not substring matching, so a
+  handler that stops doing real JSON work can't silently keep passing.
+- Cross-linked `docs/spikes/M0-2_HUMA_GIN_SPIKE.md` to
+  `benchmarks/README.md`; noted the spike's result is historical, not the
+  current number.
+- **Deferred to a later Phase 1/2 follow-up:** `benchstat`-based
+  `-count=10` summarization is documented (run manually) but not yet wired
+  into a `make benchmark-micro` target or `results.json` output — that
+  depends on Phase 1's still-open result-schema/summarizer work.
+- **AC:** `go test ./benchmarks/micro/... -bench=BenchmarkFrameworkTax -benchmem -count=10`
+  runs all four stacks × five scenarios and reports `ns/op`/`B/op`/`allocs/op`.
+  `make benchmark-micro` / `results.json` output is not yet satisfied (see
+  above).
 
 ### Phase 3 — Canonical schema, seed, and CRUD apps (Gombit + Gin+GORM)
 
@@ -279,7 +294,7 @@ SQLite/PostgreSQL/MySQL matrix green throughout (AGENTS.md §5.1).
 ```bash
 go test ./...
 golangci-lint run
-go test ./internal/contractspike -bench=. -benchmem -count=10
+go test ./benchmarks/micro/... -bench=BenchmarkFrameworkTax -benchmem -count=10
 cd benchmarks && make benchmark-smoke
 cd benchmarks && make benchmark   # full suite, run at least once before merge of the reporting PR
 ```

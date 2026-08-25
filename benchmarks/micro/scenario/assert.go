@@ -1,14 +1,4 @@
-// Package benchassert holds the shared correctness assertions for the
-// framework-tax benchmark matrix (issue #141): the same five scenarios
-// (plaintext, JSON, path parameter, valid POST, invalid POST) checked
-// structurally against every stack before it's trusted for benchmarking.
-//
-// It exists as its own package because Go test files (_test.go) are not
-// part of an importable package: internal/contractspike/gombitbench's tests
-// cannot call helpers defined in internal/contractspike's _test.go files
-// directly. Rather than copy the assertions into both packages, they live
-// here once and both test suites call in.
-package benchassert
+package scenario
 
 import (
 	"encoding/json"
@@ -16,32 +6,24 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/gombit-dev/gombit/internal/contractspike"
-)
-
-// Fixture request bodies shared by every stack's POST /users scenarios.
-const (
-	ValidCreateUserBody   = `{"name":"Ada Lovelace","email":"ada@example.com"}`
-	InvalidCreateUserBody = `{"name":"","email":"not-an-email"}`
 )
 
 // Stack is one row of the framework-tax matrix under test.
 type Stack struct {
 	Name    string
 	Handler http.Handler
-	// Envelope is true for stacks that wrap JSON responses in the D10
+	// Envelope is true for stacks that wrap JSON responses in
 	// SuccessEnvelope (Huma, Gombit); false for stacks that return the
 	// resource bare (net/http, Gin) — each idiomatic to its own stack.
 	Envelope bool
 }
 
-// Scenarios exercises the five framework-tax benchmark scenarios against
+// Assert exercises the five framework-tax benchmark scenarios against
 // stack.Handler and fails tb if the stack doesn't implement them correctly.
 // It decodes and checks JSON structurally (not by substring), so a handler
 // that stops doing real JSON serialization work can't silently keep passing:
 // a benchmark over a broken or short-circuited handler is meaningless.
-func Scenarios(tb testing.TB, stack Stack) {
+func Assert(tb testing.TB, stack Stack) {
 	tb.Helper()
 
 	assertPlaintext(tb, stack)
@@ -118,11 +100,13 @@ func assertValidPost(tb testing.TB, stack Stack) {
 // well-formed-JSON client error. It deliberately does not assert a specific
 // error envelope shape: contract.Install (M3-2) replaces Huma's
 // package-level huma.NewError process-wide the first time any framework.App
-// boots, so within one `go test` binary the bare Huma+Gin stack's error
-// shape depends on whether a Gombit stack ran first in that process. That's
-// a real, documented Huma/Gombit interaction (see
-// docs/spikes/M0-2_HUMA_GIN_SPIKE.md), not something this benchmark should
-// paper over or make flaky assertions about.
+// boots, so a bare Huma+Gin stack sharing a process with a Gombit stack
+// would have an error shape that depends on run order. Each stack here runs
+// in its own package/process (that's the point of benchmarks/micro/{...}
+// being separate directories), which sidesteps that, but this assertion
+// still doesn't assert an exact shape since it's shared across stacks that
+// intentionally use different error mappings (see
+// docs/spikes/M0-2_HUMA_GIN_SPIKE.md).
 func assertInvalidPost(tb testing.TB, stack Stack) {
 	tb.Helper()
 
@@ -135,18 +119,18 @@ func assertInvalidPost(tb testing.TB, stack Stack) {
 	}
 }
 
-func decodeUser(tb testing.TB, stack Stack, body []byte) contractspike.BenchUser {
+func decodeUser(tb testing.TB, stack Stack, body []byte) BenchUser {
 	tb.Helper()
 
 	if stack.Envelope {
-		var envelope contractspike.SuccessEnvelope[contractspike.BenchUser]
+		var envelope SuccessEnvelope[BenchUser]
 		if err := json.Unmarshal(body, &envelope); err != nil {
 			tb.Fatalf("%s: decode enveloped user response: %v; body: %s", stack.Name, err, body)
 		}
 		return envelope.Data
 	}
 
-	var user contractspike.BenchUser
+	var user BenchUser
 	if err := json.Unmarshal(body, &user); err != nil {
 		tb.Fatalf("%s: decode bare user response: %v; body: %s", stack.Name, err, body)
 	}
@@ -157,7 +141,7 @@ func decodeMessage(tb testing.TB, stack Stack, body []byte) string {
 	tb.Helper()
 
 	if stack.Envelope {
-		var envelope contractspike.SuccessEnvelope[map[string]string]
+		var envelope SuccessEnvelope[map[string]string]
 		if err := json.Unmarshal(body, &envelope); err != nil {
 			tb.Fatalf("%s: decode enveloped json response: %v; body: %s", stack.Name, err, body)
 		}
@@ -172,8 +156,8 @@ func decodeMessage(tb testing.TB, stack Stack, body []byte) string {
 }
 
 // Do sends a request through handler and returns the recorded response. It
-// is exported so benchmark loops (not just Scenarios) can reuse the exact
-// same request construction the correctness checks use.
+// is exported so benchmark loops (not just Assert) can reuse the exact same
+// request construction the correctness checks use.
 func Do(handler http.Handler, method, path, body string) *httptest.ResponseRecorder {
 	var request *http.Request
 	if body == "" {
