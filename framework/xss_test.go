@@ -29,6 +29,13 @@ func TestStripHTML(t *testing.T) {
 		{name: "img stripped", in: `x<img src=x onerror=alert(0)>y`, want: "xy"},
 		{name: "unclosed script fail-closed", in: `<script src=x>alert(1)`, want: ""},
 		{name: "nested markup", in: `<div><b>a</b><i>b</i></div>`, want: "ab"},
+		// Incomplete "<"+letter is not a tag (golang.org/x/net/html would
+		// otherwise eat the rest of the string: "a<b" → "a").
+		{name: "comparison a<b", in: "a<b", want: "a<b"},
+		{name: "comparison a<b>c without real tag name", in: "a < b", want: "a < b"},
+		{name: "less-than number", in: "score < 10", want: "score < 10"},
+		{name: "greater-than only", in: "a>b", want: "a>b"},
+		{name: "complete tag still stripped", in: "foo <bar> baz", want: "foo  baz"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -236,5 +243,29 @@ func TestSanitizeJSONBodyUpdatesContentLengthHeader(t *testing.T) {
 	}
 	if gotHeader := c.Request.Header.Get("Content-Length"); gotHeader != strconv.Itoa(len(got)) {
 		t.Fatalf("Content-Length header = %q, want %d", gotHeader, len(got))
+	}
+}
+
+func TestSanitizeJSONBodyPreservesComparisonText(t *testing.T) {
+	t.Parallel()
+
+	raw := []byte(`{"name":"a<b","price":1}`)
+	rec := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(rec)
+	c.Request = httptest.NewRequest(http.MethodPost, "/", bytes.NewReader(raw))
+	c.Request.Header.Set("Content-Type", "application/json")
+
+	sanitizeJSONBody(c)
+
+	got, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		t.Fatalf("read body: %v", err)
+	}
+	var payload map[string]any
+	if err := json.Unmarshal(got, &payload); err != nil {
+		t.Fatalf("unmarshal sanitized body: %v (%s)", err, got)
+	}
+	if payload["name"] != "a<b" {
+		t.Fatalf("name = %#v, want a<b (not truncated)", payload["name"])
 	}
 }

@@ -27,6 +27,9 @@ version.
 
 ### Fixed
 
+- XSS request sanitizer no longer truncates JSON/query strings that contain
+  `<` without a complete HTML tag (e.g. `a<b` stayed `a`). Complete tags
+  are still stripped ([#118](https://github.com/gombit-dev/gombit/issues/118)).
 - Cookie-mode session 401s omit `WWW-Authenticate: Bearer`. The D10 body
   stays `authentication`; Bearer mode still sends `Bearer realm="api"`
   ([#117](https://github.com/gombit-dev/gombit/issues/117)).

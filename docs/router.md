@@ -88,6 +88,11 @@ Other behavior notes:
   Callers that hash the raw body must hash the bytes handlers actually see.
 - Unclosed dangerous elements (for example a truncated `<script>...`) discard
   the remainder of the string (fail-closed).
+- Incomplete angle brackets that are not a complete HTML tag (no closing
+  `>`, e.g. a product name `a<b`) are left unchanged. The HTML tokenizer
+  would otherwise treat `"<"+letter` as a start tag and silently shorten
+  the string. Complete tags (`<b>hi</b>`, `<script>…</script>`) are still
+  stripped.
 - JSON sanitizer buffering is capped at 8MiB. Larger JSON bodies abort with
   HTTP 413 and a D10 error envelope (`payload_too_large`) and never reach
   handlers. `http.Server.ReadTimeout` matches `GOMBIT_HTTP_REQUEST_TIMEOUT`
