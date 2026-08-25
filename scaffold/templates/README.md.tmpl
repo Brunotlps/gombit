@@ -33,7 +33,7 @@ TypeScript client regeneration:
 gombit dev
 ```
 
-`gombit dev` prints a service table (Backend, Frontend, OpenAPI, API docs).
+`gombit dev` prints a service table (Backend, Frontend, OpenAPI, API docs{{if eq .Auth "cookie"}}, Admin{{end}}).
 Backend reload uses `air` or `watchexec` when installed; otherwise it falls
 back to `go run ./cmd/server`. The frontend uses `pnpm` when available,
 otherwise `npm`. Node.js is required for Vite HMR. The frontend is a Vite +

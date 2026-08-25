@@ -292,9 +292,15 @@ func assertRuntimeAPIPrefix(t *testing.T, files fileMap, auth string) {
 	if !strings.Contains(vite, "GOMBIT_API_PREFIX") || !strings.Contains(vite, "injectAPIPrefix") {
 		t.Error("vite.config.ts must inject GOMBIT_API_PREFIX during vite dev")
 	}
+	if !strings.Contains(vite, `"/admin"`) {
+		t.Error("vite.config.ts must proxy /admin to the Go origin")
+	}
 	readme := string(files["frontend/README.md"])
 	if !strings.Contains(readme, "A CDN must replace `__GOMBIT_API_PREFIX__`") {
 		t.Error("frontend/README.md must document split-deploy placeholder substitution")
+	}
+	if !strings.Contains(readme, "`/admin`") {
+		t.Error("frontend/README.md must mention the Vite /admin proxy")
 	}
 	envExample := string(files[".env.example"])
 	if !strings.Contains(envExample, "A CDN must replace __GOMBIT_API_PREFIX__") {

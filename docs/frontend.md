@@ -100,7 +100,9 @@ works. For a split deploy, set the API **origin only** (for example
 `rewriteAPIRequest` maps them to the prefix injected (or substituted) in
 `index.html`. Prefixes that still start with `/api` (such as `/api/v2`)
 hit the existing `/api` proxy during `gombit dev`; a prefix that does not
-(`/svc/v2`) gets an extra Vite proxy entry.
+(`/svc/v2`) gets an extra Vite proxy entry. Vite also proxies `/docs` and
+`/admin` so interactive docs and the cookie-mode admin SPA are reachable on
+the frontend origin.
 
 `VITE_*` values are baked into the browser bundle. Never put JWT secrets,
 database passwords, or other server credentials there. Do not put

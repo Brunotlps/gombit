@@ -102,8 +102,9 @@ prefixes `/auth/*` and `/admin/*` with that value (default `/api/v1`).
 The SPA may use MUI internally. That is **not** a C4 violation: `--ui mui`
 remains the generated **application** preset. `gombit new` trees do not
 gain `@mui` from this package. `gombit make resource` does not grow
-`--admin`. Optional `gombit dev` Admin URL in the service table is out of
-scope (ADR-013).
+`--admin`. Cookie-mode `gombit dev` prints the Admin SPA URL and Vite
+proxies `/admin` to the Go origin so `http://127.0.0.1:5173/admin/` reaches
+the framework admin instead of the generated application SPA.
 
 Rebuild: see [`internal/adminui/README.md`](../internal/adminui/README.md).
 Commit `dist/` with source changes so consumers `go get` a working embed.
@@ -244,6 +245,5 @@ superuser with `auth.Service.CreateSuperuser` (the same path as
 - Full users/groups management screens in the admin SPA
 - `--admin` generator / golden template changes / copying the SPA into
   generated `frontend/`
-- `gombit dev` Admin URL in the service table
 - M6 batteries (jobs, events, scheduler, mail, storage, gRPC, multi-tenancy, i18n)
 - `localStorage` tokens

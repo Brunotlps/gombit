@@ -186,8 +186,8 @@ One command starts:
 1. The Go API with reload when `air` or `watchexec` is on `PATH`. If neither
    is installed, Gombit runs `go run ./cmd/server` and prints a hint.
 2. The Vite frontend with HMR (`pnpm` when available, otherwise `npm`). Vite
-   proxies `/api`, `/openapi.json`, and `/docs` to the Go origin. Prefixes
-   that do not start with `/api` get an extra proxy entry from the live
+   proxies `/api`, `/openapi.json`, `/docs`, and `/admin` to the Go origin.
+   Prefixes that do not start with `/api` get an extra proxy entry from the live
    `GOMBIT_API_PREFIX`.
 3. An OpenAPI watcher that regenerates `frontend/src/api/generated` when the
    live `/openapi.json` document changes (`gombit client generate`).
@@ -199,6 +199,13 @@ Backend      http://127.0.0.1:8080
 Frontend     http://127.0.0.1:5173
 OpenAPI      http://127.0.0.1:8080/openapi.json
 API docs     http://127.0.0.1:8080/docs
+```
+
+Cookie-mode apps also print the admin SPA (the same origin the Vite `/admin`
+proxy forwards to):
+
+```text
+Admin        http://127.0.0.1:8080/admin/
 ```
 
 ### Flags

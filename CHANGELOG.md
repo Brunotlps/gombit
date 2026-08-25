@@ -27,6 +27,11 @@ version.
 
 ### Fixed
 
+- `gombit dev` Vite proxy now forwards `/admin` to the Go origin, and
+  cookie-mode apps print an Admin row in the service table, so
+  `http://127.0.0.1:5173/admin/` reaches the framework admin SPA instead of
+  the generated application catch-all
+  ([#121](https://github.com/gombit-dev/gombit/issues/121)).
 - `gombit new --auth none` is rejected. v0.1 auth is `jwt` or `cookie` (C3);
   `none` was accepted and silently scaffolded a JWT app
   ([#120](https://github.com/gombit-dev/gombit/issues/120)).

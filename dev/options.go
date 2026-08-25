@@ -57,6 +57,9 @@ type Options struct {
 	HTTPGet      HTTPGetFunc
 	Generate     GenerateFunc
 	ShutdownWait time.Duration
+	// AdminURL is printed in the service table when non-empty (cookie-mode
+	// apps that mount the framework admin SPA). JWT apps leave this empty.
+	AdminURL string
 }
 
 func (opts *Options) normalize() error {
@@ -148,6 +151,15 @@ func APIPrefixFromConfig(cfg config.Config) string {
 		return "/api/v1"
 	}
 	return prefix
+}
+
+// AdminURLFromConfig returns the admin SPA URL for cookie-mode apps with
+// auth enabled. JWT apps and auth-disabled configs return "".
+func AdminURLFromConfig(cfg config.Config, httpAddr string) string {
+	if !cfg.Auth.Enabled() || cfg.Auth.EffectiveMode() != config.AuthModeCookie {
+		return ""
+	}
+	return originFromAddr(httpAddr) + "/admin/"
 }
 
 func parseListenAddr(addr string) (hostPort string, err error) {

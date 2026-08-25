@@ -46,6 +46,7 @@ const proxy: Record<string, { target: string; changeOrigin: boolean }> = {
   "/api": { target: backend, changeOrigin: true },
   "/openapi.json": { target: backend, changeOrigin: true },
   "/docs": { target: backend, changeOrigin: true },
+  "/admin": { target: backend, changeOrigin: true },
 };
 if (apiPrefix !== "/" && apiPrefix !== "/api" && !apiPrefix.startsWith("/api/")) {
   proxy[apiPrefix] = { target: backend, changeOrigin: true };
