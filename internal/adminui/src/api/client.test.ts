@@ -116,3 +116,33 @@ describe("admin client silent refresh", () => {
     expect(meHits).toBe(2);
   });
 });
+
+describe("admin client resource IDs", () => {
+  afterEach(() => {
+    clearSession();
+    vi.unstubAllGlobals();
+  });
+
+  it("encodes slash and parent-directory PKs before new URL() normalizes the path", async () => {
+    const seen: string[] = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL): Promise<Response> => {
+      const url = String(input);
+      seen.push(url);
+      if (url.includes("/auth/csrf")) {
+        return jsonResponse(200, { data: { csrf_token: "csrf-id" } });
+      }
+      return jsonResponse(200, { data: { id: "ok" } });
+    });
+    const client = createAdminClient();
+    await client.detail("items", "../widgets/1");
+    await client.update("items", "foo/bar", { name: "x" });
+    await client.remove("items", "a/b");
+
+    const resourceURLs = seen.filter((url) => url.includes("/admin/resources/"));
+    expect(resourceURLs).toHaveLength(3);
+    expect(new URL(resourceURLs[0]).pathname).toBe("/api/v1/admin/resources/items/..%2Fwidgets%2F1");
+    expect(new URL(resourceURLs[0]).pathname).not.toBe("/api/v1/admin/resources/widgets/1");
+    expect(new URL(resourceURLs[1]).pathname).toBe("/api/v1/admin/resources/items/foo%2Fbar");
+    expect(new URL(resourceURLs[2]).pathname).toBe("/api/v1/admin/resources/items/a%2Fb");
+  });
+});

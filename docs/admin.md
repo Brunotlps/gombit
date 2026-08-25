@@ -103,6 +103,9 @@ The SPA does **not** bake `/api/v1` at Vite build time. Gin injects
 `config.API.Prefix` when serving `index.html` (placeholder
 `__GOMBIT_API_PREFIX__`) and `GET /admin/config.json`. The client
 prefixes `/auth/*` and `/admin/*` with that value (default `/api/v1`).
+Resource IDs (and slugs) are `encodeURIComponent`'d as a single path
+segment so a string PK such as `foo/bar` or `../widgets/1` is not split
+or normalized by `new URL()`.
 
 The SPA may use MUI internally. That is **not** a C4 violation: `--ui mui`
 remains the generated **application** preset. `gombit new` trees do not
