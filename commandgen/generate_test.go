@@ -295,6 +295,8 @@ func TestGenerateRejectsReservedNames(t *testing.T) {
 		{name: "new", want: "collides"},
 		{name: "make", want: "collides"},
 		{name: "build", want: "collides"},
+		{name: "version", want: "collides"},
+		{name: "createsuperuser", want: "collides"},
 		{name: "platform", pkg: "platform", want: "reserved"},
 		{name: "greet", pkg: "product", want: "reserved"},
 		{name: "greet", pkg: "web", want: "reserved"},

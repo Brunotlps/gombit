@@ -29,7 +29,7 @@ func AddCommand(root *Command, cmds ...*Command) {
 }
 
 // NewRoot returns the framework Cobra tree (new, dev, build, make, db, openapi,
-// client, routes, doctor, config, createsuperuser). Generated apps call NewRoot, then
+// client, routes, doctor, config, createsuperuser, version). Generated apps call NewRoot, then
 // feature-package RegisterCommands, then ExecuteRoot.
 func NewRoot(stdout io.Writer, stderr io.Writer) *Command {
 	if stdout == nil {

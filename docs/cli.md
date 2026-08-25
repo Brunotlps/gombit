@@ -420,8 +420,8 @@ Registration edits use `go/ast` + `go/parser` + `go/format` (never regex).
 `cmd/gombit/main.go` are additive AST edits of known registration points.
 
 Command names that collide with framework families (`new`, `dev`, `build`,
-`make`, `db`, `openapi`, `client`, `routes`, `doctor`, `config`, `help`,
-`completion`) are rejected.
+`make`, `db`, `openapi`, `client`, `routes`, `doctor`, `config`,
+`createsuperuser`, `version`, `help`, `completion`) are rejected.
 
 ## `gombit db`
 
