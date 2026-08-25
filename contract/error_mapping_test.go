@@ -3,6 +3,7 @@ package contract
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -120,5 +121,72 @@ func TestDataMetaPageMetaAppearsInOpenAPI(t *testing.T) {
 		if !strings.Contains(spec, want) {
 			t.Fatalf("OpenAPI missing %s; body: %s", want, spec)
 		}
+	}
+}
+
+func TestUnexpectedHandlerErrorIsInternal(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	api := humagin.New(router, HumaConfig("contract-test", "0.0.0"))
+
+	huma.Register(api, huma.Operation{
+		OperationID: "boom",
+		Method:      http.MethodGet,
+		Path:        "/boom",
+	}, func(ctx context.Context, in *struct{}) (*struct{}, error) {
+		return nil, errors.New("sql: connection refused")
+	})
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/boom", nil))
+	if rec.Code != http.StatusInternalServerError {
+		t.Fatalf("status = %d, want 500; body: %s", rec.Code, rec.Body.String())
+	}
+	var body ErrorEnvelope
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v; body: %s", err, rec.Body.String())
+	}
+	if body.Body.Code != string(CategoryInternal) {
+		t.Fatalf("code = %q, want internal; body: %s", body.Body.Code, rec.Body.String())
+	}
+	if len(body.Body.Fields) != 0 {
+		t.Fatalf("fields = %#v, want empty (no driver string)", body.Body.Fields)
+	}
+	if strings.Contains(body.Body.Message, "sql: connection refused") {
+		t.Fatalf("message leaked driver error: %q", body.Body.Message)
+	}
+}
+
+func TestMissingJSONBodyIsValidationError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	api := humagin.New(router, HumaConfig("contract-test", "0.0.0"))
+
+	type createInput struct {
+		Body struct {
+			Name string `json:"name"`
+		}
+	}
+	huma.Register(api, huma.Operation{
+		OperationID: "create-required-body",
+		Method:      http.MethodPost,
+		Path:        "/required-body",
+	}, func(ctx context.Context, input *createInput) (*struct{}, error) {
+		return &struct{}{}, nil
+	})
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/required-body", http.NoBody)
+	req.Header.Set("Content-Type", "application/json")
+	router.ServeHTTP(rec, req)
+	if rec.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("status = %d, want 422; body: %s", rec.Code, rec.Body.String())
+	}
+	var body ErrorEnvelope
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode: %v; body: %s", err, rec.Body.String())
+	}
+	if body.Body.Code != CodeValidationError {
+		t.Fatalf("code = %q, want %q; body: %s", body.Body.Code, CodeValidationError, rec.Body.String())
 	}
 }

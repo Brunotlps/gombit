@@ -180,6 +180,10 @@ cookie CSRF uses `Authorization` (403). Do not treat 413 as a handler-level
 `WithFields` attaches D10 `fields` without forcing the code to
 `validation_error` (for example a `conflict` with a field detail). Huma tag
 validation still uses the Install path and always yields `validation_error`.
+A missing JSON body is HTTP **422** `validation_error` (Huma may start as
+400; Install remaps it). An unexpected non-`StatusError` from a handler is
+HTTP **500** `internal` with no `fields` — not `validation_error` and not
+the raw driver string.
 
 The `validation_error` code is preserved from M3-1 / D10 (not renamed to
 `validation`).
