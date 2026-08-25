@@ -364,7 +364,7 @@ func TestCookieMe401OmitsBearerChallenge(t *testing.T) {
 	t.Run("invalid session cookie", func(t *testing.T) {
 		rec := httptest.NewRecorder()
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
-		req.AddCookie(&http.Cookie{Name: auth.AccessCookieName, Value: "not-a-jwt"})
+		req.AddCookie(&http.Cookie{Name: auth.AccessCookieName, Value: "not-a-jwt"}) //nolint:gosec // G124: request Cookie header only carries name/value.
 		app.Router().ServeHTTP(rec, req)
 		if rec.Code != http.StatusUnauthorized {
 			t.Fatalf("status = %d, want 401; body: %s", rec.Code, rec.Body.String())
