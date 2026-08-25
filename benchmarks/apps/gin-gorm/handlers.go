@@ -12,7 +12,7 @@ import (
 )
 
 // Handler serves the canonical /api/projects routes (benchmarks/docs/schema.md)
-// over plain Gin + GORM — this repo's primary framework-tax control: same
+// over plain Gin + GORM: this repo's primary framework-tax control: same
 // language, runtime, ORM family, and response envelope as the Gombit app,
 // without Huma/framework.App around it.
 type Handler struct {
