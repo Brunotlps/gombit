@@ -67,8 +67,10 @@ Bearer surface and `cookie` mode; see
 requirements.
 
 `gombit new` writes a gitignored `.env` with a per-project random HMAC secret.
-Generated `.env.example` keeps a short development placeholder so
-`cp .env.example .env` still works locally; production rejects that value.
+Generated `.env.example` keeps a short development placeholder for
+documentation. Do not `cp .env.example .env` over an existing `.env` — that
+replaces the per-project secret with the public placeholder. Production
+rejects that value.
 
 ## Generated frontend
 
