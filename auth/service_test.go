@@ -70,6 +70,55 @@ func TestRotateRefreshKeepsNewAccessValid(t *testing.T) {
 	}
 }
 
+func TestConcurrentRotateRefreshDoesNotRevokeWinner(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	user, err := svc.Register(ctx, "ada@example.com", "correct-horse")
+	if err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	first, err := svc.IssueTokens(ctx, user)
+	if err != nil {
+		t.Fatalf("IssueTokens: %v", err)
+	}
+
+	type result struct {
+		pair TokenPair
+		err  error
+	}
+	const n = 8
+	results := make([]result, n)
+	var wg sync.WaitGroup
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func(i int) {
+			defer wg.Done()
+			pair, err := svc.RotateRefresh(ctx, first.RefreshToken)
+			results[i] = result{pair: pair, err: err}
+		}(i)
+	}
+	wg.Wait()
+
+	var winner TokenPair
+	wins := 0
+	for i, r := range results {
+		if r.err == nil {
+			wins++
+			winner = r.pair
+			continue
+		}
+		if !errors.Is(r.err, errInvalidRefreshToken) && !errors.Is(r.err, errRefreshReuse) {
+			t.Fatalf("RotateRefresh()[%d] error = %v, want success or invalid/reuse", i, r.err)
+		}
+	}
+	if wins == 0 {
+		t.Fatal("all concurrent RotateRefresh calls failed")
+	}
+	if _, err := svc.ParseAccess(ctx, winner.AccessToken); err != nil {
+		t.Fatalf("ParseAccess(winner) error = %v; concurrent loser family-revoked the new session", err)
+	}
+}
+
 func newTestService(t *testing.T) *Service {
 	t.Helper()
 	db, err := database.Open(config.DatabaseConfig{
