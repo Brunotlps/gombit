@@ -311,7 +311,9 @@ and `--repo` are C6 opt-in and are not used by the generated handler.
 Route registration is appended in `cmd/server/main.go` via `go/ast` +
 `go/parser` + `go/format` (never regex), next to `product.Register(app)`.
 `internal/platform` AutoMigrate is updated the same way. Re-running does not
-duplicate the `Register` call.
+duplicate the `Register` call. A second resource whose plural HTTP path
+collides with an existing feature-package (`Bus` and `Buse` both become
+`/buses`) is refused.
 
 Frontend pages are React + TypeScript (list/table + React Hook Form create)
 under `frontend/src/<feature>/`. They import types from

@@ -34,6 +34,9 @@ func Generate(ctx context.Context, opts Options) error {
 	if err != nil {
 		return err
 	}
+	if err := checkHTTPPathConflict(opts.WorkDir, name); err != nil {
+		return err
+	}
 	fields, err := parseFields(opts.Fields)
 	if err != nil {
 		return err
@@ -233,6 +236,53 @@ func readUI(workDir string) string {
 		return defaultUI
 	}
 	return defaultUI
+}
+
+func checkHTTPPathConflict(workDir string, name ResourceName) error {
+	dirs := []struct {
+		root   string
+		accept func(root, pkg string) bool
+	}{
+		{
+			root: filepath.Join(workDir, "internal"),
+			accept: func(root, pkg string) bool {
+				_, err := os.Stat(filepath.Join(root, pkg, "routes.go"))
+				return err == nil
+			},
+		},
+		{
+			root:   filepath.Join(workDir, "frontend", "src"),
+			accept: hasGeneratedListPage,
+		},
+	}
+	for _, dir := range dirs {
+		entries, err := os.ReadDir(dir.root)
+		if err != nil {
+			if errors.Is(err, os.ErrNotExist) {
+				continue
+			}
+			return fmt.Errorf("resourcegen: read %s: %w", dir.root, err)
+		}
+		for _, entry := range entries {
+			if !entry.IsDir() {
+				continue
+			}
+			if !dir.accept(dir.root, entry.Name()) {
+				continue
+			}
+			other, err := parseResourceName(entry.Name())
+			if err != nil {
+				continue
+			}
+			if other.Package == name.Package {
+				continue
+			}
+			if other.HTTPPath == name.HTTPPath {
+				return fmt.Errorf("resourcegen: resource name %q maps to HTTP path %q already used by %q", name.Input, name.HTTPPath, other.Package)
+			}
+		}
+	}
+	return nil
 }
 
 func collectFrontendResources(workDir string, current ResourceName) []ResourceName {
