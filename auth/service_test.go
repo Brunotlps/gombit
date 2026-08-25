@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"sync"
 	"testing"
 	"time"
 
@@ -161,6 +162,30 @@ func TestRegisterDoesNotGrantSuperuser(t *testing.T) {
 	}
 	if _, err := svc.Register(ctx, "user@example.com", "correct-horse-2"); !errors.Is(err, ErrEmailTaken) {
 		t.Fatalf("duplicate Register error = %v, want ErrEmailTaken", err)
+	}
+}
+
+// TestAuthenticateUnknownEmailParallel is the #113 regression: unknown-email
+// logins lazily initialize Service.dummyHash. Concurrent Authenticate calls
+// on one *Service must not race on that write (go test -race).
+func TestAuthenticateUnknownEmailParallel(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+	const n = 32
+	var wg sync.WaitGroup
+	errs := make([]error, n)
+	wg.Add(n)
+	for i := 0; i < n; i++ {
+		go func(i int) {
+			defer wg.Done()
+			_, errs[i] = svc.Authenticate(ctx, "nobody@example.com", "x")
+		}(i)
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if !errors.Is(err, errInvalidCredentials) {
+			t.Fatalf("Authenticate()[%d] error = %v, want errInvalidCredentials", i, err)
+		}
 	}
 }
 

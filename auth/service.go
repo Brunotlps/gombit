@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gombit-dev/gombit/config"
@@ -19,6 +20,7 @@ type Service struct {
 	secret    []byte
 	hasher    Hasher
 	clock     Clock
+	dummyOnce sync.Once
 	dummyHash string
 }
 
@@ -244,12 +246,15 @@ func revokeAllTx(tx *gorm.DB, userID uint, now time.Time) error {
 }
 
 func (s *Service) compareDummy(password string) {
-	if s.dummyHash == "" {
+	s.dummyOnce.Do(func() {
 		hash, err := s.hasher.Hash("timing-dummy-password")
 		if err != nil {
 			return
 		}
 		s.dummyHash = hash
+	})
+	if s.dummyHash == "" {
+		return
 	}
 	_ = s.hasher.Compare(s.dummyHash, password)
 }
