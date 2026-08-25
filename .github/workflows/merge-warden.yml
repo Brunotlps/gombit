@@ -54,6 +54,7 @@ jobs:
         uses: leo-aa88/merge-warden@v1
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
+          provider: google
           google-api-key: ${{ secrets.GOOGLE_API_KEY }}
           pr-number: ${{ steps.pr.outputs.number }}
           expected-head-sha: ${{ github.event.workflow_run.head_sha }}
