@@ -27,6 +27,9 @@ version.
 
 ### Fixed
 
+- Admin resource lists remount when the model slug changes (`key={slug}`),
+  so pagination, search, ordering, and filters do not carry over to the next
+  model ([#114](https://github.com/gombit-dev/gombit/issues/114)).
 - Unknown-email login timing pad no longer races on `Service.dummyHash`.
   `compareDummy` initializes the dummy bcrypt hash once via `sync.Once` so
   concurrent `Authenticate` misses are race-free

@@ -80,8 +80,10 @@ Anonymous `/admin` redirects to `/admin/login`. After login the catalog
 lists authorized `data.models` (a superuser can receive an empty catalog
 when nothing is registered; models with `actions.list === false` are shown
 but not linked). List/detail/create/edit/delete honor both `actions.*` and
-the current user's `can.*`. Field widgets cover the closed
-ADMIN-1 types; `belongs_to` is an FK input; `has_many` is read-only.
+the current user's `can.*`. Switching models remounts the list route
+(`key={slug}`) so page, search, ordering, and filters start empty.
+Field widgets cover the closed ADMIN-1 types; `belongs_to` is an FK
+input; `has_many` is read-only.
 `datetime-local` values are converted to RFC3339 before POST/PATCH.
 Empty optional (non-boolean) inputs — string, text, date, datetime, json,
 number, relation — are sent as JSON `null` so a partial PATCH can clear
