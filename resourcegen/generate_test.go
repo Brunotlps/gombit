@@ -539,6 +539,73 @@ func TestGenerateFrontendKeepsTypedDefaultPrefix(t *testing.T) {
 	}
 }
 
+func TestGenerateRefusesCollidingHTTPPath(t *testing.T) {
+	workDir := t.TempDir()
+	if err := scaffold.Generate(context.Background(), scaffold.Options{
+		Name:     "demo",
+		Database: "sqlite",
+		WorkDir:  workDir,
+		Stdout:   ioDiscard{},
+	}); err != nil {
+		t.Fatalf("scaffold: %v", err)
+	}
+	appDir := filepath.Join(workDir, "demo")
+
+	previousLook := lookPath
+	lookPath = func(string) (string, error) { return "", errors.New("atlas missing") }
+	t.Cleanup(func() { lookPath = previousLook })
+
+	err := Generate(context.Background(), Options{
+		WorkDir:   appDir,
+		Name:      "Bus",
+		Fields:    []string{"name:string"},
+		Stdout:    ioDiscard{},
+		skipAtlas: true,
+	})
+	if err != nil {
+		t.Fatalf("Generate(Bus) error = %v", err)
+	}
+
+	err = Generate(context.Background(), Options{
+		WorkDir:   appDir,
+		Name:      "Buse",
+		Fields:    []string{"name:string"},
+		Stdout:    ioDiscard{},
+		skipAtlas: true,
+	})
+	if err == nil {
+		t.Fatal("Generate(Buse) error = nil, want HTTP path collision")
+	}
+	if !strings.Contains(err.Error(), "/buses") || !strings.Contains(err.Error(), "bus") {
+		t.Fatalf("Generate(Buse) error = %q, want /buses already used by bus", err)
+	}
+	if _, statErr := os.Stat(filepath.Join(appDir, "internal", "buse")); !os.IsNotExist(statErr) {
+		t.Fatal("Generate(Buse) wrote internal/buse after colliding with /buses")
+	}
+
+	err = Generate(context.Background(), Options{
+		WorkDir:   appDir,
+		Name:      "Bus",
+		Fields:    []string{"name:string"},
+		Stdout:    ioDiscard{},
+		skipAtlas: true,
+	})
+	if err != nil {
+		t.Fatalf("idempotent Generate(Bus) error = %v", err)
+	}
+
+	err = Generate(context.Background(), Options{
+		WorkDir:   appDir,
+		Name:      "Widget",
+		Fields:    []string{"name:string"},
+		Stdout:    ioDiscard{},
+		skipAtlas: true,
+	})
+	if err != nil {
+		t.Fatalf("Generate(Widget) error = %v, want distinct HTTP path to succeed", err)
+	}
+}
+
 func TestGenerateNumberFieldEmptyIsZero(t *testing.T) {
 	workDir := t.TempDir()
 	if err := scaffold.Generate(context.Background(), scaffold.Options{

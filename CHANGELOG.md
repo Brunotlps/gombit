@@ -27,6 +27,10 @@ version.
 
 ### Fixed
 
+- `gombit make resource` refuses a second name whose plural HTTP path
+  collides with an existing feature-package (`Bus` and `Buse` both become
+  `/buses`) instead of registering two resources on one URL
+  ([#122](https://github.com/gombit-dev/gombit/issues/122)).
 - `gombit dev` Vite proxy now forwards `/admin` to the Go origin, and
   cookie-mode apps print an Admin row in the service table, so
   `http://127.0.0.1:5173/admin/` reaches the framework admin SPA instead of

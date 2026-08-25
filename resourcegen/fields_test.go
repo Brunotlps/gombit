@@ -121,6 +121,33 @@ func TestParseResourceName(t *testing.T) {
 		t.Fatalf("widget = %+v", widget)
 	}
 
+	bus, err := parseResourceName("Bus")
+	if err != nil {
+		t.Fatalf("Bus: %v", err)
+	}
+	buse, err := parseResourceName("Buse")
+	if err != nil {
+		t.Fatalf("Buse: %v", err)
+	}
+	if bus.HTTPPath != "/buses" || buse.HTTPPath != "/buses" {
+		t.Fatalf("Bus HTTPPath = %q, Buse HTTPPath = %q, want both /buses", bus.HTTPPath, buse.HTTPPath)
+	}
+	if bus.Package == buse.Package {
+		t.Fatalf("Bus and Buse must stay distinct packages, got %q", bus.Package)
+	}
+
+	box, err := parseResourceName("Box")
+	if err != nil {
+		t.Fatalf("Box: %v", err)
+	}
+	boxe, err := parseResourceName("Boxe")
+	if err != nil {
+		t.Fatalf("Boxe: %v", err)
+	}
+	if box.HTTPPath != "/boxes" || boxe.HTTPPath != "/boxes" {
+		t.Fatalf("Box HTTPPath = %q, Boxe HTTPPath = %q, want both /boxes", box.HTTPPath, boxe.HTTPPath)
+	}
+
 	_, err = parseResourceName("platform")
 	if err == nil || !strings.Contains(err.Error(), "reserved") {
 		t.Fatalf("platform error = %v, want reserved", err)
