@@ -6,6 +6,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -35,6 +36,12 @@ var xssSkipElementContent = map[string]struct{}{
 	"embed":    {},
 	"textarea": {},
 }
+
+// completeHTMLTag matches a real tag with a closing ">". The HTML tokenizer
+// treats "<" + letter as a start tag even without ">", which silently
+// truncates comparison text like "a<b". Incomplete angle brackets are left
+// unchanged; complete tags still go through stripHTML.
+var completeHTMLTag = regexp.MustCompile(`(?i)<\s*/?[a-z][a-z0-9:-]*(?:\s[^>]*)?\s*/?>`)
 
 // xssMiddleware sanitizes HTML tags from request input before handlers run.
 // JSON string values (POST/PUT/PATCH) and GET query values are stripped to
@@ -179,13 +186,18 @@ func sanitizeJSONValue(value any, fieldName string) {
 }
 
 // stripHTML removes HTML tags and discards content inside dangerous elements.
-// Plain strings without "<" or ">" are returned unchanged.
+// Plain strings without "<" or ">" are returned unchanged. Strings that
+// contain "<" / ">" but no complete tag (no closing ">", e.g. "a<b") are
+// also returned unchanged so comparison text is not truncated.
 //
 // An unclosed skip element (for example `<script src=x>...`) discards the
 // remainder of the string — fail-closed for truncated markup. Self-closing
 // skip tags do not enter skip mode.
 func stripHTML(s string) string {
 	if !strings.ContainsAny(s, "<>") {
+		return s
+	}
+	if !completeHTMLTag.MatchString(s) {
 		return s
 	}
 
