@@ -10,11 +10,70 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
 	"github.com/gombit-dev/gombit/config"
 	"github.com/gombit-dev/gombit/database"
-	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
+
+func TestRunContextClosesServerAfterShutdownTimeout(t *testing.T) {
+	app := newTestApp(t, WithShutdownTimeout(200*time.Millisecond))
+	started := make(chan struct{})
+	var startOnce sync.Once
+	app.Router().GET("/slow", func(c *gin.Context) {
+		startOnce.Do(func() { close(started) })
+		time.Sleep(5 * time.Second)
+		c.Status(http.StatusOK)
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- RunContext(ctx, app)
+	}()
+
+	waitForHTTP(t, app, "/livez")
+
+	reqDone := make(chan error, 1)
+	go func() {
+		client := &http.Client{Timeout: 10 * time.Second}
+		resp, err := client.Get("http://" + app.Addr() + "/slow")
+		if resp != nil {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			_ = resp.Body.Close()
+		}
+		reqDone <- err
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(2 * time.Second):
+		t.Fatal("slow handler did not start")
+	}
+
+	cancel()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("RunContext() error = nil, want shutdown timeout")
+		}
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("RunContext() error = %v, want context.DeadlineExceeded", err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("RunContext() did not return after shutdown timeout")
+	}
+
+	select {
+	case err := <-reqDone:
+		if err == nil {
+			t.Fatal("in-flight GET /slow error = nil, want connection closed")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("in-flight GET /slow still held after RunContext returned; server.Close() was not called")
+	}
+}
 
 func TestRunContextBootsAndShutsDown(t *testing.T) {
 	app := newTestApp(t)
