@@ -244,24 +244,57 @@ SQLite/PostgreSQL/MySQL matrix green throughout (AGENTS.md §5.1).
 
 ### Phase 3 — Canonical schema, seed, and CRUD apps (Gombit + Gin+GORM)
 
-- Define the `users`/`projects` schema + indexes (issue §3) as the canonical
-  PostgreSQL DDL, expressed through each framework's own migration
-  mechanism but converging on the same SQL.
-- Deterministic seed (1,000 users / 100,000 projects, or a documented smaller
-  size if local setup time proves prohibitive) with a single reproducible
-  command.
-- Implement `benchmarks/apps/gombit` (normal Gombit app, production mode) and
-  `benchmarks/apps/gin-gorm` (idiomatic Gin+GORM control) exposing the
-  canonical CRUD routes (`GET/POST/PATCH/DELETE /api/projects...`) with
-  Gombit's `{data, meta}` envelope on both, equivalent pagination.
-- Add automated fairness checks (issue §15/§16): same route surface, same
-  JSON shape, same paginated record count, same ordered IDs for a known
-  query, N+1 detection via SQL query counting for the list endpoint.
-- `compose.yml`: pinned PostgreSQL service, resource limits, app services for
-  these two.
+**Phase 3a — schema + seed + Gin+GORM control — done.**
+
+- Canonical schema documented at
+  [benchmarks/docs/schema.md](../../benchmarks/docs/schema.md): `users`/
+  `projects` DDL, the five canonical routes, the D10-envelope-for-both-apps
+  decision (deliberately different from `benchmarks/micro/scenario`'s
+  per-stack-idiomatic choice — see that doc for why), response field list,
+  and the deterministic-seed spec (1,000 users / 100,000 projects — the
+  issue's recommended size worked fine, no need to shrink it).
+- `benchmarks/apps/shared`: `PageMeta` (`page`/`limit`/`total` — not
+  `contract.PageMeta`, which uses `per_page`; issue #141 specifies `limit`)
+  and `ProjectData`, shared by every Go implementation so "same JSON shape"
+  (issue §15) is true by construction between them, not by two
+  hand-maintained struct definitions staying in sync.
+- `benchmarks/apps/gin-gorm`: the primary framework-tax control (issue
+  "isolates the incremental cost of adopting Gombit rather than changing
+  programming languages"). GORM `AutoMigrate` (not Atlas — this is the
+  control's own idiomatic migration mechanism); `.Preload("Owner")` on the
+  list query, verified against real Postgres statement logs to issue
+  exactly 3 SQL statements per list request (count + page + one batched
+  owner `IN (...)`, not one owner query per row) before writing that as an
+  automated regression guard (`TestListDoesNotN1`, gated behind `-tags
+  integration` per `database/integration_test.go`'s existing convention).
+  `-seed` flag truncates and reseeds deterministically. 20/20 connection
+  pool limits per issue "Connection pooling" (overriding Gombit's own
+  25/5 Postgres default — the fairness pin is the issue's, not either
+  framework's).
+- `benchmarks/compose.yml`: pinned `postgres:16.4-alpine`, resource-limit
+  block (documented as best-effort outside Swarm, per issue's own
+  "detect/report rather than silently pretend" requirement).
+- Schema verified column-by-column against a real, running Postgres
+  instance (`psql \d`), not assumed from the model definitions — caught and
+  fixed a real gap this way (`Project.Name`/timestamp columns were
+  nullable; the schema doc requires `NOT NULL`).
+
+**Phase 3b — still open:**
+
+- `benchmarks/apps/gombit`: the same canonical API as a normal Gombit app
+  (Huma handlers, `framework.App`, Atlas migrations, production mode).
+- Cross-implementation fairness checks (issue §15/§16) — same route
+  surface, same paginated record count, same ordered IDs for a known query
+  — which need a second implementation to compare against and so couldn't
+  land in 3a. `TestListDoesNotN1` (3a) is the query-count half of this,
+  already passing for gin-gorm alone.
+- `benchmarks/compose.yml` app services for both apps, with resource
+  limits.
 - **AC:** `make benchmark-crud` runs Gombit and Gin+GORM against the same
   Postgres instance and produces comparable `results.json` rows; fairness
-  tests fail loudly on route/shape/query-count divergence.
+  tests fail loudly on route/shape/query-count divergence. Not yet
+  satisfied — `results.json` also still depends on Phase 1's open
+  result-schema/summarizer work.
 
 ### Phase 4 — Remaining competitor apps (Django, Rails, Laravel, NestJS)
 
