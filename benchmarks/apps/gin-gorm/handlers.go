@@ -18,7 +18,7 @@ const (
 )
 
 // Handler serves the canonical /api/projects routes (benchmarks/docs/schema.md)
-// over plain Gin + GORM — this repo's primary framework-tax control: same
+// over plain Gin + GORM, this repo's primary framework-tax control. Same
 // language, runtime, ORM family, and response envelope as the Gombit app,
 // without Huma/framework.App around it, and without importing Gombit's
 // contract/database packages either (contract.ErrorEnvelope is a
