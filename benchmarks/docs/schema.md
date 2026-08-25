@@ -83,9 +83,23 @@ DELETE /api/projects/{id}
 - The list endpoint (`GET /api/projects`) returns 20 projects per page by
   default, ordered by `id DESC` (deterministic — issue §"Canonical list
   query" requires "deterministic ordering" and "the same ordered IDs for a
-  known query"), with the owner relationship preloaded in the same query set
-  (no N+1: one query for the page of projects, one query for their distinct
-  owners, not one owner query per project).
+  known query"), with the owner relationship preloaded in a fixed, small
+  number of queries independent of page size — not one owner query per
+  project. The pinned shape (`benchmarks/apps/gin-gorm`, verified against
+  real Postgres statement logs, enforced by `TestListDoesNotN1`) is
+  **3 queries for a non-empty page**: one `COUNT` for `meta.total`, one
+  `SELECT` for the page of projects, one batched `SELECT ... WHERE id IN
+  (...)` for their distinct owners. (An empty page short-circuits to 2:
+  `COUNT` + the empty page `SELECT`, since there are no owners left to
+  preload — this is still O(1) in the number of returned rows, not a
+  contract violation.) A new implementation may use any eager-load strategy
+  that keeps the query count independent of page size — a single join, a
+  window function, whatever the ORM's idiomatic pattern is — but if it
+  intends to be checked by the same `== 3` assertion `gin-gorm` uses, it
+  must produce the same 3-query shape for a non-empty page. Implementations
+  using a genuinely different fixed-count strategy (e.g. 1 query via a
+  join) should document their own count here rather than silently diverging
+  from this one while claiming compliance.
 - Every implementation serializes the same project fields:
   `id, owner_id, owner_name, name, description, created_at, updated_at`
   (`owner_name` is the preloaded relationship's payload — its presence in

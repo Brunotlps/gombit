@@ -129,6 +129,32 @@ func TestCRUDRoundTrip(t *testing.T) {
 	}
 }
 
+// TestCreateRejectsInvalidOwnerID checks that a foreign-key violation
+// (owner_id referencing no existing user) is rejected as client error, not
+// reported as an internal (500) failure. Issue #141 §15 requires every
+// implementation reject equivalent invalid input the same way; a bad
+// client-supplied reference is invalid input, not a server fault.
+func TestCreateRejectsInvalidOwnerID(t *testing.T) {
+	db := testDB(t)
+	router := testRouter(t, db)
+
+	response := doJSON(t, router, http.MethodPost, "/api/projects", `{"owner_id":999999,"name":"Orphan","description":"no such owner"}`)
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("POST with nonexistent owner_id status = %d, want %d; body: %s", response.Code, http.StatusUnprocessableEntity, response.Body.String())
+	}
+	var envelope struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode error envelope: %v; body: %s", err, response.Body.String())
+	}
+	if envelope.Error.Code != "validation_error" {
+		t.Fatalf("error code = %q, want %q", envelope.Error.Code, "validation_error")
+	}
+}
+
 // TestListPaginationAndOrdering seeds a known, small set of projects and
 // checks the list endpoint's meta shape, deterministic id-DESC ordering,
 // and that the owner relationship is actually populated (not just present
@@ -181,15 +207,19 @@ func TestListPaginationAndOrdering(t *testing.T) {
 	}
 }
 
-// TestListDoesNotN1s counts the SQL statements the list endpoint issues via
+// TestListDoesNotN1 counts the SQL statements the list endpoint issues via
 // a counting gorm.Logger and asserts a small constant bound, independent of
 // page size — issue #141 §16 requires "the same fixed number of SQL
 // queries" and specifically forbids an implementation whose query count
 // scales with the number of returned rows. Verified manually against
 // Postgres statement logs (docs/plans/BENCH-1-benchmark-suite.md, Phase 3
-// notes) before writing this as an automated regression guard: one count
-// query, one page query, one batched owner IN (...) query — 3 total,
-// regardless of whether the page holds 1 row or 20.
+// notes) before writing this as an automated regression guard: for a
+// non-empty page, one count query, one page query, one batched owner
+// IN (...) query — 3 total, regardless of whether the page holds 1 row or
+// 20. An empty page (no rows to preload owners for) issues only 2 — that's
+// pinned by TestListDoesNotN1EmptyPage below, not this test: the invariant
+// this repo actually needs is "count independent of N", not "always
+// exactly 3 no matter what."
 func TestListDoesNotN1(t *testing.T) {
 	db := testDB(t)
 	seedFixture(t, db, 5, 20)
@@ -207,6 +237,85 @@ func TestListDoesNotN1(t *testing.T) {
 	}
 	if counter.count != 3 {
 		t.Fatalf("list issued %d SQL statements, want exactly 3 (count + page + batched owner preload); got query log: %v", counter.count, counter.queries)
+	}
+}
+
+// TestListDoesNotN1EmptyPage pins the boundary case TestListDoesNotN1's
+// comment used to overclaim away: a page past the end of the data has no
+// rows to preload owners for, so it issues 2 statements (count + page), not
+// 3. Still O(1) in the number of returned rows (zero rows, zero extra
+// queries) — the property that actually matters — just a different small
+// constant than the non-empty case.
+func TestListDoesNotN1EmptyPage(t *testing.T) {
+	db := testDB(t)
+	seedFixture(t, db, 5, 20)
+
+	counter := &queryCounter{}
+	countingDB, err := gorm.Open(postgres.Open(*databaseDSN), &gorm.Config{Logger: counter})
+	if err != nil {
+		t.Fatalf("open counting db: %v", err)
+	}
+	router := testRouter(t, countingDB)
+
+	response := doJSON(t, router, http.MethodGet, "/api/projects?page=99&limit=20", "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("GET /api/projects status = %d, want %d; body: %s", response.Code, http.StatusOK, response.Body.String())
+	}
+	if counter.count != 2 {
+		t.Fatalf("empty-page list issued %d SQL statements, want exactly 2 (count + empty page, no owners to preload); got query log: %v", counter.count, counter.queries)
+	}
+}
+
+// TestSeedDatabaseNIsIdempotentAndCorrect exercises the real
+// truncate-then-seed path (seedDatabaseN, which seedDatabase calls at
+// production scale) at a small scale against real PostgreSQL: exact row
+// counts, deterministic content for known rows, round-robin ownership, and
+// — running it twice — that repeated seeding truncates rather than
+// accumulates duplicate data.
+func TestSeedDatabaseNIsIdempotentAndCorrect(t *testing.T) {
+	db := testDB(t)
+	const userCount, projectCount = 7, 23 // deliberately not a multiple, to exercise the round-robin remainder
+
+	for run := 1; run <= 2; run++ {
+		if err := seedDatabaseN(context.Background(), db, userCount, projectCount); err != nil {
+			t.Fatalf("run %d: seedDatabaseN: %v", run, err)
+		}
+
+		var userTotal, projectTotal int64
+		if err := db.Model(&User{}).Count(&userTotal).Error; err != nil {
+			t.Fatalf("run %d: count users: %v", run, err)
+		}
+		if err := db.Model(&Project{}).Count(&projectTotal).Error; err != nil {
+			t.Fatalf("run %d: count projects: %v", run, err)
+		}
+		if userTotal != userCount {
+			t.Fatalf("run %d: user count = %d, want %d (seed did not truncate before reseeding)", run, userTotal, userCount)
+		}
+		if projectTotal != projectCount {
+			t.Fatalf("run %d: project count = %d, want %d (seed did not truncate before reseeding)", run, projectTotal, projectCount)
+		}
+
+		var firstUser User
+		if err := db.First(&firstUser, 1).Error; err != nil {
+			t.Fatalf("run %d: load user 1: %v", run, err)
+		}
+		if firstUser.Email != userEmail(1) || firstUser.Name != userName(1) {
+			t.Fatalf("run %d: user 1 = %+v, want email=%s name=%s", run, firstUser, userEmail(1), userName(1))
+		}
+
+		// Project userCount+1 (8th project, userCount=7) is the first to
+		// wrap back to owner 1 — the round-robin boundary a naive off-by-one
+		// would break silently.
+		var wrapped Project
+		if err := db.First(&wrapped, userCount+1).Error; err != nil {
+			t.Fatalf("run %d: load project %d: %v", run, userCount+1, err)
+		}
+		if wrapped.OwnerID != 1 {
+			t.Fatalf("run %d: project %d owner = %d, want 1 (round-robin wrap)", run, userCount+1, wrapped.OwnerID)
+		}
+		if wrapped.Name != projectName(userCount+1) {
+			t.Fatalf("run %d: project %d name = %q, want %q", run, userCount+1, wrapped.Name, projectName(userCount+1))
+		}
 	}
 }
 

@@ -1,20 +1,31 @@
 package main
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/gombit-dev/gombit/benchmarks/apps/shared"
-	"github.com/gombit-dev/gombit/contract"
-	"github.com/gombit-dev/gombit/database"
+	"github.com/jackc/pgx/v5/pgconn"
 	"gorm.io/gorm"
+)
+
+// Postgres SQLSTATE codes this app maps explicitly. See mapPersistError.
+const (
+	pgUniqueViolation     = "23505"
+	pgForeignKeyViolation = "23503"
 )
 
 // Handler serves the canonical /api/projects routes (benchmarks/docs/schema.md)
 // over plain Gin + GORM — this repo's primary framework-tax control: same
 // language, runtime, ORM family, and response envelope as the Gombit app,
-// without Huma/framework.App around it.
+// without Huma/framework.App around it, and without importing Gombit's
+// contract/database packages either (contract.ErrorEnvelope is a
+// huma.StatusError, so importing contract would pull Huma into this
+// binary's dependency graph regardless of whether any handler here touches
+// it). Response envelope types come from benchmarks/apps/shared instead —
+// same D10 JSON shape, zero framework dependency.
 type Handler struct {
 	DB *gorm.DB
 }
@@ -50,15 +61,16 @@ type updateProjectRequest struct {
 }
 
 // list handles GET /api/projects?page=&limit=: a single page of projects,
-// deterministically ordered (id DESC), owner preloaded in the same query
-// set (one query for the page, one for its distinct owners — GORM's
-// .Preload, not one owner query per row) so this endpoint never N+1s.
+// deterministically ordered (id DESC). 3 queries for a non-empty page —
+// COUNT, page SELECT, one batched owner IN (...) via GORM's .Preload — not
+// one owner query per row; see benchmarks/docs/schema.md "Canonical CRUD
+// API" for the pinned shape TestListDoesNotN1 enforces.
 func (h *Handler) list(c *gin.Context) {
 	page, limit := clampPage(queryInt(c, "page"), queryInt(c, "limit"))
 
 	var total int64
 	if err := h.DB.WithContext(c.Request.Context()).Model(&Project{}).Count(&total).Error; err != nil {
-		writeInternal(c, "count projects")
+		writeError(c, shared.InternalError("count projects"))
 		return
 	}
 
@@ -70,7 +82,7 @@ func (h *Handler) list(c *gin.Context) {
 		Limit(limit).
 		Find(&rows).Error
 	if err != nil {
-		writeInternal(c, "list projects")
+		writeError(c, shared.InternalError("list projects"))
 		return
 	}
 
@@ -79,7 +91,7 @@ func (h *Handler) list(c *gin.Context) {
 		items = append(items, toProjectData(row))
 	}
 
-	c.JSON(http.StatusOK, contract.DataMeta[[]shared.ProjectData, shared.PageMeta]{
+	c.JSON(http.StatusOK, shared.DataMeta[[]shared.ProjectData, shared.PageMeta]{
 		Data: items,
 		Meta: &shared.PageMeta{Page: page, Limit: limit, Total: total},
 	})
@@ -89,24 +101,24 @@ func (h *Handler) list(c *gin.Context) {
 func (h *Handler) get(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		writeNotFound(c, "project not found")
+		writeError(c, shared.NotFoundError("project not found"))
 		return
 	}
 
 	var row Project
 	if err := h.DB.WithContext(c.Request.Context()).Preload("Owner").First(&row, uint(id)).Error; err != nil {
-		writeMapped(c, database.MapLoadError(c.Request.Context(), err, "project not found", "load project"))
+		writeError(c, mapLoadError(err, "project not found", "load project"))
 		return
 	}
 
-	c.JSON(http.StatusOK, contract.Data[shared.ProjectData]{Data: toProjectData(row)})
+	c.JSON(http.StatusOK, shared.Data[shared.ProjectData]{Data: toProjectData(row)})
 }
 
 // create handles POST /api/projects.
 func (h *Handler) create(c *gin.Context) {
 	var body createProjectRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
-		writeMapped(c, contract.WithContext(c.Request.Context(), contract.Validation(err.Error(), nil)))
+		writeError(c, shared.ValidationError(err.Error(), nil))
 		return
 	}
 
@@ -116,15 +128,15 @@ func (h *Handler) create(c *gin.Context) {
 		Description: body.Description,
 	}
 	if err := h.DB.WithContext(c.Request.Context()).Create(&row).Error; err != nil {
-		writeMapped(c, database.MapPersistError(c.Request.Context(), err, "project already exists", "create project"))
+		writeError(c, mapPersistError(err, "project already exists", "create project"))
 		return
 	}
 	if err := h.DB.WithContext(c.Request.Context()).Preload("Owner").First(&row, row.ID).Error; err != nil {
-		writeInternal(c, "reload created project")
+		writeError(c, shared.InternalError("reload created project"))
 		return
 	}
 
-	c.JSON(http.StatusCreated, contract.Data[shared.ProjectData]{Data: toProjectData(row)})
+	c.JSON(http.StatusCreated, shared.Data[shared.ProjectData]{Data: toProjectData(row)})
 }
 
 // update handles PATCH /api/projects/:id: load, apply the provided fields,
@@ -133,19 +145,19 @@ func (h *Handler) create(c *gin.Context) {
 func (h *Handler) update(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		writeNotFound(c, "project not found")
+		writeError(c, shared.NotFoundError("project not found"))
 		return
 	}
 
 	var body updateProjectRequest
 	if err := c.ShouldBindJSON(&body); err != nil {
-		writeMapped(c, contract.WithContext(c.Request.Context(), contract.Validation(err.Error(), nil)))
+		writeError(c, shared.ValidationError(err.Error(), nil))
 		return
 	}
 
 	var row Project
 	if err := h.DB.WithContext(c.Request.Context()).First(&row, uint(id)).Error; err != nil {
-		writeMapped(c, database.MapLoadError(c.Request.Context(), err, "project not found", "load project"))
+		writeError(c, mapLoadError(err, "project not found", "load project"))
 		return
 	}
 
@@ -156,36 +168,36 @@ func (h *Handler) update(c *gin.Context) {
 		row.Description = *body.Description
 	}
 	if err := h.DB.WithContext(c.Request.Context()).Save(&row).Error; err != nil {
-		writeMapped(c, database.MapPersistError(c.Request.Context(), err, "project already exists", "update project"))
+		writeError(c, mapPersistError(err, "project already exists", "update project"))
 		return
 	}
 	if err := h.DB.WithContext(c.Request.Context()).Preload("Owner").First(&row, row.ID).Error; err != nil {
-		writeInternal(c, "reload updated project")
+		writeError(c, shared.InternalError("reload updated project"))
 		return
 	}
 
-	c.JSON(http.StatusOK, contract.Data[shared.ProjectData]{Data: toProjectData(row)})
+	c.JSON(http.StatusOK, shared.Data[shared.ProjectData]{Data: toProjectData(row)})
 }
 
 // delete handles DELETE /api/projects/:id.
 func (h *Handler) delete(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil {
-		writeNotFound(c, "project not found")
+		writeError(c, shared.NotFoundError("project not found"))
 		return
 	}
 
 	var row Project
 	if err := h.DB.WithContext(c.Request.Context()).First(&row, uint(id)).Error; err != nil {
-		writeMapped(c, database.MapLoadError(c.Request.Context(), err, "project not found", "load project"))
+		writeError(c, mapLoadError(err, "project not found", "load project"))
 		return
 	}
 	if err := h.DB.WithContext(c.Request.Context()).Delete(&row).Error; err != nil {
-		writeInternal(c, "delete project")
+		writeError(c, shared.InternalError("delete project"))
 		return
 	}
 
-	c.JSON(http.StatusOK, contract.Data[map[string]bool]{Data: map[string]bool{"ok": true}})
+	c.JSON(http.StatusOK, shared.Data[map[string]bool]{Data: map[string]bool{"ok": true}})
 }
 
 func toProjectData(row Project) shared.ProjectData {
@@ -221,23 +233,52 @@ func clampPage(page, limit int) (int, int) {
 	return page, limit
 }
 
-// writeMapped renders a *contract.ErrorEnvelope (from database.MapLoadError /
-// MapPersistError) as {"error": {...}} at its D10 status code. Gin has no
-// built-in concept of these error types, so this is the one piece of glue
-// idiomatic Gin code wouldn't otherwise need — kept minimal on purpose.
-func writeMapped(c *gin.Context, err error) {
-	envelope, ok := err.(*contract.ErrorEnvelope)
-	if !ok {
-		writeInternal(c, err.Error())
-		return
+// mapLoadError maps a GORM read error to a D10 category error: record-not-
+// found becomes not_found; anything else becomes internal. Local
+// reimplementation of database.MapLoadError (github.com/gombit-dev/gombit/database)
+// — same policy, no framework import.
+func mapLoadError(err error, notFound, internal string) *shared.ErrorEnvelope {
+	if err == nil {
+		return nil
 	}
-	c.JSON(envelope.GetStatus(), envelope)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		return shared.NotFoundError(notFound)
+	}
+	return shared.InternalError(internal)
 }
 
-func writeNotFound(c *gin.Context, message string) {
-	writeMapped(c, contract.WithContext(c.Request.Context(), contract.NotFound(message)))
+// mapPersistError maps a GORM write error to a D10 category error by
+// Postgres SQLSTATE: a unique-constraint violation becomes conflict; a
+// foreign-key violation (e.g. POST /api/projects with an owner_id that
+// doesn't reference an existing user) becomes validation_error — a bad
+// client-supplied reference is invalid input, not a server failure, and
+// issue #141 §15 requires every implementation reject equivalent invalid
+// input the same way. Anything else becomes internal.
+//
+// database.MapPersistError (github.com/gombit-dev/gombit/database) only
+// special-cases unique violations — reusing it here would have left FK
+// violations falling through to internal (500), which is exactly the bug
+// this function exists to not have. Projects have no unique business key of
+// their own, so unique_violation can't currently be reached through this
+// handler; the case is kept because a future field addition (e.g. a slug)
+// could reach it, and disagreeing with the FK case only when a table
+// happens to lack a unique constraint would be a much harder bug to notice.
+func mapPersistError(err error, conflict, internal string) *shared.ErrorEnvelope {
+	if err == nil {
+		return nil
+	}
+	var pgErr *pgconn.PgError
+	if errors.As(err, &pgErr) {
+		switch pgErr.Code {
+		case pgUniqueViolation:
+			return shared.ConflictError(conflict)
+		case pgForeignKeyViolation:
+			return shared.ValidationError("request references a resource that does not exist", nil)
+		}
+	}
+	return shared.InternalError(internal)
 }
 
-func writeInternal(c *gin.Context, message string) {
-	writeMapped(c, contract.WithContext(c.Request.Context(), contract.Internal(message)))
+func writeError(c *gin.Context, envelope *shared.ErrorEnvelope) {
+	c.JSON(envelope.Status, envelope)
 }

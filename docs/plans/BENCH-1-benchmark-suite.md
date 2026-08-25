@@ -279,6 +279,56 @@ SQLite/PostgreSQL/MySQL matrix green throughout (AGENTS.md §5.1).
   fixed a real gap this way (`Project.Name`/timestamp columns were
   nullable; the schema doc requires `NOT NULL`).
 
+**Post-landing correction (PR review on #176, github.com/gombit-dev/gombit/pull/176#pullrequestreview-5017796308):**
+Phase 3a's first landed version had a real specification contradiction and
+several fairness/coverage gaps; all fixed:
+
+- `benchmarks/docs/schema.md` claimed the list endpoint issues 2 SQL
+  statements; the handler and `TestListDoesNotN1` both said 3 (`COUNT` +
+  page + batched owner `IN (...)`) — the document future implementations
+  are supposed to converge on disagreed with the implementation it was
+  documenting. Corrected to pin 3 for a non-empty page (and 2 for an empty
+  one, now covered by `TestListDoesNotN1EmptyPage`), with the reasoning for
+  why an empty page differs spelled out so it reads as a documented
+  boundary, not an inconsistency.
+- `POST /api/projects` with a nonexistent `owner_id` hit the FK constraint
+  and returned 500 `internal`, not a 4xx — a bad client-supplied reference
+  is invalid input (issue §15), not a server fault. Fixed
+  (`TestCreateRejectsInvalidOwnerID`) by detecting the Postgres SQLSTATE
+  (`23503`) directly rather than through `database.MapPersistError`, which
+  only special-cased unique violations.
+- The control app imported `github.com/gombit-dev/gombit/contract` for its
+  D10 envelope types, and `contract.ErrorEnvelope` is a `huma.StatusError`
+  — so the "no Huma" control linked Huma in its dependency graph even
+  though no handler touched it directly. Fixed by adding framework-free
+  `Data`/`DataMeta`/`ErrorEnvelope` types (same JSON shape, zero Huma/GORM-
+  helper dependency) to `benchmarks/apps/shared`; verified with
+  `go list -deps` that `contract`/`database`/`huma` no longer appear in
+  `benchmarks/apps/gin-gorm`'s dependency graph at all. This also fixed the
+  FK bug above at the root: `database.MapPersistError` was never the right
+  tool for a table with no unique business key.
+- The seed contract (deterministic 1,000/100,000 content, round-robin
+  ownership, truncate+`RESTART IDENTITY` idempotency) had no automated
+  coverage — `seedDatabase` was only exercised manually. Fixed by
+  extracting the pure content formulas into their own functions (tested
+  without a database or build tag: `TestSeedContentIsDeterministic`,
+  `TestProjectOwnerIDRoundRobin`) and parameterizing the truncate-then-seed
+  path (`seedDatabaseN`) so an integration test can run the real path twice
+  at reduced scale and assert it doesn't accumulate duplicate data
+  (`TestSeedDatabaseNIsIdempotentAndCorrect`).
+- None of the above had CI coverage: every test in the package was
+  `//go:build integration`, and no CI job passed that tag for this
+  package — a green PR was not evidence any of this worked. Fixed by
+  adding a step to `.github/workflows/ci.yml`'s existing `database-postgres`
+  job. Uses a **separate** `gombit_bench` database on that job's Postgres
+  service, not the `gombit` database `auth`/`database`/`admin` already use:
+  `auth.User` also maps to a table named `users` (no `TableName()`
+  override), with different columns than `gin-gorm`'s `User` — sharing a
+  database would let one `AutoMigrate` alter the schema the other relies
+  on. Validated the exact CI command (`psql -c 'CREATE DATABASE ...'` then
+  `go test -tags integration ...`) locally against a freshly created
+  database before trusting the YAML, not just written and assumed correct.
+
 **Phase 3b — still open:**
 
 - `benchmarks/apps/gombit`: the same canonical API as a normal Gombit app
