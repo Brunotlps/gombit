@@ -13,8 +13,9 @@ type Stack struct {
 	Name    string
 	Handler http.Handler
 	// Envelope is true for stacks that wrap JSON responses in
-	// SuccessEnvelope (Huma, Gombit); false for stacks that return the
-	// resource bare (net/http, Gin) — each idiomatic to its own stack.
+	// SuccessEnvelope (Gombit only — see RegisterEnvelopedRoutes); false for
+	// stacks that return the resource bare (net/http, Gin, and bare Huma+Gin
+	// via RegisterRoutes), each idiomatic to its own stack.
 	Envelope bool
 }
 
@@ -99,9 +100,12 @@ func assertValidPost(tb testing.TB, stack Stack) {
 // assertInvalidPost checks that every stack rejects the payload with exactly
 // 422 Unprocessable Entity — what all four stacks actually return for this
 // payload (well-formed JSON, invalid field values): net/http and Gin return
-// it explicitly from their own validation; Huma and Gombit normalize
-// validation failures to 422 via contract.isValidationFailure regardless of
-// error-body shape. A looser `4xx` range would also accept 404/405, which a
+// it explicitly from their own validation; bare Huma+Gin returns it from
+// Huma's own request-validation path (huma.go hardcodes
+// http.StatusUnprocessableEntity for schema-validation failures — this has
+// nothing to do with Gombit); Gombit normalizes to the same 422 via
+// contract.isValidationFailure, since it goes through contract.Install.
+// A looser `4xx` range would also accept 404/405, which a
 // broken route registration (wrong path, wrong method) would produce just as
 // easily as a working validator — silently turning a routing bug into a
 // passing test. It deliberately does not assert a specific error envelope
