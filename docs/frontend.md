@@ -141,6 +141,11 @@ A body like `{"error":{"code":"validation_error","message":"...","fields":{"name
 calls `setError("name", { type: "server", message: "required" })`. Do not
 invent another error shape.
 
+Minimal `type="number"` inputs use React Hook Form `setValueAs` so a
+cleared field becomes `0`, not `NaN` (`JSON.stringify` would emit
+`null` and Huma would 422 a non-pointer Go int). The MUI preset does
+the same with `raw === "" ? 0 : Number(raw)`.
+
 ## Generated client placeholder
 
 `frontend/src/api/generated` ships a placeholder product contract so

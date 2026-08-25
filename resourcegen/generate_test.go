@@ -538,3 +538,38 @@ func TestGenerateFrontendKeepsTypedDefaultPrefix(t *testing.T) {
 		t.Fatal("form.tsx baked live api_prefix /svc/v2")
 	}
 }
+
+func TestGenerateNumberFieldEmptyIsZero(t *testing.T) {
+	workDir := t.TempDir()
+	if err := scaffold.Generate(context.Background(), scaffold.Options{
+		Name:     "demo",
+		Database: "sqlite",
+		WorkDir:  workDir,
+		Stdout:   ioDiscard{},
+	}); err != nil {
+		t.Fatalf("scaffold: %v", err)
+	}
+	appDir := filepath.Join(workDir, "demo")
+
+	previousLook := lookPath
+	lookPath = func(string) (string, error) { return "", errors.New("atlas missing") }
+	t.Cleanup(func() { lookPath = previousLook })
+
+	err := Generate(context.Background(), Options{
+		WorkDir:   appDir,
+		Name:      "Widget",
+		Fields:    []string{"qty:int"},
+		Stdout:    ioDiscard{},
+		skipAtlas: true,
+	})
+	if err != nil {
+		t.Fatalf("Generate() error = %v", err)
+	}
+	formTS := readFile(t, filepath.Join(appDir, "frontend", "src", "widget", "form.tsx"))
+	if strings.Contains(formTS, "valueAsNumber") {
+		t.Fatal("form.tsx uses valueAsNumber; empty number inputs become NaN and JSON.stringify emits null")
+	}
+	if !strings.Contains(formTS, `setValueAs: (value) => (value === "" ? 0 : Number(value))`) {
+		t.Fatalf("form.tsx missing setValueAs empty→0 for qty:\n%s", formTS)
+	}
+}

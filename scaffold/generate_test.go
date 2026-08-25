@@ -261,6 +261,7 @@ func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
 	if !strings.Contains(productFormPage, `required: "Name is required"`) {
 		t.Fatalf("ProductFormPage.tsx missing required-field error message:\n%s", productFormPage)
 	}
+	assertNumberInputEmptyIsZero(t, productFormPage, "ProductFormPage.tsx")
 	appClient := readFile(t, filepath.Join(dest, "frontend", "src", "api", "client.ts"))
 	if !strings.Contains(appClient, "refreshInFlight") {
 		t.Fatal("api/client.ts missing shared refresh promise")
@@ -938,6 +939,16 @@ func readFile(t *testing.T, path string) string {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return string(data)
+}
+
+func assertNumberInputEmptyIsZero(t *testing.T, src, name string) {
+	t.Helper()
+	if strings.Contains(src, "valueAsNumber") {
+		t.Fatalf("%s uses valueAsNumber; empty number inputs become NaN and JSON.stringify emits null", name)
+	}
+	if !strings.Contains(src, `setValueAs: (value) => (value === "" ? 0 : Number(value))`) {
+		t.Fatalf("%s missing setValueAs empty→0 for number inputs:\n%s", name, src)
+	}
 }
 
 func TestGeneratePinsResolvableFrameworkVersion(t *testing.T) {

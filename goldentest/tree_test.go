@@ -75,6 +75,7 @@ func assertFrontendInvariants(t *testing.T, files fileMap) {
 	if !strings.Contains(session, "getAccessToken") || !strings.Contains(session, "clearSession") {
 		t.Error("session.ts missing in-memory token helpers")
 	}
+	assertNumberInputEmptyIsZero(t, string(files["frontend/src/pages/ProductFormPage.tsx"]))
 	login := string(files["frontend/src/pages/LoginPage.tsx"])
 	if login == "" {
 		t.Fatal("missing frontend/src/pages/LoginPage.tsx")
@@ -167,6 +168,7 @@ func assertCookieFrontendInvariants(t *testing.T, files fileMap) {
 	if !strings.Contains(client, "if (getCSRFToken())") {
 		t.Error("cookie-mode client.ts missing skip-if-token-exists no-op")
 	}
+	assertNumberInputEmptyIsZero(t, string(files["frontend/src/pages/ProductFormPage.tsx"]))
 	assertRuntimeAPIPrefix(t, files, "cookie")
 }
 
@@ -201,6 +203,7 @@ func assertMUIFrontendInvariants(t *testing.T, files fileMap) {
 	if !strings.Contains(login, "TextField") && !strings.Contains(login, "Paper") {
 		t.Error("MUI LoginPage.tsx missing Paper/TextField")
 	}
+	assertNumberInputEmptyIsZero(t, string(files["frontend/src/pages/ProductFormPage.tsx"]))
 	assertRuntimeAPIPrefix(t, files, "jwt")
 }
 
@@ -361,6 +364,19 @@ func assertNoReplace(t *testing.T, files fileMap) {
 				t.Errorf("%s contains a replace directive; goldens must not bake machine-specific paths", rel)
 			}
 		}
+	}
+}
+
+func assertNumberInputEmptyIsZero(t *testing.T, form string) {
+	t.Helper()
+	if form == "" {
+		t.Fatal("missing frontend/src/pages/ProductFormPage.tsx")
+	}
+	if strings.Contains(form, "valueAsNumber") {
+		t.Error("ProductFormPage.tsx uses valueAsNumber; empty number inputs become NaN and JSON.stringify emits null")
+	}
+	if !strings.Contains(form, `=== "" ? 0`) {
+		t.Error("ProductFormPage.tsx number input does not coerce empty to 0")
 	}
 }
 
