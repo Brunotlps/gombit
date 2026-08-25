@@ -57,3 +57,22 @@ the equivalent plain Gin handler while providing typed inputs/outputs,
 validation, and OpenAPI 3.1 emission. This is acceptable for the M0 go/no-go
 gate; ADR-011 should rerun the benchmark after review and record the final
 decision.
+
+## Successor: BENCH-1
+
+This two-stack `BenchmarkHumaGinListWidgets` / `BenchmarkPlainGinListWidgets`
+result stays as the historical M0 go/no-go record above — it is not rerun,
+overwritten, or extended in place. The canonical, ongoing framework-tax
+benchmark is the four-stack matrix (`net/http` -> Gin -> Huma+Gin -> Gombit)
+added for [BENCH-1](../plans/BENCH-1-benchmark-suite.md) (issue #141), living
+under [`benchmarks/micro/`](../../benchmarks/README.md) rather than in this
+package:
+
+```sh
+go test ./benchmarks/micro/... -bench=BenchmarkFrameworkTax -benchmem -count=10
+```
+
+Each row (`benchmarks/micro/{nethttp,gin,huma,gombit}`) is its own package
+carrying the same four scenarios, sharing resource types and Huma route
+registration via `benchmarks/micro/scenario`. Any future README performance
+numbers must come from this matrix, not from this spike's 2026-08-15 result.

@@ -229,6 +229,10 @@ Everything needed to hand Gombit to someone who has never seen it: discoverable 
 
 Each is a **future epic**, explicitly out of v0.1. Do not create these as active issues until v0.1 ships: jobs/queues, events, scheduler, mail, storage, optional gRPC, multi-tenancy hooks, i18n. Park them in a "post-v0.1" project column. **The admin (M6-Admin) is the prioritized post-v0.1 flagship** and comes first among post-v0.1 work.
 
+### BENCH — Reproducible benchmarks (POST-v0.1)
+
+- **[BENCH-1] Reproducible framework benchmark suite + README performance results** — checked-in `benchmarks/` harness quantifying Gombit's abstraction cost (net/http → Gin → Huma+Gin → Gombit) and realistic PostgreSQL CRUD/auth performance against Gin+GORM (primary control) and Django+DRF/Rails/Laravel/NestJS (ecosystem context), plus a generated README `## Performance` section. Supersedes the M0-2 Huma/Gin spike benchmark (`internal/contractspike`) as the ongoing framework-tax measurement while preserving it untouched as historical record. AC: see issue #141 §25. Implementation plan: [plans/BENCH-1-benchmark-suite.md](plans/BENCH-1-benchmark-suite.md). deps: none (post-v0.1, no locked architecture change). size: XL. labels: `infra`, `devx`, `tests`, `ci`.
+
 ---
 
 ## 5. Agent working agreement (definition of done)
