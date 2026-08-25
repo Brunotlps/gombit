@@ -266,10 +266,10 @@ func blankNameError(name string) *shared.ErrorEnvelope {
 	return nil
 }
 
-// mapLoadError maps a GORM read error to a D10 category error: record-not-
-// found becomes not_found; anything else becomes internal. Local
-// reimplementation of database.MapLoadError (github.com/gombit-dev/gombit/database)
-// — same policy, no framework import.
+// mapLoadError is a local, standalone implementation with the same policy
+// as (but no call to, and no import of) github.com/gombit-dev/gombit/database's
+// MapLoadError: record-not-found becomes not_found, anything else becomes
+// internal.
 func mapLoadError(err error, notFound, internal string) *shared.ErrorEnvelope {
 	if err == nil {
 		return nil
@@ -280,22 +280,24 @@ func mapLoadError(err error, notFound, internal string) *shared.ErrorEnvelope {
 	return shared.InternalError(internal)
 }
 
-// mapPersistError maps a GORM write error to a D10 category error by
-// Postgres SQLSTATE: a unique-constraint violation becomes conflict; a
-// foreign-key violation (e.g. POST /api/projects with an owner_id that
-// doesn't reference an existing user) becomes validation_error — a bad
-// client-supplied reference is invalid input, not a server failure, and
-// issue #141 §15 requires every implementation reject equivalent invalid
-// input the same way. Anything else becomes internal.
+// mapPersistError is a local, standalone implementation — it does not call
+// and is not related to github.com/gombit-dev/gombit/database's
+// MapPersistError (this package imports no Gombit framework code at all,
+// see Handler's doc comment). It maps a GORM write error to a D10 category
+// error by Postgres SQLSTATE: a unique-constraint violation becomes
+// conflict; a foreign-key violation (e.g. POST /api/projects with an
+// owner_id that doesn't reference an existing user) becomes
+// validation_error — a bad client-supplied reference is invalid input, not
+// a server failure, and issue #141 §15 requires every implementation
+// reject equivalent invalid input the same way. Anything else becomes
+// internal.
 //
-// database.MapPersistError (github.com/gombit-dev/gombit/database) only
-// special-cases unique violations — reusing it here would have left FK
-// violations falling through to internal (500), which is exactly the bug
-// this function exists to not have. Projects have no unique business key of
-// their own, so unique_violation can't currently be reached through this
-// handler; the case is kept because a future field addition (e.g. a slug)
-// could reach it, and disagreeing with the FK case only when a table
-// happens to lack a unique constraint would be a much harder bug to notice.
+// The unique-violation case can't currently be reached through this
+// handler (projects have no unique business key of their own), but is kept
+// because a future field addition (e.g. a slug) could reach it, and having
+// this function silently omit a case just because nothing exercises it yet
+// would be a much harder gap to notice later than an always-present branch
+// most inputs simply never take.
 func mapPersistError(err error, conflict, internal string) *shared.ErrorEnvelope {
 	if err == nil {
 		return nil

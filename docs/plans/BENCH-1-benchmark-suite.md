@@ -415,6 +415,30 @@ genuinely always has an owner once preloaded, so a non-pointer association
 isn't a modeling mismatch either, just an ORM-level "not loaded yet" state
 a pointer wouldn't describe any more precisely.
 
+**Post-landing correction, round 5 (Merge Warden review on #176,
+github.com/gombit-dev/gombit/pull/176#pullrequestreview-5024924257):**
+false positive, no functional bug — the review claimed
+`database.MapPersistError` was still mapping FK violations to 500 and
+should be fixed in `github.com/gombit-dev/gombit/database`. That framework
+function isn't called anywhere in `benchmarks/apps/gin-gorm` — round 1
+already replaced it with a local, independent `mapPersistError` that
+handles the FK case correctly (`shared.ValidationError`, 422), verified
+repeatedly since. The finding's own diff hunk showed why: it's anchored
+right where `mapLoadError`/`mapPersistError`'s doc comments *mention*
+`database.MapLoadError`/`database.MapPersistError` by name — explaining
+what's deliberately *not* used and why — which a lightweight scanner (or a
+human skimming fast) can misread as describing what the code still calls.
+Re-verified before concluding it was a false positive, not just assumed:
+`grep` for `gombit-dev/gombit/database` in the package matches only inside
+those two comments, `go list -deps` confirms `contract`/`database`/`huma`
+are absent from the package's dependency graph, and
+`TestCreateRejectsInvalidOwnerID` still passes against real Postgres, 422
+not 500. No code-behavior change; reworded both comments to lead with
+"local, standalone implementation, not a call to \[framework function\]"
+instead of naming the framework function first — the ambiguity was real
+even though the bug wasn't, and it's a one-time fix to stop tripping the
+same misread again.
+
 **Phase 3b — still open:**
 
 - `benchmarks/apps/gombit`: the same canonical API as a normal Gombit app
