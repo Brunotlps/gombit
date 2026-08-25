@@ -375,13 +375,11 @@ func RunContext(ctx context.Context, app *App) error {
 
 	select {
 	case <-ctx.Done():
-		if err := app.shutdown(); err != nil {
-			return err
+		err := app.shutdown()
+		if serveErr := <-serverErr; serveErr != nil {
+			err = errors.Join(err, fmt.Errorf("framework: serve: %w", serveErr))
 		}
-		if err := <-serverErr; err != nil {
-			return fmt.Errorf("framework: serve: %w", err)
-		}
-		return nil
+		return err
 	case err := <-serverErr:
 		stopErr := app.runStopHooks()
 		if err != nil {
@@ -430,6 +428,7 @@ func (a *App) shutdown() error {
 
 	if server != nil {
 		if err := server.Shutdown(shutdownCtx); err != nil {
+			_ = server.Close()
 			return errors.Join(
 				fmt.Errorf("framework: shutdown: %w", err),
 				a.runStopHooksWithContext(shutdownCtx),

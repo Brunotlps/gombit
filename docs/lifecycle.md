@@ -23,9 +23,12 @@ return framework.Run(app)
 
 Start hooks run in registration order. Stop hooks run in reverse registration
 order so cleanup unwinds deterministically. Stop hooks receive a bounded
-shutdown context; the default timeout is 10 seconds. Stop hooks also run after
-a start-hook failure, so they must tolerate partial application startup and be
-safe to call when the resource they clean up was never initialized.
+shutdown context; the default timeout is 10 seconds. If `http.Server.Shutdown`
+hits that deadline while handlers are still in flight, Gombit calls
+`server.Close()` so remaining connections are dropped and `Run`/`RunContext`
+can return. Stop hooks also run after a start-hook failure, so they must
+tolerate partial application startup and be safe to call when the resource
+they clean up was never initialized.
 
 `RunContext` binds the listener before start hooks run, which lets hooks read
 `App.Addr()` even when the configured HTTP address uses port `0`. The HTTP
@@ -60,7 +63,7 @@ steps that need their own runtime surfaces.
 | 11. readiness/liveness endpoints | Basic raw Gin probes are owned in M1-2; DB/cache-aware readiness is deferred to M1-4/M1-5. |
 | 12. frontend static asset mounting when embedded | Owned in M5-5 through `framework.WithEmbeddedFrontend` (application SPA) and ADMIN-2 through explicit `/admin` Gin routes over `internal/adminui` embed. Application SPA fallback is installed only when the FS has `index.html`; the `gombit new` placeholder embed (`.keep` only) is a no-op so `go run ./cmd/server` works without a Vite `dist`. Admin `/admin/` is cookie-mode only. See [`docs/build.md`](build.md) and [`docs/admin.md`](admin.md). |
 | 13. signal handling | Owned in M1-2 through `framework.Run`. |
-| 14. graceful shutdown | Owned in M1-2 through bounded `http.Server.Shutdown`. |
+| 14. graceful shutdown | Owned in M1-2 through bounded `http.Server.Shutdown`; on timeout, `server.Close()` drops remaining connections so `Run`/`RunContext` can return with `Serve` stopped. |
 | 15. dependency cleanup | Owned in M1-2 through `OnStop`; concrete DB/cache/log sink cleanup lands with those features. |
 
 The current probes are raw Gin routes with D10-style success bodies. They must
