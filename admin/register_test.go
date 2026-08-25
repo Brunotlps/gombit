@@ -1,12 +1,14 @@
 package admin_test
 
 import (
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 
-	"github.com/gombit-dev/gombit/admin"
 	"github.com/gin-gonic/gin"
+	"github.com/gombit-dev/gombit/admin"
+	"github.com/google/uuid"
 )
 
 func TestRegisterMissingSlug(t *testing.T) {
@@ -190,6 +192,36 @@ func TestFieldsFromUsesJSONNames(t *testing.T) {
 	}
 	if _, ok := byName["created_at"]; !ok {
 		t.Fatalf("FieldsFrom missing created_at; fields=%v", fields)
+	}
+}
+
+func TestFieldsFromInfersUUIDAndJSON(t *testing.T) {
+	type Token struct {
+		ID      uuid.UUID       `gorm:"type:uuid;primaryKey" json:"id"`
+		Payload json.RawMessage `json:"payload"`
+		Name    string          `json:"name"`
+	}
+	fields, err := admin.FieldsFrom(Token{})
+	if err != nil {
+		t.Fatalf("FieldsFrom: %v", err)
+	}
+	byName := map[string]admin.Field{}
+	for _, f := range fields {
+		byName[f.Name] = f
+	}
+	id, ok := byName["id"]
+	if !ok {
+		t.Fatalf("FieldsFrom missing id; fields=%v", fields)
+	}
+	if id.Type != admin.TypeUUID {
+		t.Fatalf("id type = %q, want %q", id.Type, admin.TypeUUID)
+	}
+	payload, ok := byName["payload"]
+	if !ok {
+		t.Fatalf("FieldsFrom missing payload; fields=%v", fields)
+	}
+	if payload.Type != admin.TypeJSON {
+		t.Fatalf("payload type = %q, want %q", payload.Type, admin.TypeJSON)
 	}
 }
 

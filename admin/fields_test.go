@@ -5,6 +5,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type setterRow struct {
@@ -128,5 +130,102 @@ func TestMakeSetterClearsPresentNil(t *testing.T) {
 	clear("Name", TypeString, nil)
 	if inst.Name != "" {
 		t.Fatalf("Name after null = %q, want empty", inst.Name)
+	}
+}
+
+func TestConvertToJSONAndUUID(t *testing.T) {
+	t.Parallel()
+
+	t.Run("map into json.RawMessage", func(t *testing.T) {
+		got, err := convertTo(map[string]any{"a": float64(1)}, reflect.TypeOf(json.RawMessage{}))
+		if err != nil {
+			t.Fatalf("convertTo: %v", err)
+		}
+		raw, ok := got.Interface().(json.RawMessage)
+		if !ok {
+			t.Fatalf("type %T, want json.RawMessage", got.Interface())
+		}
+		if string(raw) != `{"a":1}` {
+			t.Fatalf("RawMessage = %s, want {\"a\":1}", raw)
+		}
+	})
+
+	t.Run("map into []byte", func(t *testing.T) {
+		got, err := convertTo(map[string]any{"a": float64(1)}, reflect.TypeOf([]byte(nil)))
+		if err != nil {
+			t.Fatalf("convertTo: %v", err)
+		}
+		b, ok := got.Interface().([]byte)
+		if !ok {
+			t.Fatalf("type %T, want []byte", got.Interface())
+		}
+		if string(b) != `{"a":1}` {
+			t.Fatalf("[]byte = %s, want {\"a\":1}", b)
+		}
+	})
+
+	t.Run("map into nested struct", func(t *testing.T) {
+		type nested struct {
+			A int `json:"a"`
+		}
+		got, err := convertTo(map[string]any{"a": float64(7)}, reflect.TypeOf(nested{}))
+		if err != nil {
+			t.Fatalf("convertTo: %v", err)
+		}
+		n, ok := got.Interface().(nested)
+		if !ok {
+			t.Fatalf("type %T, want nested", got.Interface())
+		}
+		if n.A != 7 {
+			t.Fatalf("nested.A = %d, want 7", n.A)
+		}
+	})
+
+	t.Run("string into uuid.UUID", func(t *testing.T) {
+		const s = "550e8400-e29b-41d4-a716-446655440000"
+		got, err := convertTo(s, reflect.TypeOf(uuid.UUID{}))
+		if err != nil {
+			t.Fatalf("convertTo: %v", err)
+		}
+		id, ok := got.Interface().(uuid.UUID)
+		if !ok {
+			t.Fatalf("type %T, want uuid.UUID", got.Interface())
+		}
+		if id.String() != s {
+			t.Fatalf("uuid = %s, want %s", id, s)
+		}
+	})
+}
+
+func TestMakeSetterJSONObjectAndUUID(t *testing.T) {
+	t.Parallel()
+	type row struct {
+		Payload json.RawMessage
+		Token   uuid.UUID
+	}
+	inst := &row{}
+	rt := reflect.TypeOf(row{})
+
+	payloadField, ok := rt.FieldByName("Payload")
+	if !ok {
+		t.Fatal("Payload missing")
+	}
+	if err := makeSetter(payloadField.Index, TypeJSON, payloadField.Type)(inst, map[string]any{"a": float64(1)}); err != nil {
+		t.Fatalf("set Payload: %v", err)
+	}
+	if string(inst.Payload) != `{"a":1}` {
+		t.Fatalf("Payload = %s, want {\"a\":1}", inst.Payload)
+	}
+
+	tokenField, ok := rt.FieldByName("Token")
+	if !ok {
+		t.Fatal("Token missing")
+	}
+	const s = "550e8400-e29b-41d4-a716-446655440000"
+	if err := makeSetter(tokenField.Index, TypeUUID, tokenField.Type)(inst, s); err != nil {
+		t.Fatalf("set Token: %v", err)
+	}
+	if inst.Token.String() != s {
+		t.Fatalf("Token = %s, want %s", inst.Token, s)
 	}
 }
