@@ -7,7 +7,7 @@ import (
 )
 
 func stack() scenario.Stack {
-	return scenario.Stack{Name: "huma-gin", Handler: NewServer(), Envelope: true}
+	return scenario.Stack{Name: "huma-gin", Handler: NewServer(), Envelope: false}
 }
 
 // TestScenarios checks the bare Huma+Gin row implements the framework-tax

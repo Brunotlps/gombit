@@ -1,9 +1,11 @@
 // Package huma is the bare Huma-over-Gin row of the BENCH-1 framework-tax
 // microbenchmark matrix (issue #141): Huma's typed handlers, validation, and
-// OpenAPI emission on top of Gin, without the Gombit runtime around it. The
-// Gombit row (benchmarks/micro/gombit) registers the exact same routes
-// (scenario.RegisterRoutes) through framework.App instead, so the delta
-// between the two rows isolates the Gombit runtime's own cost.
+// OpenAPI emission on top of Gin, without the Gombit runtime around it and
+// without the D10 response envelope (that's a Gombit convention, not a Huma
+// default). The Gombit row (benchmarks/micro/gombit) registers the same
+// four scenarios, enveloped, through framework.App instead
+// (scenario.RegisterEnvelopedRoutes), so the delta between the two rows
+// isolates the Gombit runtime's own cost.
 package huma
 
 import (

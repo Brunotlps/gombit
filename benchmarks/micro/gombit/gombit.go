@@ -1,9 +1,12 @@
 // Package gombit is the Gombit-runtime row of the BENCH-1 framework-tax
-// microbenchmark matrix (issue #141): the same four scenarios
-// (scenario.RegisterRoutes) as benchmarks/micro/huma, but registered through
-// a real framework.App instead of bare Huma+Gin, so the delta between the
-// two rows isolates the cost of the Gombit runtime itself — request-id,
-// security headers, XSS sanitization, D10 error mapping — on top of Huma.
+// microbenchmark matrix (issue #141): the same four scenarios as
+// benchmarks/micro/huma, but registered through a real framework.App instead
+// of bare Huma+Gin (scenario.RegisterEnvelopedRoutes instead of
+// scenario.RegisterRoutes — Gombit wraps responses in the D10 envelope,
+// which bare Huma+Gin does not do by default), so the delta between the two
+// rows isolates the cost of the Gombit runtime itself — request-id,
+// security headers, XSS sanitization, D10 error mapping and envelope — on
+// top of Huma.
 //
 // This package must stay in its own directory/package, separate from the
 // other three rows: constructing a framework.App calls contract.Install,
@@ -24,13 +27,12 @@ import (
 // the other rows, registered through the runtime's Huma API (app.API()).
 func NewApp() *framework.App {
 	cfg := config.DefaultFor(config.EnvironmentProduction)
-	cfg.HTTP.Addr = "127.0.0.1:0"
 
 	app, err := framework.New(framework.WithConfig(cfg))
 	if err != nil {
 		panic("benchmarks/micro/gombit: build bench app: " + err.Error())
 	}
 
-	scenario.RegisterRoutes(app.API())
+	scenario.RegisterEnvelopedRoutes(app.API())
 	return app
 }

@@ -96,23 +96,29 @@ func assertValidPost(tb testing.TB, stack Stack) {
 	}
 }
 
-// assertInvalidPost only checks that every stack rejects the payload with a
-// well-formed-JSON client error. It deliberately does not assert a specific
-// error envelope shape: contract.Install (M3-2) replaces Huma's
-// package-level huma.NewError process-wide the first time any framework.App
-// boots, so a bare Huma+Gin stack sharing a process with a Gombit stack
-// would have an error shape that depends on run order. Each stack here runs
-// in its own package/process (that's the point of benchmarks/micro/{...}
-// being separate directories), which sidesteps that, but this assertion
-// still doesn't assert an exact shape since it's shared across stacks that
-// intentionally use different error mappings (see
-// docs/spikes/M0-2_HUMA_GIN_SPIKE.md).
+// assertInvalidPost checks that every stack rejects the payload with exactly
+// 422 Unprocessable Entity — what all four stacks actually return for this
+// payload (well-formed JSON, invalid field values): net/http and Gin return
+// it explicitly from their own validation; Huma and Gombit normalize
+// validation failures to 422 via contract.isValidationFailure regardless of
+// error-body shape. A looser `4xx` range would also accept 404/405, which a
+// broken route registration (wrong path, wrong method) would produce just as
+// easily as a working validator — silently turning a routing bug into a
+// passing test. It deliberately does not assert a specific error envelope
+// shape: contract.Install (M3-2) replaces Huma's package-level huma.NewError
+// process-wide the first time any framework.App boots, so a bare Huma+Gin
+// stack sharing a process with a Gombit stack would have an error shape that
+// depends on run order. Each stack here runs in its own package/process
+// (that's the point of benchmarks/micro/{...} being separate directories),
+// which sidesteps that for status codes, but this assertion still doesn't
+// assert an exact shape since it's shared across stacks that intentionally
+// use different error mappings (see docs/spikes/M0-2_HUMA_GIN_SPIKE.md).
 func assertInvalidPost(tb testing.TB, stack Stack) {
 	tb.Helper()
 
 	response := Do(stack.Handler, http.MethodPost, "/users", InvalidCreateUserBody)
-	if response.Code < 400 || response.Code >= 500 {
-		tb.Fatalf("%s: POST /users (invalid) status = %d, want a 4xx validation error; body: %s", stack.Name, response.Code, response.Body.String())
+	if response.Code != http.StatusUnprocessableEntity {
+		tb.Fatalf("%s: POST /users (invalid) status = %d, want %d", stack.Name, response.Code, http.StatusUnprocessableEntity)
 	}
 	if !json.Valid(response.Body.Bytes()) {
 		tb.Fatalf("%s: POST /users (invalid) body is not valid JSON: %s", stack.Name, response.Body.String())

@@ -188,12 +188,38 @@ SQLite/PostgreSQL/MySQL matrix green throughout (AGENTS.md §5.1).
 - Cross-linked `docs/spikes/M0-2_HUMA_GIN_SPIKE.md` to
   `benchmarks/README.md`; noted the spike's result is historical, not the
   current number.
+- **Post-landing correction (external review on PR #174, HEAD `3090c5f`):**
+  the first landed version had two measurement defects serious enough that
+  the "done" stamp was premature. Both are now fixed:
+  - The timed loop called `httptest.NewRequest`/`NewRecorder` every
+    iteration for every scenario. On a trivial handler that overhead
+    (~5.3KB / 12 allocs) dwarfed the handler's own cost (~1KB / 10 allocs),
+    and — being roughly constant across all four stacks — compressed the
+    reported ratios. GET scenarios now build their request once outside the
+    `b.N` loop (`scenario.RunBenchmark`/`runGET`); POST scenarios still
+    build one per iteration (a drained body reader can't be reused) but that
+    cost is identical machinery across all four rows, not new confound.
+    Verified fix: `net-http`/plaintext went from 6140 B/op (19 allocs) to
+    1024 B/op (10 allocs); the reported gombit/net-http ratio for that
+    scenario went from a confounded ~1.55x to ~4.3x.
+  - The bare Huma+Gin row wrapped responses in the D10 `SuccessEnvelope`,
+    which is a Gombit convention Huma does not apply by default. That billed
+    part of Gombit's own cost to the Huma+Gin baseline, understating the
+    delta the huma/gombit comparison exists to isolate. `scenario.go` now
+    has two registrations — `RegisterRoutes` (bare, used by
+    `benchmarks/micro/huma`) and `RegisterEnvelopedRoutes` (D10, used by
+    `benchmarks/micro/gombit`) — verified to produce different wire shapes.
+  - Also tightened `assertInvalidPost` from "any 4xx" to exactly 422 (a 404
+    from a broken route registration was passing the same check a real
+    validation rejection was), now that per-package process isolation makes
+    an exact status assertion safe.
 - **Deferred to a later Phase 1/2 follow-up:** `benchstat`-based
   `-count=10` summarization is documented (run manually) but not yet wired
   into a `make benchmark-micro` target or `results.json` output — that
   depends on Phase 1's still-open result-schema/summarizer work.
 - **AC:** `go test ./benchmarks/micro/... -bench=BenchmarkFrameworkTax -benchmem -count=10`
-  runs all four stacks × five scenarios and reports `ns/op`/`B/op`/`allocs/op`.
+  runs all four stacks × five scenarios and reports `ns/op`/`B/op`/`allocs/op`
+  for the handler, not the benchmark harness.
   `make benchmark-micro` / `results.json` output is not yet satisfied (see
   above).
 
