@@ -5,6 +5,7 @@ import {
   canCreate,
   canDelete,
   canList,
+  canPopulateEditForm,
   canUpdate,
   canViewDetail,
 } from "./capabilities";
@@ -85,6 +86,25 @@ describe("canUpdate", () => {
 
   it("hides the update action when actions.update is false even when can.update is true", () => {
     expect(canUpdate(withActions({ update: false }))).toBe(false);
+  });
+});
+
+describe("canPopulateEditForm", () => {
+  it("allows edit hydration when update and detail are both enabled", () => {
+    expect(canPopulateEditForm(model)).toBe(true);
+  });
+
+  it("refuses edit hydration when actions.detail is false even if update is allowed", () => {
+    expect(canPopulateEditForm(withActions({ detail: false }))).toBe(false);
+  });
+
+  it("refuses edit hydration when can.view is false even if update is allowed", () => {
+    expect(canPopulateEditForm(withCan({ view: false }))).toBe(false);
+  });
+
+  it("refuses edit hydration when update is disabled", () => {
+    expect(canPopulateEditForm(withActions({ update: false }))).toBe(false);
+    expect(canPopulateEditForm(withCan({ update: false }))).toBe(false);
   });
 });
 

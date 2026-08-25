@@ -82,6 +82,11 @@ when nothing is registered; models with `actions.list === false` are shown
 but not linked). List/detail/create/edit/delete honor both `actions.*` and
 the current user's `can.*`. Switching models remounts the list route
 (`key={slug}`) so page, search, ordering, and filters start empty.
+Create and edit remount on slug/id (`key={`${slug}-${id || "new"}`}`) so
+overlapping field names do not leak onto the next model or row. Edit
+requires a GET of the current row (`actions.detail` + `can.view`); if
+detail is disabled, the edit screen is hidden rather than PATCHing empty
+boolean defaults (`false`) over stored `true` values.
 Field widgets cover the closed ADMIN-1 types; `belongs_to` is an FK
 input; `has_many` is read-only.
 `datetime-local` values are converted to RFC3339 before POST/PATCH.
