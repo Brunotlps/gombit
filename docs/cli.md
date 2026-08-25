@@ -313,7 +313,9 @@ Route registration is appended in `cmd/server/main.go` via `go/ast` +
 `internal/platform` AutoMigrate is updated the same way. Re-running does not
 duplicate the `Register` call. A second resource whose plural HTTP path
 collides with an existing feature-package (`Bus` and `Buse` both become
-`/buses`) is refused. The module path is read from `go.mod` with trailing
+`/buses`) is refused. `Product` is reserved: every `gombit new` app already
+owns `internal/product` and the `/products` SPA routes (same as
+`make command --package product`). The module path is read from `go.mod` with trailing
 `//` comments stripped, so `module example.com/demo // app` does not leak
 into generated imports.
 
