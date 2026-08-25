@@ -27,6 +27,10 @@ version.
 
 ### Fixed
 
+- `gombit make command` refuses `version` and `createsuperuser`, which
+  `cli.NewRoot` already registers, so generated stubs cannot shadow the
+  framework commands
+  ([#124](https://github.com/gombit-dev/gombit/issues/124)).
 - `gombit make resource` and `gombit make command` strip trailing `//`
   comments from the `go.mod` module line, so
   `module example.com/demo // app` does not produce invalid imports
