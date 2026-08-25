@@ -133,11 +133,24 @@ func bearerToken(header string) (string, bool) {
 }
 
 func writeAuthError(ctx huma.Context, env *contract.ErrorEnvelope) {
+	writeAuthChallenge(ctx, env, `Bearer realm="api"`)
+}
+
+// writeCookieAuthError is the cookie-mode counterpart: RFC 7235 says a 401
+// challenge must name the scheme the resource uses. Cookie apps register
+// cookieAuth (apiKey in gombit_access), not HTTP Bearer.
+func writeCookieAuthError(ctx huma.Context, env *contract.ErrorEnvelope) {
+	writeAuthChallenge(ctx, env, "")
+}
+
+func writeAuthChallenge(ctx huma.Context, env *contract.ErrorEnvelope, challenge string) {
 	if env == nil {
 		return
 	}
 	ctx.SetHeader("Content-Type", "application/json")
-	ctx.SetHeader("WWW-Authenticate", `Bearer realm="api"`)
+	if challenge != "" {
+		ctx.SetHeader("WWW-Authenticate", challenge)
+	}
 	ctx.SetStatus(env.GetStatus())
 	_ = json.NewEncoder(ctx.BodyWriter()).Encode(env)
 }

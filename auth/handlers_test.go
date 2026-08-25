@@ -57,6 +57,9 @@ func TestHandlerTable(t *testing.T) {
 		req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
 		app.Router().ServeHTTP(rec, req)
 		assertError(t, rec, http.StatusUnauthorized, "authentication")
+		if got := rec.Result().Header.Get("WWW-Authenticate"); got != `Bearer realm="api"` {
+			t.Fatalf("WWW-Authenticate = %q, want Bearer realm=%q", got, "api")
+		}
 	})
 
 	t.Run("invalid bearer", func(t *testing.T) {

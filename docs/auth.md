@@ -34,7 +34,7 @@ All paths use `config.API.Prefix` (default `/api/v1`). D10 envelopes.
 | `POST` | `/auth/login` | Public. Returns `access_token`, `refresh_token`, `token_type`, `expires_in`. |
 | `POST` | `/auth/refresh` | Public. Body `{ "refresh_token" }`. Issues a new pair; the old refresh token is invalid. |
 | `POST` | `/auth/logout` | Public. Body `{ "refresh_token" }`. Revokes that refresh token. Bound access JWTs then fail. |
-| `GET` | `/me` | Bearer access JWT. Example protected route for E2E. |
+| `GET` | `/me` | Bearer access JWT. Example protected route for E2E. Missing/invalid Bearer is 401 with `WWW-Authenticate: Bearer realm="api"`. |
 
 Passwords are hashed with bcrypt. Access JWTs are HS256, bound to the refresh
 row so logout (and reuse of a rotated refresh token) 401s `/me`. Reusing a

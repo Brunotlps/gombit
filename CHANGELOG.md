@@ -27,6 +27,9 @@ version.
 
 ### Fixed
 
+- Cookie-mode session 401s omit `WWW-Authenticate: Bearer`. The D10 body
+  stays `authentication`; Bearer mode still sends `Bearer realm="api"`
+  ([#117](https://github.com/gombit-dev/gombit/issues/117)).
 - Minimal generated number inputs use RHF `setValueAs` so a cleared field
   submits `0` instead of JSON `null` (`valueAsNumber` → `NaN`)
   ([#116](https://github.com/gombit-dev/gombit/issues/116)).

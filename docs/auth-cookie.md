@@ -96,7 +96,7 @@ differs: tokens travel in cookies, not JSON.
 | `POST` | `/auth/login` | Public, CSRF-protected | Body `{email, password}`. On success, sets `gombit_access` + `gombit_refresh` cookies; body is the public user, not tokens. |
 | `POST` | `/auth/refresh` | Cookie (`gombit_refresh`), CSRF-protected | No request body; reads the refresh cookie. Rotates both session cookies. |
 | `POST` | `/auth/logout` | Cookie (`gombit_refresh`), CSRF-protected | No request body; revokes the current refresh token and clears both session cookies. Idempotent. |
-| `GET` | `/me` | Cookie (`gombit_access`), safe | Same response shape as Bearer mode's `/me`. |
+| `GET` | `/me` | Cookie (`gombit_access`), safe | Same response shape as Bearer mode's `/me`. Missing or invalid session cookies are 401 D10 `authentication` and **omit** `WWW-Authenticate: Bearer` (RFC 7235: the challenge must name the scheme the resource uses). |
 
 ## Config
 
