@@ -66,5 +66,7 @@ when configured namespacing is required.
 | `GOMBIT_REDIS_TLS_INSECURE` | `Config.Cache.Redis.TLSInsecure` | `false` |
 
 Cache keys opened through `cache.Open` are prefixed with the configured
-namespace. When no namespace is configured explicitly, `config.Load` derives it
-from the normalized app name and environment, such as `gombit:development`.
+namespace. Caller keys are prefixed as-is: leading colons are not stripped, so
+`foo` and `:foo` occupy distinct slots. When no namespace is configured
+explicitly, `config.Load` derives it from the normalized app name and
+environment, such as `gombit:development`.

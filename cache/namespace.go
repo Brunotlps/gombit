@@ -41,5 +41,5 @@ func (n namespaced) Increment(ctx context.Context, key string, delta int64) (int
 }
 
 func (n namespaced) key(key string) string {
-	return n.namespace + ":" + strings.TrimLeft(key, ":")
+	return n.namespace + ":" + key
 }
