@@ -27,6 +27,9 @@ version.
 
 ### Fixed
 
+- Concurrent `POST /auth/refresh` of the same still-valid token no longer
+  family-revokes the winner's new session (two tabs / parallel curls)
+  ([#127](https://github.com/gombit-dev/gombit/issues/127)).
 - Generated README Run snippet no longer copies `.env.example` over the
   per-project `.env` JWT secret
   ([#126](https://github.com/gombit-dev/gombit/issues/126)).

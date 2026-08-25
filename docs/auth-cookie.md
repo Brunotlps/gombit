@@ -33,7 +33,7 @@ instead of asking every mutating handler to re-implement it.
 | Session cookie is stolen off the wire | `Secure` is required in production (enforced by `config.Validate` / `gombit doctor`, see [Config](#config)) so cookies are never sent over plain HTTP once deployed. |
 | Session cookie is replayed after logout | Logout revokes the refresh token server-side ([`auth.Service.RevokeRefresh`](../auth/service.go)) and clears both cookies; a captured access JWT still fails once its short TTL (`GOMBIT_JWT_ACCESS_TTL`, default `15m`) expires, same as Bearer mode. |
 | Cross-site cookie leakage on navigation | `SameSite=Lax` (default) blocks the cookie on cross-site sub-requests (XHR/fetch/form POST from another site) while still attaching it on top-level navigation (so a bookmarked link still works); `SameSite=Strict` blocks it even on top-level navigation from another site, at the cost of breaking session continuity across an external link into the app. Choose `Strict` for apps with no legitimate cross-site entry points. |
-| Reused/rotated refresh token | Identical to Bearer mode: `RotateRefresh` revokes the old token and reissuing after a revoked token is presented revokes the whole family (`errRefreshReuse`). |
+| Reused/rotated refresh token | Identical to Bearer mode: `RotateRefresh` revokes the old token and presenting that revoked token again revokes the whole family (`errRefreshReuse`). Concurrent refresh of the current still-valid token shares one rotation and does not family-revoke the winner. |
 
 This is the **double-submit cookie** pattern, not the synchronizer-token
 pattern (no server-side per-session token store beyond the refresh token

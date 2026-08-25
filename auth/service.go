@@ -15,13 +15,21 @@ import (
 // Service is the runtime auth implementation: users, password hashes,
 // access JWTs, and rotating refresh tokens.
 type Service struct {
-	db        *gorm.DB
-	cfg       config.AuthConfig
-	secret    []byte
-	hasher    Hasher
-	clock     Clock
-	dummyOnce sync.Once
-	dummyHash string
+	db          *gorm.DB
+	cfg         config.AuthConfig
+	secret      []byte
+	hasher      Hasher
+	clock       Clock
+	dummyOnce   sync.Once
+	dummyHash   string
+	rotateMu    sync.Mutex
+	rotateCalls map[string]*rotateCall
+}
+
+type rotateCall struct {
+	wg   sync.WaitGroup
+	pair TokenPair
+	err  error
 }
 
 // NewService constructs a Service. cfg.Auth.JWTSecret must be set.
@@ -129,16 +137,41 @@ func (s *Service) issueTokens(tx *gorm.DB, user User, now time.Time) (TokenPair,
 }
 
 // RotateRefresh validates the current refresh token, revokes it, and issues a
-// new pair. Reuse of a revoked token revokes the user's remaining tokens.
-// The lookup, revoke, and replacement happen in one transaction so concurrent
-// refresh of the same token cannot mint two valid pairs.
+// new pair. Reuse of an already-rotated token revokes the user's remaining
+// tokens. Concurrent callers with the same still-valid token share one
+// rotation so a lost race cannot family-revoke the winner's new session.
 func (s *Service) RotateRefresh(ctx context.Context, raw string) (TokenPair, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
 		return TokenPair{}, errInvalidRefreshToken
 	}
-	now := s.now()
 	hash := hashRefreshToken(raw)
+
+	s.rotateMu.Lock()
+	if s.rotateCalls == nil {
+		s.rotateCalls = make(map[string]*rotateCall)
+	}
+	if call, ok := s.rotateCalls[hash]; ok {
+		s.rotateMu.Unlock()
+		call.wg.Wait()
+		return call.pair, call.err
+	}
+	call := &rotateCall{}
+	call.wg.Add(1)
+	s.rotateCalls[hash] = call
+	s.rotateMu.Unlock()
+
+	pair, err := s.rotateRefreshOnce(ctx, raw, hash)
+	call.pair, call.err = pair, err
+	s.rotateMu.Lock()
+	delete(s.rotateCalls, hash)
+	s.rotateMu.Unlock()
+	call.wg.Done()
+	return pair, err
+}
+
+func (s *Service) rotateRefreshOnce(ctx context.Context, raw, hash string) (TokenPair, error) {
+	now := s.now()
 
 	var pair TokenPair
 	var reuse bool
@@ -168,11 +201,10 @@ func (s *Service) RotateRefresh(ctx context.Context, raw string) (TokenPair, err
 			return result.Error
 		}
 		if result.RowsAffected != 1 {
-			if err := revokeAllTx(tx, row.UserID, now); err != nil {
-				return err
-			}
-			reuse = true
-			return nil
+			// Lost the compare-and-swap: another caller already rotated this
+			// still-valid token. That is not reuse-as-theft; do not revoke the
+			// winner's new session.
+			return errInvalidRefreshToken
 		}
 
 		var user User

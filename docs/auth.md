@@ -39,6 +39,9 @@ All paths use `config.API.Prefix` (default `/api/v1`). D10 envelopes.
 Passwords are hashed with bcrypt. Access JWTs are HS256, bound to the refresh
 row so logout (and reuse of a rotated refresh token) 401s `/me`. Reusing a
 revoked refresh token revokes that user's remaining refresh tokens.
+Concurrent refresh of the **current** still-valid token (two tabs, parallel
+`POST /auth/refresh`) shares one rotation and does not family-revoke the
+winner.
 
 `User.IsSuperuser` bypasses all permission checks.
 `gombit createsuperuser` is the only built-in path that sets it;
