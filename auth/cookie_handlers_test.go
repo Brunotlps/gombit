@@ -337,6 +337,45 @@ func TestCSRFSafeMethodsAreExempt(t *testing.T) {
 	if rec.Result().Header.Get("Set-Cookie") == "" {
 		t.Fatal("safe GET request did not bootstrap a csrf cookie")
 	}
+	if got := rec.Result().Header.Get("WWW-Authenticate"); got != "" {
+		t.Fatalf("cookie-mode 401 WWW-Authenticate = %q, want omit (not Bearer)", got)
+	}
+}
+
+func TestCookieMe401OmitsBearerChallenge(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	app := newCookieAuthApp(t)
+
+	t.Run("missing session cookie", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+		app.Router().ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("status = %d, want 401; body: %s", rec.Code, rec.Body.String())
+		}
+		if got := rec.Result().Header.Get("WWW-Authenticate"); got != "" {
+			t.Fatalf("WWW-Authenticate = %q, want omit", got)
+		}
+		if !strings.Contains(rec.Body.String(), "missing session cookie") {
+			t.Fatalf("body = %s, want missing session cookie", rec.Body.String())
+		}
+	})
+
+	t.Run("invalid session cookie", func(t *testing.T) {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, "/api/v1/me", nil)
+		req.AddCookie(&http.Cookie{Name: auth.AccessCookieName, Value: "not-a-jwt"})
+		app.Router().ServeHTTP(rec, req)
+		if rec.Code != http.StatusUnauthorized {
+			t.Fatalf("status = %d, want 401; body: %s", rec.Code, rec.Body.String())
+		}
+		if got := rec.Result().Header.Get("WWW-Authenticate"); got != "" {
+			t.Fatalf("WWW-Authenticate = %q, want omit", got)
+		}
+		if !strings.Contains(rec.Body.String(), "invalid session cookie") {
+			t.Fatalf("body = %s, want invalid session cookie", rec.Body.String())
+		}
+	})
 }
 
 func assertCSRFRejected(t *testing.T, rec *httptest.ResponseRecorder) {
