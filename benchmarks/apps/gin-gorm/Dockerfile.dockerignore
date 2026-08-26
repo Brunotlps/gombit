@@ -1,0 +1,15 @@
+# Dockerfile-scoped build-context ignore (BuildKit reads
+# <dockerfile>.dockerignore before a root .dockerignore). The gin-gorm build
+# needs only the Go module — keep the heavy, unrelated trees out of the context
+# so `docker build .` from the repo root stays small and fast.
+.git
+**/node_modules
+**/vendor
+benchmarks/apps/nestjs
+benchmarks/apps/laravel
+benchmarks/apps/rails
+benchmarks/apps/django
+benchmarks/results
+frontend
+web
+**/*.md

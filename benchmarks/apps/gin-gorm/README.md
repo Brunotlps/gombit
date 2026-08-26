@@ -19,6 +19,35 @@ go run ./benchmarks/apps/gin-gorm -seed
 go run ./benchmarks/apps/gin-gorm
 ```
 
+### Under compose (containerized, with the §7 resource budget)
+
+The app is also containerized (`Dockerfile`, built from the **repo root** since
+it imports `benchmarks/apps/shared`) and wired into `benchmarks/compose.yml`
+with the issue #141 §7 app ceiling (2 vCPU / 1 GiB). Because a compose budget
+is only an *intention* — whether `deploy.resources.limits` is honored is
+engine/version-dependent — the running container is verified rather than
+trusted:
+
+```sh
+# build + start postgres and the app (Compose v2 enforces the limits on `up`)
+docker compose --env-file benchmarks/config/versions.env \
+  -f benchmarks/compose.yml up -d postgres gin-gorm
+
+# seed once (truncate + insert), then the served container keeps running
+docker compose --env-file benchmarks/config/versions.env \
+  -f benchmarks/compose.yml run --rm gin-gorm seed
+
+# confirm the ceiling actually landed on the live container
+go run ./benchmarks/scripts/inspect-limits \
+  -container "$(docker compose -f benchmarks/compose.yml ps -q gin-gorm)" \
+  -cpus 2 -memory 1g
+```
+
+The entrypoint takes two verbs, `seed` and `serve` (default), matching the two
+modes below. The full "bring all six apps up and run `run-crud` over each" loop
+is a later Phase 6 slice; this is the containerization + honest limit-detection
+spine it builds on.
+
 Env vars (all optional, defaults match `benchmarks/compose.yml`):
 
 | Var | Default | |

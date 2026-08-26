@@ -1354,6 +1354,37 @@ its own, not only in the correction below it.
 
 ### Phase 6 — Operational footprint
 
+**Compose-loop foundation — started (containerization + honest §7 limit
+detection).** The first slice of the "bring the apps up under compose" loop is
+in:
+
+- `benchmarks/apps/gin-gorm/Dockerfile` (multi-stage, built from the **repo
+  root** so it can import `benchmarks/apps/shared`; a Dockerfile-scoped
+  `.dockerignore` keeps node_modules/vendor/.git out of the context) +
+  `docker-entrypoint.sh` with `seed`/`serve` verbs, and a `gin-gorm` service in
+  `benchmarks/compose.yml` carrying the §7 app budget (2 vCPU / 1 GiB) and a
+  health check. gin-gorm is the reference app; the other five are the next
+  slices.
+- `benchmarks/internal/reslimits` + `benchmarks/scripts/inspect-limits`: the
+  issue's "detect and report rather than silently pretend limits were applied"
+  requirement. A compose budget is only an *intention*; the tool reads the live
+  container's applied cgroup limits (`docker inspect` → NanoCpus/Memory) and
+  classifies them against the intended budget (`enforced` / `partial` / `not
+  applied`), producing the honest string a run records. Pure and unit-tested
+  (classification incl. wrong-value-is-not-enforced, the inspect parser,
+  compose-style byte parsing); verified end to end against a live container
+  (enforced `NanoCpus=2e9`/`Memory=1GiB`; a genuinely unlimited `docker run`
+  reads `not applied`).
+- **Empirical correction to the plan's own assumption:** the `compose.yml`
+  comment (and this plan's earlier framing) claimed a plain `docker compose up`
+  "silently ignores" `deploy.resources.limits` and that `--compatibility` or
+  Swarm is required. Verified false on Docker Compose v2 (tested v5.x): a plain
+  `up` **does** enforce the limits. That is exactly why detection reads the
+  running container instead of prescribing a flag — the enforcement path is
+  version/host-dependent, so only the container is authoritative. The comments,
+  `reslimits` docs/`not applied` message, and CLI usage were corrected to say
+  so; no code claims `--compatibility` is required.
+
 - Cold-start (≥20 runs, median/p95), idle RSS, loaded RSS, CPU-under-load for
   all 6 implementations.
 - Gombit-specific: build via `gombit build --embed`, verify the embedded
