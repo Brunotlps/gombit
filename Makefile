@@ -25,7 +25,7 @@ OUT_DIR ?= benchmarks/results/latest
 # compose loop (next slice) is what will actually enforce and record them.
 INTENDED_LIMITS ?= intended (not yet enforced): app $(APP_CPUS)cpu/$(APP_MEMORY); postgres $(POSTGRES_CPUS)cpu/$(POSTGRES_MEMORY)
 
-.PHONY: benchmark-crud benchmark-metadata
+.PHONY: benchmark-crud benchmark-summary benchmark-metadata
 
 ## benchmark-crud: run the headline CRUD-read workload against one running,
 ## seeded implementation and write results.json/results.csv/metadata.json.
@@ -50,6 +50,15 @@ benchmark-crud:
 	@# resource-limits deliberately omitted: run-crud does not start or
 	@# constrain the app, so it records its honest "not applied" default
 	@# rather than the intended pins this target never enforces.
+
+## benchmark-summary: regenerate the human report (summary.md) from the
+## structured OUT_DIR/results.json — per-(framework, concurrency) aggregates
+## with trial variance and the >5% coefficient-of-variation flag. Markdown is
+## never hand-edited; re-run this after any run-crud that changed results.json.
+benchmark-summary:
+	go run ./benchmarks/scripts/summarize \
+		-results "$(OUT_DIR)/results.json" \
+		-out "$(OUT_DIR)/summary.md"
 
 ## benchmark-metadata: write just the reproducibility metadata for the current
 ## host and pinned run configuration to OUT_DIR/metadata.json.
