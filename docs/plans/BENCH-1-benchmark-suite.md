@@ -1031,6 +1031,66 @@ compose app service deferred, same as every prior sub-slice).**
   `APP_KEY`) is gitignored and not committed; `.env.example` is the
   documented template and `APP_KEY` is supplied at runtime.
 
+**Phase 4d — NestJS + TypeORM — done (fairness-check extension and compose
+app service deferred). This completes all six canonical CRUD implementations
+(the Go control, the real Gombit app, and the four ecosystem apps).**
+
+- `benchmarks/apps/nestjs`: the canonical API idiomatically in NestJS +
+  TypeORM — Node 24, NestJS 11.2.3, TypeORM 0.3.31, pg 8.23.0, TypeScript
+  5.9.3, all direct deps pinned exact in `package.json` with the full tree in
+  the committed `package-lock.json` (`npm ci`; `node_modules`/`dist` not
+  committed). Node is the host toolchain, so no Docker was needed (unlike
+  `../rails`/`../laravel`).
+- **Two deliberate version choices, documented rather than defaulted:** (1)
+  TypeORM **0.3.31**, not the 1.x major that shipped mid-2026 —
+  `@nestjs/typeorm@11.0.3`'s integration is built around the mature 0.3.x
+  line (peer only tentatively lists `^1.0.0-dev`), and the issue's
+  "conventional Nest ORM" language favors the battle-tested stack over the
+  1.x boundary. (2) **TypeScript 5.9.3**, not the 7.0 major now published —
+  NestJS 11 is built for TS 5.x, so a 7.0 (native-compiler) jump is
+  unnecessary risk. Same reasoning applied to `@types/node` (24.x, matching
+  Node 24) and jest (29, matching ts-jest 29).
+- Production config (§17): `NODE_ENV=production`, **compiled output**
+  (`nest build` → `dist/`, run via `node dist/main`) — never a ts-node/watch
+  dev server. Single Node process (one event loop) — the booted-once,
+  persistent-process model like the Go binary / Rails / Django, and unlike
+  Laravel's per-request FPM re-bootstrap. Pooling (§18): one global pool,
+  `extra.max = POOL_MAX_OPEN` (20). Logging (§19): TypeORM query logging off,
+  no per-request access log.
+- **The one genuinely NestJS-specific correctness risk — microsecond
+  timestamp fidelity on the *read* path — found and pinned:** the `pg` driver
+  parses `timestamptz` into a JS `Date`, which holds only milliseconds, so a
+  `timestamptz(6)` column silently loses microseconds every sibling keeps.
+  `src/data-source.ts` overrides the `pg` type parsers (OID 1114/1184) to
+  return the raw string, which the serializer reshapes to the canonical
+  `...Z` form. Writes carry microseconds inherently (created_at is the DB
+  `now()` default, updated_at set to SQL `now()` on update — no JS `Date`).
+  Pinned by `schema-contract.e2e-spec.ts`'s read-path test, which round-trips
+  a known `.123456` through the API; verified it earns its place by removing
+  the parser override and confirming that test fails while the
+  column-precision and FK assertions still pass (the DDL is unchanged, so
+  they can't see the read-path bug — the same independent-invariant lesson
+  from the Laravel review round, applied up front here).
+- Applied the rest of the accumulated lessons from the start: `text` columns,
+  a non-deferrable FK (verified via `psql` and a DB-backed schema test),
+  present-null `description` rejected as 422 (via the DTO's
+  `@ValidateIf(present) @IsString`) matching rails/django/laravel, FK-lean
+  422 for a bad owner, malformed JSON → 422, `error.code` asserted on every
+  rejection. Whitespace/empty-string preservation needed no work — NestJS
+  does not trim request strings by default (unlike Laravel's TrimStrings).
+- The N+1 guard matches `../gin-gorm`'s pinned 3-query/2-query shape exactly
+  via TypeORM's `relationLoadStrategy: 'query'` (a batched owner `IN (...)`,
+  not a JOIN — no documented deviation needed, unlike Django/Laravel's
+  choices), counted directly with a custom TypeORM logger in
+  `query-count.e2e-spec.ts`.
+- 20-test suite (`jest`, ts-jest, `--runInBand` against a dedicated
+  `gombit_bench_nestjs_test` database; e2e via supertest through the real
+  request pipeline, plus a pure formula unit test) mirrors the five sibling
+  suites. CI: an `actions/setup-node` 24 step + `npm ci` + `npm run build`
+  (the production path is compiled output) + `npm test` added to the
+  `database-postgres` job, against a database it creates explicitly (the
+  tests run migrations but don't create the database).
+
 ### Phase 5 — Workload depth: auth overhead, TechEmpower-inspired, concurrency sweep
 
 - Gombit-only auth-overhead benchmark: no-auth / JWT / cookie-session /

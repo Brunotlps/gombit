@@ -61,6 +61,10 @@ pnpm-debug.log*
 .vite/
 *.tsbuildinfo
 
+# NestJS benchmark app (benchmarks/apps/nestjs) compiled output
+/benchmarks/apps/nestjs/dist/
+/benchmarks/apps/nestjs/coverage/
+
 # IDE / editors
 .idea/
 .vscode/*

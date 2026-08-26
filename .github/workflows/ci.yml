@@ -288,6 +288,36 @@ jobs:
           DATABASE_URL: postgres://gombit:gombit@127.0.0.1:5432/gombit_bench_laravel_test?sslmode=disable
         run: php artisan test
 
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: benchmarks/apps/nestjs/package-lock.json
+
+      - name: Install nestjs benchmark app dependencies
+        working-directory: benchmarks/apps/nestjs
+        run: npm ci
+
+      # Verify the app compiles (the production path is compiled output, issue
+      # #141 §17), then run the suite. The tests run the migrations on the
+      # connected database themselves (helpers.createTestApp), but do not
+      # create it — a dedicated test database, kept separate from the others.
+      - name: Build nestjs benchmark app
+        working-directory: benchmarks/apps/nestjs
+        run: npm run build
+
+      - name: Create nestjs benchmark app test database
+        run: |
+          PGPASSWORD=gombit psql -h 127.0.0.1 -U gombit -d gombit \
+            -c 'CREATE DATABASE gombit_bench_nestjs_test;'
+
+      - name: Run nestjs benchmark app tests
+        working-directory: benchmarks/apps/nestjs
+        env:
+          DATABASE_URL: postgres://gombit:gombit@127.0.0.1:5432/gombit_bench_nestjs_test?sslmode=disable
+        run: npm test
+
   database-mysql:
     name: Database (mysql)
     needs: test
