@@ -227,6 +227,25 @@ func TestCreateInvalidOwnerIDReturnsInternalError(t *testing.T) {
 	}
 }
 
+// TestCreateRejectsZeroOwnerID checks a different input than
+// TestCreateInvalidOwnerIDReturnsInternalError above: owner_id:0 is not "a
+// nonexistent but well-formed id" (999999), it's the zero value — the same
+// thing gin-gorm's binding:"required" on OwnerID rejects at the validation
+// layer before it ever reaches GORM. Without minimum:"1" on
+// createProjectBody.OwnerID, this case fell through to the same
+// FK-violation 500 as the nonexistent-id case, conflating a validation gap
+// this app can close with the discovered framework gap it deliberately
+// doesn't.
+func TestCreateRejectsZeroOwnerID(t *testing.T) {
+	app := newProjectApp(t)
+
+	response := doJSON(t, app, http.MethodPost, "/api/projects", `{"owner_id":0,"name":"x","description":"y"}`)
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("POST with owner_id:0 status = %d, want %d; body: %s",
+			response.Code, http.StatusUnprocessableEntity, response.Body.String())
+	}
+}
+
 // TestListPaginationAndOrdering mirrors
 // benchmarks/apps/gin-gorm/main_test.go's test of the same name: pagination
 // meta shape, deterministic id-DESC ordering across a page boundary, and

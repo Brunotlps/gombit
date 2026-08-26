@@ -511,6 +511,55 @@ same misread again.
 - `benchmarks/compose.yml` app services for both apps — still open, moved
   to a follow-up alongside Phase 8's CI work.
 
+**Post-landing correction (review on PR #177, github.com/gombit-dev/gombit/pull/177#pullrequestreview-5026216966):**
+one claim checked and found incorrect, three real gaps fixed:
+
+- Claimed the child-process env override in `startApp` (`cmd.Env =
+  append(cmd.Environ(), "DATABASE_URL="+dsn, ...)`) loses to a
+  pre-existing `DATABASE_URL` in the parent's environment, because
+  `os.Getenv` returns the first match. Checked at the source rather than
+  argued about: `syscall`'s `copyenv()` does document first-occurrence-wins
+  for a process's *own* already-received environ — but `os/exec.Cmd.Start`
+  calls `dedupEnv` before ever calling `execve`, and that function's own
+  comment says "Construct the output in reverse order, to preserve the
+  *last* occurrence of each key." Verified directly with a real child Go
+  binary reading via `os.Getenv` while the parent had `DATABASE_URL` set to
+  a different value — the appended override won, every time. No code
+  change; added a comment at the call site citing the exact source so the
+  same claim doesn't recur.
+- `TestCrossImplementationFairness` compared the two implementations'
+  pages to each other but never against the actual canonical dataset —
+  two empty, unseeded (but migrated) databases would return matching
+  `{total:0, data:[]}` on both sides and pass. Confirmed by literally
+  reproducing it: pointed the test at two fresh, Atlas-migrated-but-never-seeded
+  databases before the fix (would have passed) and after (fails with
+  `meta.total = 0, want 100000`). Fixed by adding `assertCanonicalSeed`,
+  checking each side independently against `shared.SeedProjectCount`,
+  `shared.ProjectName`, `shared.ProjectOwnerID`, and page size *before*
+  the relative comparison runs.
+- `createProjectBody.OwnerID` had no lower bound, so `{"owner_id":0,...}`
+  — a present, well-typed field, not the "nonexistent id" case
+  `TestCreateInvalidOwnerIDReturnsInternalError` documents — passed Huma
+  validation and hit the same FK-violation 500. gin-gorm's
+  `binding:"required"` already rejects this input (Gin's `required`
+  treats a non-pointer `uint` zero value as absent), so this was a real,
+  fixable asymmetry, not another instance of the discovered
+  `database.MapPersistError` gap. Fixed with `minimum:"1"` on `OwnerID`;
+  verified live that `owner_id:0` now 422s while `owner_id:999999` still
+  500s — two different inputs, two different (and now each individually
+  correct) outcomes. Added `TestCreateRejectsZeroOwnerID`.
+- `benchmarks/apps/gombit`'s `seedDatabaseN` was copied from `gin-gorm`
+  without the idempotency test an earlier review round added specifically
+  because the seed contract had no automated coverage
+  (`TestSeedDatabaseNIsIdempotentAndCorrect`). Added the same test for
+  `gombit` (`benchmarks/apps/gombit/main_test.go`), verified passing
+  against real Postgres.
+- `benchmarks/apps/gin-gorm/README.md` still described Phase 3b (the
+  `gombit` app, the fairness check) as future work, and its Test section
+  still pointed at `TestSeedContentIsDeterministic`/
+  `TestProjectOwnerIDRoundRobin` as if they were still gin-gorm's own —
+  they moved to `shared` in this same PR. Updated both.
+
 ### Phase 4 — Remaining competitor apps (Django, Rails, Laravel, NestJS)
 
 - One sub-slice per framework (can be up to 4 separate PRs if easier to

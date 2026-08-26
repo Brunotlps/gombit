@@ -42,7 +42,17 @@ type getProjectOutput struct {
 }
 
 type createProjectBody struct {
-	OwnerID     uint   `json:"owner_id" doc:"Owner user id"`
+	// minimum:"1" rejects owner_id:0 at validation, matching
+	// benchmarks/apps/gin-gorm's binding:"required" on the same field
+	// (Gin's "required" treats the zero value of a non-pointer uint as
+	// absent). Without this, 0 — a present, well-typed field — reached the
+	// database and hit the same foreign-key violation POST #141's
+	// intentionally-pinned nonexistent-owner case does, conflating two
+	// different inputs behind one 500. See
+	// benchmarks/apps/gombit/README.md for the case that's still meant to
+	// 500 (a nonexistent but well-formed id) versus this one (a value
+	// Huma can reject before it ever reaches GORM).
+	OwnerID     uint   `json:"owner_id" minimum:"1" doc:"Owner user id"`
 	Name        string `json:"name" minLength:"1" maxLength:"255" doc:"Project name"`
 	Description string `json:"description,omitempty" doc:"Project description"`
 }

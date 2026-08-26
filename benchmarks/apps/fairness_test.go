@@ -45,6 +45,15 @@ var (
 // are excluded from the row comparison: each binary was seeded at a
 // different real wall-clock time, so CreatedAt/UpdatedAt legitimately
 // differ — content and ordering do not.
+//
+// The relative comparison (gin-gorm's page equals gombit's page) is
+// necessary but not sufficient: two empty, unseeded databases satisfy it
+// too, by both returning total=0/data=[]. assertCanonicalSeed pins each
+// side against the actual canonical dataset — shared.SeedProjectCount,
+// shared.ProjectName, shared.ProjectOwnerID, the id-DESC insert order —
+// before the two are ever compared to each other, so an empty or
+// wrongly-seeded pair fails here regardless of whether it happens to agree
+// with itself.
 func TestCrossImplementationFairness(t *testing.T) {
 	if *ginGormDSN == "" || *gombitDSN == "" {
 		t.Skip("set -gin-gorm.dsn and -gombit.dsn to run the cross-implementation fairness check")
@@ -55,6 +64,9 @@ func TestCrossImplementationFairness(t *testing.T) {
 
 	ginGormPage := fetchPage(t, ginGormAddr, "/api/projects?page=1&limit=20")
 	gombitPage := fetchPage(t, gombitAddr, "/api/projects?page=1&limit=20")
+
+	assertCanonicalSeed(t, "gin-gorm", ginGormPage)
+	assertCanonicalSeed(t, "gombit", gombitPage)
 
 	if ginGormPage.Meta != gombitPage.Meta {
 		t.Fatalf("page meta differs: gin-gorm=%+v gombit=%+v", ginGormPage.Meta, gombitPage.Meta)
@@ -74,6 +86,41 @@ func TestCrossImplementationFairness(t *testing.T) {
 		if code := getStatus(t, addr, "/api/projects/999999999"); code != http.StatusNotFound {
 			t.Fatalf("%s: GET nonexistent id status = %d, want %d", addr, code, http.StatusNotFound)
 		}
+	}
+}
+
+// assertCanonicalSeed checks one implementation's page-1 response against
+// the actual canonical dataset (benchmarks/docs/schema.md), independent of
+// what the other implementation returns — the oracle the relative
+// comparison in TestCrossImplementationFairness alone can't provide.
+func assertCanonicalSeed(t *testing.T, label string, page pageEnvelope) {
+	t.Helper()
+
+	if page.Meta.Total != shared.SeedProjectCount {
+		t.Fatalf("%s: meta.total = %d, want %d (canonical seed size — is this database actually seeded?)",
+			label, page.Meta.Total, shared.SeedProjectCount)
+	}
+	if len(page.Data) != 20 {
+		t.Fatalf("%s: len(data) = %d, want 20 (page size)", label, len(page.Data))
+	}
+
+	// id DESC, sequential insert: page 1 starts at the last seeded project.
+	last := shared.SeedProjectCount
+	first := page.Data[0]
+	if first.Name != shared.ProjectName(last) {
+		t.Fatalf("%s: data[0].Name = %q, want %q (last seeded project — wrong seed content or wrong ordering)",
+			label, first.Name, shared.ProjectName(last))
+	}
+	if first.Description != shared.ProjectDescription(last) {
+		t.Fatalf("%s: data[0].Description = %q, want %q", label, first.Description, shared.ProjectDescription(last))
+	}
+	wantOwner := shared.ProjectOwnerID(last, shared.SeedUserCount)
+	if first.OwnerID != wantOwner {
+		t.Fatalf("%s: data[0].OwnerID = %d, want %d (round-robin owner of the last seeded project)",
+			label, first.OwnerID, wantOwner)
+	}
+	if first.OwnerName != shared.UserName(int(wantOwner)) {
+		t.Fatalf("%s: data[0].OwnerName = %q, want %q", label, first.OwnerName, shared.UserName(int(wantOwner)))
 	}
 }
 
@@ -137,6 +184,15 @@ func startApp(t *testing.T, name, pkgDir, port, dsn string) string {
 	}
 
 	cmd := exec.Command(binPath)
+	// Appending, not prepending or stripping first, is deliberate and safe
+	// even if the parent process already exports DATABASE_URL/PORT (both
+	// apps document that env var name, so a caller's shell easily could):
+	// os/exec.Cmd.Start dedupes cmd.Env before exec, keeping the *last*
+	// occurrence of each key (os/exec/exec.go's dedupEnvCase, "Construct
+	// the output in reverse order, to preserve the last occurrence of each
+	// key") — verified directly, including with a real child process
+	// reading via os.Getenv while the parent had DATABASE_URL set to a
+	// different value. These appended values always win.
 	cmd.Env = append(cmd.Environ(), "DATABASE_URL="+dsn, "PORT="+port)
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start %s: %v", name, err)
