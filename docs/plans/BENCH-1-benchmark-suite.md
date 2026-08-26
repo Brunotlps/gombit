@@ -611,6 +611,117 @@ the claim on faith.
 - **AC:** all 6 apps pass the same fairness suite; `docker compose` brings
   all 6 up against one PostgreSQL instance with documented resource limits.
 
+**Phase 4a — Django + DRF — done (fairness-check extension and compose/CI
+app service deferred, same as Phase 3a/3b's own still-open items).**
+
+- `benchmarks/apps/django`: the canonical API idiomatically in Django +
+  Django REST Framework — Python 3.12, Django 5.2.17 (current LTS),
+  djangorestframework 3.18.0, psycopg 3.3.4 (with the `pool` extra),
+  gunicorn 26.2.0, all pinned exact (issue §16/§17). D10 envelope and error
+  mapping reimplemented by hand in `projects/envelope.py` (this app can't
+  import `benchmarks/apps/shared`, which is Go-only) — same shape as
+  `gin-gorm`'s own independent reimplementation, verified against
+  `benchmarks/docs/schema.md`, not against the Go source.
+- Schema verified column-by-column against real PostgreSQL (`psql \d`), not
+  assumed from Django's defaults: `users.email`/`name` and `projects.name`
+  needed `models.TextField`, not Django's usual `CharField`/`EmailField` —
+  Django's default is `VARCHAR(n)`, but the canonical schema (and what
+  GORM's plain `string` actually generates for `gin-gorm`/`gombit`) is
+  unbounded `TEXT`. `Project.owner` needed `on_delete=DO_NOTHING` and
+  `db_index=False` (with an explicit named `Meta.indexes` entry instead) —
+  Django's own defaults (`CASCADE`, an automatic same-column index
+  alongside a hand-added one) would have both been real, silent
+  divergences from the canonical `ON DELETE NO ACTION` FK and produced a
+  redundant duplicate index.
+- **One discovered Django-specific correctness issue, found by testing
+  against a live database rather than trusting the obvious code:** Django's
+  PostgreSQL backend always emits foreign keys as `DEFERRABLE INITIALLY
+  DEFERRED` (a fixed backend-level choice, not a per-field option — unlike
+  `gin-gorm`/`gombit`'s plain, immediately-checked FK). Outside any wrapping
+  transaction this is invisible, but inside one — this app's own test suite
+  (`TestCase` wraps every test in one) or a production deployment with
+  `ATOMIC_REQUESTS=True` — a foreign-key violation does not raise at
+  `Project.objects.create()`/`.save()` at all; the write silently "succeeds"
+  until the wrapping transaction commits, and the immediate
+  `select_related(...).get(...)` reload right after raises
+  `Project.DoesNotExist` instead (the joined row is invisible until the
+  constraint is actually enforced) — the wrong exception type, uncaught,
+  producing an unhandled 500 for what should be a 422. Verified by
+  reproducing it (removing the fix reproduces exactly that `DoesNotExist`
+  under `TestCase`) and by fixing it two ways at once:
+  `views._write_project` wraps every create/update in its own
+  `transaction.atomic()` block and calls `connection.check_constraints()`
+  before that block exits, forcing the deferred check immediately in an
+  isolated savepoint. Verified fixed both under the test suite (which runs
+  inside a wrapping transaction) and live against gunicorn (autocommit, no
+  wrapping transaction) — confirming the fix isn't just papering over a
+  test-only symptom. Full writeup in `benchmarks/apps/django/README.md`
+  "Discovered Django-specific issue."
+- **One deliberate behavioral choice, unlike `benchmarks/apps/gombit`:**
+  `owner_id:0` and a nonexistent `owner_id` both correctly reject as 422
+  from the start (`min_value=1` in the serializer; the FK violation mapped
+  by SQLSTATE via `_map_integrity_error`, the same policy as `gin-gorm`'s
+  `mapPersistError`) — this is a from-scratch app, not a framework
+  exercising Gombit's own real (and deliberately unpatched, see Phase 3b)
+  gap, so there's no reason to reproduce a bug that only exists because of
+  how Gombit's `database.MapPersistError` works today.
+- The list endpoint's N+1 guard is **2 queries** (`COUNT` + one
+  `select_related("owner")` JOIN), not `gin-gorm`/`gombit`'s pinned 3 —
+  `benchmarks/docs/schema.md` explicitly allows a different fixed-count
+  eager-load strategy as long as it's documented rather than silently
+  claimed to match; documented in `benchmarks/apps/django/README.md`
+  "Schema and query-shape notes."
+- `django.contrib.auth`/`django.contrib.contenttypes` needed to be in
+  `INSTALLED_APPS` even though this app has no login routes: DRF's
+  `request.user` handling unconditionally imports `django.contrib.auth.models`,
+  which raises at import time otherwise. `DEFAULT_AUTHENTICATION_CLASSES`/
+  `DEFAULT_PERMISSION_CLASSES` are set to `[]`/`AllowAny` so `/api/projects`
+  itself stays unauthenticated, matching every other implementation (no
+  cross-framework auth comparison on the CRUD apps).
+- Connection pooling (issue §18, 20 max open/idle): gunicorn's pre-fork
+  model has no single global pool the way a single Go binary does, so
+  `POOL_MAX_OPEN` is divided by `GUNICORN_WORKERS` and each worker's
+  psycopg pool is fixed at that per-worker size (`min_size == max_size`) —
+  4 workers × 5 connections = 20 total, documented in
+  `benchmarks/apps/django/README.md` as required non-default tuning (issue
+  §17).
+- 13-test suite (`projects/tests.py`, `manage.py test`) mirrors `gin-gorm`/
+  `gombit`'s contract test-for-test: CRUD round trip, blank-name rejection
+  on create and update, zero/nonexistent `owner_id` rejection, 404 for both
+  a nonexistent and a non-numeric id, pagination/ordering, the N+1 query
+  count guard (`assertNumQueries`), the seed content formulas' own
+  determinism (ported by hand from `benchmarks/apps/shared`, verified
+  independently rather than trusted), and the seed contract's DB-backed
+  idempotency check run twice at reduced scale. One test-infrastructure-only
+  wrinkle found and fixed along the way: `TestCase` isolates rows via a
+  rolled-back transaction, but Postgres sequences are not transactional, so
+  a list-test fixture assuming freshly-created users get pks 1..N broke
+  once an earlier test's sequence usage leaked forward — fixed by
+  round-robining over the actual pks `bulk_create` returns instead of an
+  assumed range; and the seed-idempotency test needed `TransactionTestCase`
+  instead of plain `TestCase` since two `TRUNCATE`s inside one wrapping
+  transaction hit the same deferred-FK "pending trigger events" restriction
+  Postgres itself imposes.
+- Verified against real PostgreSQL throughout, not just the test suite:
+  full CRUD flow via live `curl` against gunicorn (single- and
+  4-worker configurations), the production-scale seed command
+  (1,000/100,000 rows, ~4.4s, idempotent — re-run and row counts confirmed
+  unchanged), and the schema itself (`psql \d users`, `\d projects`)
+  against `benchmarks/docs/schema.md` column-by-column.
+- CI: added a Python 3.12 setup + `pip install` + `manage.py test` step to
+  the existing `database-postgres` job, targeting a fourth database
+  (`gombit_bench_django`) — no separate "create database" step needed
+  first, unlike `gin-gorm`/`gombit`: Django's own test runner creates and
+  destroys its own throwaway `test_gombit_bench_django`, verified locally
+  by pointing `DATABASE_URL` at a database that doesn't exist yet and
+  confirming the suite still passes unmodified.
+- **Deferred, same pattern as Phase 3a/3b's own still-open items:** a
+  `Dockerfile`/`benchmarks/compose.yml` app service (the Go apps don't have
+  one yet either), and extending `benchmarks/apps/fairness_test.go` to
+  include this app as a third leg — the Phase 3a→3b precedent (gin-gorm
+  landed alone before the fairness check existed at all) supports doing
+  this as its own follow-up rather than growing this PR further.
+
 ### Phase 5 — Workload depth: auth overhead, TechEmpower-inspired, concurrency sweep
 
 - Gombit-only auth-overhead benchmark: no-auth / JWT / cookie-session /
