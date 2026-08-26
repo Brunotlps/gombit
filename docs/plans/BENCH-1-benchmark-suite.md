@@ -996,9 +996,19 @@ compose app service deferred, same as every prior sub-slice).**
   seconds) and Eloquent's Postgres grammar *writes* timestamps at
   whole-second precision — caught via `psql` (an API-created row came back
   `.000000` while the seeded rows and every sibling had microseconds), fixed
-  with `timestampTz(..., 6)` in the migrations plus `$dateFormat = 'Y-m-d
-  H:i:s.uP'` on the models, and pinned by `SchemaContractTest`'s
-  `datetime_precision = 6` assertion. (3) Laravel skips the non-implicit
+  with `timestampTz(..., 6)` in the migrations (the column) plus `$dateFormat
+  = 'Y-m-d H:i:s.uP'` on the models (the write path). These are two
+  independent invariants, each with its own test — the `datetime_precision =
+  6` assertion pins only the column DDL (it stays 6 even if `$dateFormat` is
+  removed and Eloquent writes whole seconds again), so a separate
+  `test_eloquent_writes_microsecond_timestamps` round-trips a frozen
+  `.123456` through Postgres and reads the raw stored text back to pin the
+  write path; verified the split is real by removing `$dateFormat` and
+  confirming that test fails while the precision test still passes. (This
+  second test, and the correction of the README/plan claim that the
+  precision assertion covered both fixes, landed in response to the PR #181
+  review, github.com/gombit-dev/gombit/pull/181#pullrequestreview-5032891511.)
+  (3) Laravel skips the non-implicit
   `regex:/\S/` rule on an empty string, so `PATCH {"name": ""}` first
   returned 200 and blanked the name (caught by the update-blank-name test
   failing); fixed with `sometimes|required` so a present empty/blank name is
@@ -1007,7 +1017,7 @@ compose app service deferred, same as every prior sub-slice).**
   via `Project::with('owner')` (a batched `where id in (...)`, not a JOIN —
   no documented deviation needed, unlike Django's 2-query `select_related`),
   verified against real Postgres in `test_list_does_not_n_plus_1[_on_empty_page]`.
-- 20-test suite (`php artisan test`, PHPUnit, `RefreshDatabase` against a
+- 21-test suite (`php artisan test`, PHPUnit, `RefreshDatabase` against a
   dedicated `gombit_bench_laravel_test` database) mirrors the four sibling
   suites test-for-test, plus `SchemaContractTest` and the seed idempotency
   and content-formula tests. CI: a `shivammathur/setup-php` 8.3 step +

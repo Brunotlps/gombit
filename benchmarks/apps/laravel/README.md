@@ -137,8 +137,11 @@ non-empty page, 2 for empty — matching `../gin-gorm`'s pinned shape via
 math (ported by hand); the seed contract's DB-backed idempotency; and the
 schema contract itself (`SchemaContractTest`, querying
 `information_schema`/`pg_constraint` directly rather than trusting a one-time
-`psql \d` — the DB-backed guard `../rails` added after its own review). Every
-rejection test asserts the D10 `error.code`, not just the HTTP status.
+`psql \d` — the DB-backed guard `../rails` added after its own review — and,
+separately, asserting Eloquent actually *writes* microsecond timestamps by
+round-tripping a frozen `.123456` through Postgres, since the column-precision
+DDL and the ORM write format are independent invariants). Every rejection
+test asserts the D10 `error.code`, not just the HTTP status.
 
 ## Schema and validation notes
 
@@ -156,10 +159,18 @@ against [../../docs/schema.md](../../docs/schema.md):
 - **`$table->timestampTz('...', 6)`**: Laravel's `timestampTz` defaults to
   **precision 0** (whole seconds), which would truncate `created_at`/
   `updated_at` to the second while every sibling stores microseconds.
-  Passing precision `6` matches. The models also set `$dateFormat = 'Y-m-d
-  H:i:s.uP'` because Eloquent's Postgres grammar otherwise *writes*
-  timestamps at whole-second precision, so an API-created row would come
-  back as `.000000` even against a microsecond column.
+  Passing precision `6` matches. This is a *column* (DDL) property, pinned by
+  `SchemaContractTest::test_timestamps_columns_are_timestamptz_with_microsecond_precision`.
+- **The models set `$dateFormat = 'Y-m-d H:i:s.uP'`** — a separate,
+  independent fix from the column precision above: Eloquent's Postgres
+  grammar otherwise *writes* timestamps at whole-second precision, so an
+  API-created row would come back as `.000000` even against a
+  `timestamptz(6)` column (a runtime write-path bug the DDL check cannot
+  see — the column stays precision 6 regardless). Pinned by its own test,
+  `SchemaContractTest::test_eloquent_writes_microsecond_timestamps`, which
+  round-trips a frozen `.123456` through Postgres and reads the raw stored
+  text back; removing `$dateFormat` fails that test while the column-precision
+  test above still passes.
 - **Laravel's global `TrimStrings` and `ConvertEmptyStringsToNull`
   middleware are removed** (`bootstrap/app.php`). Both silently rewrite
   client input before any controller sees it: `TrimStrings` would strip the
