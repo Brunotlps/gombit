@@ -179,6 +179,32 @@ jobs:
             -database.dsn \
             'postgres://gombit:gombit@127.0.0.1:5432/gombit_bench?sslmode=disable'
 
+      # A third, separate database: the gombit benchmark app applies its
+      # schema via a real Atlas migration (committed under
+      # benchmarks/apps/gombit/database/migrations/), not AutoMigrate, so it
+      # can't safely share gombit_bench's already-AutoMigrate'd tables
+      # either.
+      - name: Create gombit benchmark app database
+        run: |
+          PGPASSWORD=gombit psql -h 127.0.0.1 -U gombit -d gombit \
+            -c 'CREATE DATABASE gombit_bench_gombit;'
+
+      - name: Install Atlas CLI
+        run: curl -sSf https://atlasgo.sh | sh -s -- --community
+
+      - name: Apply gombit benchmark app migration
+        working-directory: benchmarks/apps/gombit
+        env:
+          GOMBIT_DATABASE_DRIVER: postgres
+          GOMBIT_DATABASE_DSN: postgres://gombit:gombit@127.0.0.1:5432/gombit_bench_gombit?sslmode=disable
+        run: go run github.com/gombit-dev/gombit/cmd/gombit db migrate
+
+      - name: Run gombit benchmark app integration tests
+        run: |
+          go test -tags integration ./benchmarks/apps/gombit/... \
+            -database.dsn \
+            'postgres://gombit:gombit@127.0.0.1:5432/gombit_bench_gombit?sslmode=disable'
+
   database-mysql:
     name: Database (mysql)
     needs: test

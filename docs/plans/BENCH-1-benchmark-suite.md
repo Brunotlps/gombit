@@ -439,22 +439,77 @@ instead of naming the framework function first — the ambiguity was real
 even though the bug wasn't, and it's a one-time fix to stop tripping the
 same misread again.
 
-**Phase 3b — still open:**
+**Phase 3b — the `gombit` app and cross-implementation fairness checks — done
+(CI wiring for the fairness check itself deferred to Phase 8; see below).**
 
-- `benchmarks/apps/gombit`: the same canonical API as a normal Gombit app
-  (Huma handlers, `framework.App`, Atlas migrations, production mode).
-- Cross-implementation fairness checks (issue §15/§16) — same route
-  surface, same paginated record count, same ordered IDs for a known query
-  — which need a second implementation to compare against and so couldn't
-  land in 3a. `TestListDoesNotN1` (3a) is the query-count half of this,
-  already passing for gin-gorm alone.
-- `benchmarks/compose.yml` app services for both apps, with resource
-  limits.
+- `benchmarks/apps/gombit/internal/project`: the canonical API as a normal
+  Gombit app — Huma handlers, `framework.App`, GORM, using
+  `benchmarks/apps/shared`'s response types for the success envelope and
+  Gombit's own `contract`/`database` packages for error mapping,
+  unmodified (issue "do not bypass ... normal Gombit response handling").
+- Real Atlas migration (`gombit db makemigrations`/`migrate`, AGENTS.md D3
+  — not `AutoMigrate`), committed under
+  `benchmarks/apps/gombit/database/migrations/`. Verified the generated
+  DDL is structurally identical to `gin-gorm`'s `AutoMigrate` output down
+  to the auto-generated index names (`idx_users_email`,
+  `idx_projects_owner_id`, `idx_projects_created_at`,
+  `fk_projects_owner`) — both use the same `gormschema` code underneath,
+  just through different appliers.
+- **Two real bugs caught by testing against the live control, not just
+  against the spec:**
+  - Huma defaults `POST` to 200; `gin-gorm` returns 201. Fixed with
+    `huma.Operation.DefaultStatus`.
+  - Gombit's own `API.Prefix` default is `/api/v1`; the canonical route
+    spec and `gin-gorm` both use `/api` with no version segment. Left at
+    the framework default, this app's route surface would not have
+    matched its own control's. Fixed by setting `cfg.API.Prefix = "/api"`
+    explicitly in `main.go`.
+- **One discovered, deliberately unpatched framework gap:**
+  `database.MapPersistError` only special-cases unique-constraint
+  violations, so `POST /api/projects` with a nonexistent `owner_id` (a
+  foreign-key violation) falls through to 500 `internal`, unlike
+  `gin-gorm`'s 422. Not fixed here — issue #141 requires using Gombit's
+  normal public APIs as-is, and this app's whole point is measuring what a
+  real Gombit user gets today, warts included. Pinned by
+  `TestCreateInvalidOwnerIDReturnsInternalError` so a future framework fix
+  (or regression) shows up as an expected test change; see
+  `benchmarks/apps/gombit/README.md` for the full writeup. Fixing
+  `database.MapPersistError` is out of scope for BENCH-1 — worth its own
+  follow-up issue against the `database` package.
+- `internal/project`'s own integration suite (`TestCRUDRoundTrip`,
+  blank-name rejection on create and update, pagination/ordering, the
+  3-query/2-query N+1 guard via mutating `app.DB().Logger` — `gorm.DB`
+  embeds `*Config` by pointer, so this affects every query the app
+  instance issues without needing a second `database.DB`) mirrors
+  `gin-gorm`'s suite test-for-test, gated behind `-tags integration` the
+  same way, wired into the same CI job against a third database
+  (`gombit_bench_gombit`, since this app's Atlas-migrated tables shouldn't
+  share a database with `gin-gorm`'s `AutoMigrate`'d ones either).
+  Verified the full CI recipe (create database, install Atlas, `gombit db
+  migrate`, run tests) locally against a freshly created database, not
+  just written and assumed correct.
+- `benchmarks/apps/fairness_test.go`: `TestCrossImplementationFairness`
+  builds and runs both real binaries (subprocess + HTTP, not shared Go
+  internals — gin-gorm is `package main`, and this is also the only shape
+  of comparison that will still work once Phase 4 adds
+  Django/Rails/Laravel/NestJS) against their own already-seeded databases
+  and checks: identical paginated content and ordering for the canonical
+  seed (timestamps excluded — each binary was seeded at a different real
+  time), and identical 404 behavior for a nonexistent id. Passes,
+  verified twice for flakiness, with confirmed clean subprocess teardown.
+  **Not yet wired into routine PR CI**: it needs both databases seeded at
+  the full canonical 1,000/100,000 scale, which is heavier than what
+  belongs in a PR smoke job — needs the lighter seed-size mechanism
+  Phase 8 (CI integration, smoke vs. full) already anticipates. Verified
+  locally in this phase instead.
 - **AC:** `make benchmark-crud` runs Gombit and Gin+GORM against the same
   Postgres instance and produces comparable `results.json` rows; fairness
-  tests fail loudly on route/shape/query-count divergence. Not yet
-  satisfied — `results.json` also still depends on Phase 1's open
-  result-schema/summarizer work.
+  tests fail loudly on route/shape/query-count divergence. The fairness
+  check itself is done and passing; `make benchmark-crud` and
+  `results.json` still depend on Phase 1's open result-schema/summarizer
+  work and are not yet satisfied.
+- `benchmarks/compose.yml` app services for both apps — still open, moved
+  to a follow-up alongside Phase 8's CI work.
 
 ### Phase 4 — Remaining competitor apps (Django, Rails, Laravel, NestJS)
 
