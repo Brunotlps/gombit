@@ -382,8 +382,8 @@ func TestSeedDatabaseNIsIdempotentAndCorrect(t *testing.T) {
 		if err := db.First(&firstUser, 1).Error; err != nil {
 			t.Fatalf("run %d: load user 1: %v", run, err)
 		}
-		if firstUser.Email != userEmail(1) || firstUser.Name != userName(1) {
-			t.Fatalf("run %d: user 1 = %+v, want email=%s name=%s", run, firstUser, userEmail(1), userName(1))
+		if firstUser.Email != shared.UserEmail(1) || firstUser.Name != shared.UserName(1) {
+			t.Fatalf("run %d: user 1 = %+v, want email=%s name=%s", run, firstUser, shared.UserEmail(1), shared.UserName(1))
 		}
 
 		// Project userCount+1 (8th project, userCount=7) is the first to
@@ -396,8 +396,8 @@ func TestSeedDatabaseNIsIdempotentAndCorrect(t *testing.T) {
 		if wrapped.OwnerID != 1 {
 			t.Fatalf("run %d: project %d owner = %d, want 1 (round-robin wrap)", run, userCount+1, wrapped.OwnerID)
 		}
-		if wrapped.Name != projectName(userCount+1) {
-			t.Fatalf("run %d: project %d name = %q, want %q", run, userCount+1, wrapped.Name, projectName(userCount+1))
+		if wrapped.Name != shared.ProjectName(userCount+1) {
+			t.Fatalf("run %d: project %d name = %q, want %q", run, userCount+1, wrapped.Name, shared.ProjectName(userCount+1))
 		}
 	}
 }
@@ -425,8 +425,7 @@ func seedFixture(t *testing.T, db *gorm.DB, userCount, projectCount int) {
 		}
 	}
 	for i := 1; i <= projectCount; i++ {
-		ownerID := uint((i-1)%userCount + 1)
-		if err := db.Create(&Project{OwnerID: ownerID, Name: fmt.Sprintf("Fixture Project %d", i), Description: "fixture"}).Error; err != nil {
+		if err := db.Create(&Project{OwnerID: shared.ProjectOwnerID(i, userCount), Name: fmt.Sprintf("Fixture Project %d", i), Description: "fixture"}).Error; err != nil {
 			t.Fatalf("seed fixture project %d: %v", i, err)
 		}
 	}

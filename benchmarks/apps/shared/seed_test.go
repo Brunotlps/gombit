@@ -1,12 +1,10 @@
-package main
+package shared
 
 import "testing"
 
 // TestSeedContentIsDeterministic pins the exact deterministic-content
 // formulas issue #141's seed dataset requires ("the same values for every
-// implementation"). No database, no build tag — this runs in plain
-// `go test ./...`, unlike the DB-backed idempotency/round-trip check in
-// main_test.go (gated behind -tags integration).
+// implementation"). No database, no build tag.
 func TestSeedContentIsDeterministic(t *testing.T) {
 	tests := []struct {
 		name string
@@ -19,24 +17,24 @@ func TestSeedContentIsDeterministic(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := userEmail(tt.i); got != tt.want {
-				t.Errorf("userEmail(%d) = %q, want %q", tt.i, got, tt.want)
+			if got := UserEmail(tt.i); got != tt.want {
+				t.Errorf("UserEmail(%d) = %q, want %q", tt.i, got, tt.want)
 			}
 		})
 	}
 
-	if got, want := userName(1), "User 0001"; got != want {
-		t.Errorf("userName(1) = %q, want %q", got, want)
+	if got, want := UserName(1), "User 0001"; got != want {
+		t.Errorf("UserName(1) = %q, want %q", got, want)
 	}
-	if got, want := userName(1000), "User 1000"; got != want {
-		t.Errorf("userName(1000) = %q, want %q", got, want)
+	if got, want := UserName(1000), "User 1000"; got != want {
+		t.Errorf("UserName(1000) = %q, want %q", got, want)
 	}
 
-	if got, want := projectName(1), "Project 000001"; got != want {
-		t.Errorf("projectName(1) = %q, want %q", got, want)
+	if got, want := ProjectName(1), "Project 000001"; got != want {
+		t.Errorf("ProjectName(1) = %q, want %q", got, want)
 	}
-	if got, want := projectDescription(1), "Seeded benchmark project 000001"; got != want {
-		t.Errorf("projectDescription(1) = %q, want %q", got, want)
+	if got, want := ProjectDescription(1), "Seeded benchmark project 000001"; got != want {
+		t.Errorf("ProjectDescription(1) = %q, want %q", got, want)
 	}
 }
 
@@ -60,8 +58,8 @@ func TestProjectOwnerIDRoundRobin(t *testing.T) {
 		{100000, 1000}, // last seeded project, per benchmarks/docs/schema.md
 	}
 	for _, tt := range tests {
-		if got := projectOwnerID(tt.project, userCount); got != tt.want {
-			t.Errorf("projectOwnerID(%d, %d) = %d, want %d", tt.project, userCount, got, tt.want)
+		if got := ProjectOwnerID(tt.project, userCount); got != tt.want {
+			t.Errorf("ProjectOwnerID(%d, %d) = %d, want %d", tt.project, userCount, got, tt.want)
 		}
 	}
 
@@ -70,7 +68,7 @@ func TestProjectOwnerIDRoundRobin(t *testing.T) {
 	const projectCount = 100000
 	counts := make(map[uint]int, userCount)
 	for i := 1; i <= projectCount; i++ {
-		counts[projectOwnerID(i, userCount)]++
+		counts[ProjectOwnerID(i, userCount)]++
 	}
 	if len(counts) != userCount {
 		t.Fatalf("projects owned by %d distinct users, want %d", len(counts), userCount)
@@ -79,5 +77,18 @@ func TestProjectOwnerIDRoundRobin(t *testing.T) {
 		if count != projectCount/userCount {
 			t.Fatalf("user %d owns %d projects, want %d", owner, count, projectCount/userCount)
 		}
+	}
+}
+
+// TestSeedCountsMatchIssueRecommendation pins SeedUserCount/SeedProjectCount
+// to the issue's recommended dataset size, so a future "let's shrink this
+// for CI speed" edit has to touch this test deliberately instead of
+// silently drifting from what benchmarks/docs/schema.md documents.
+func TestSeedCountsMatchIssueRecommendation(t *testing.T) {
+	if SeedUserCount != 1000 {
+		t.Errorf("SeedUserCount = %d, want 1000", SeedUserCount)
+	}
+	if SeedProjectCount != 100000 {
+		t.Errorf("SeedProjectCount = %d, want 100000", SeedProjectCount)
 	}
 }
