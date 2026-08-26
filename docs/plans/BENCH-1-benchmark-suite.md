@@ -911,6 +911,47 @@ fixed.
   timestamptz one still passing independently. 20 tests total after this
   round, all passing against real Postgres.
 
+**Post-landing correction, round 2 (review on PR #179,
+github.com/gombit-dev/gombit/pull/179#pullrequestreview-5027095244):** one
+blocking error-path defect, confirmed by reproducing the 500 before fixing.
+
+- `PATCH {"description": null}` returned a raw `ActiveRecord::NotNullViolation`
+  **500**, not a D10 envelope. Reproduced live against the production server
+  first (`500`, log showing `ActiveRecord::NotNullViolation (PG::NotNullViolation:
+  ... null value in column "description")`), confirming the exact
+  mechanism: `params.key?(:description)` is true for a present JSON null,
+  the attribute was assigned `nil`, `Project` had no validation on
+  `description`, and `save!` sent `NULL` to the NOT NULL column — while the
+  `D10Envelope` rescued `RecordInvalid`/`RecordNotUnique`/`InvalidForeignKey`
+  but not `NotNullViolation`. Create made it worse by silently coalescing a
+  client's explicit null to `""` (`params[:description] || ""` → 201), so
+  create and update taught two different contracts for one canonical field.
+- Checked the siblings' actual behavior before choosing a fix rather than
+  guessing: `benchmarks/apps/django` rejects a null `description` on both
+  create and update (`422`, DRF `CharField` `allow_null=False` — verified
+  live, including create-absent → `""`); `benchmarks/apps/gin-gorm` treats
+  null as "not provided" (create `""`, update leaves it unchanged, via its
+  `Description *string` update struct). The siblings genuinely disagree, so
+  this corner is underspecified. Matched Django: reject a present-but-null
+  value as `422 validation_error` uniformly across every canonical field
+  (`name` via `presence`, `owner_id` via `belongs_to`, `description` via a
+  new `render_null_violation` rescue of `ActiveRecord::NotNullViolation`),
+  because that makes the NOT NULL path live-and-mapped (the reviewer's exact
+  ask) rather than another dead backstop, keeps `name`/`owner_id` behavior
+  unchanged, and makes create and update mean the same thing (create-absent
+  still defaults to `""`; create-present-null and update-present-null both
+  `422`).
+- Added `test_rejects_null_description_on_create` and
+  `..._on_update_without_partially_applying` (plus
+  `test_create_without_description_defaults_to_empty_string`), and proved
+  they earn their place: reverting only the two source files to the prior
+  commit while keeping the tests, the create test fails (`201`, not `422`)
+  and the update test errors with the exact `ActiveRecord::NotNullViolation`
+  500. 23 tests total after this round, all passing against real Postgres;
+  the full null matrix (create null → 422, create absent → `""`, update
+  null → 422 with no partial apply, normal update still 200 with no poisoned
+  connection) also re-verified live against the production server.
+
 ### Phase 5 — Workload depth: auth overhead, TechEmpower-inspired, concurrency sweep
 
 - Gombit-only auth-overhead benchmark: no-auth / JWT / cookie-session /

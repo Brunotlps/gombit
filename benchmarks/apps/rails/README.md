@@ -142,7 +142,12 @@ create/get/update/delete/404/validation-failure round trip, including that
 a foreign-key violation (`owner_id` referencing no existing user) is
 rejected as `422` with D10's `validation_error` code — for free, via
 `belongs_to`'s default required-association validation, not a hand-rolled
-check (see "Schema and validation notes" below); list pagination meta and
+check (see "Schema and validation notes" below); that a present-but-null
+value for the NOT NULL `description` column (`POST`/`PATCH
+{"description": null}`) stays inside the D10 envelope as `422`
+`validation_error` rather than escaping as an `ActiveRecord::NotNullViolation`
+500 (`test_rejects_null_description_on_{create,update}`, see below); list
+pagination meta and
 deterministic `id DESC` ordering across a page boundary; a query-count
 regression guard for both a non-empty page (`test_list_does_not_n_plus_1`,
 exactly 3 SQL statements — matching `gin-gorm`'s pinned shape exactly, see
@@ -223,6 +228,25 @@ found several:
   framework default to override in the first place — unlike `../django`,
   which needed `trim_whitespace=False` added explicitly after review found
   it missing on `description` (but present on `name`).
+- A present-but-null `description` (`{"description": null}`, valid JSON,
+  distinct from an omitted key) is rejected as `422` `validation_error` on
+  **both** create and update — create passes a present null straight to the
+  NOT NULL column (an omitted key still defaults to `""`), update likewise,
+  and `d10_envelope.rb`'s `render_null_violation` rescues the resulting
+  `ActiveRecord::NotNullViolation` into the D10 envelope. This is a
+  genuinely underspecified corner where the siblings themselves disagree —
+  `../django` rejects a null `description` (`422`, its `CharField`
+  `allow_null=False`; verified live), while `../gin-gorm` treats null as
+  "not provided" (create `""`, update leaves it unchanged, via its
+  `Description *string` update struct). Rails matches `../django` here:
+  rejecting present-null uniformly for every canonical field (`name` via
+  `presence`, `owner_id` via `belongs_to`, `description` via the NOT NULL
+  constraint) is the internally consistent choice, and — unlike an earlier
+  version where create silently coalesced null→`""` (201) while update
+  passed it through unrescued (a `NotNullViolation` **500**) — makes create
+  and update mean the same thing. Locked by
+  `test_rejects_null_description_on_{create,update}`, which fail on the
+  pre-fix commit (create 201, update 500).
 
 ## Status
 

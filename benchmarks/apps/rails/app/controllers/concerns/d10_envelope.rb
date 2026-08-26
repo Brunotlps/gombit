@@ -17,6 +17,7 @@ module D10Envelope
     rescue_from ActiveRecord::RecordInvalid, with: :render_record_invalid
     rescue_from ActiveRecord::RecordNotUnique, with: :render_conflict
     rescue_from ActiveRecord::InvalidForeignKey, with: :render_invalid_foreign_key
+    rescue_from ActiveRecord::NotNullViolation, with: :render_null_violation
   end
 
   def render_ok(data, status: :ok)
@@ -65,5 +66,21 @@ module D10Envelope
     # equivalent foreign-key violation (issue #141 §15: equivalent invalid
     # input rejected the same way).
     render_error("validation_error", "request references a resource that does not exist", :unprocessable_content)
+  end
+
+  def render_null_violation(exc)
+    # A present-but-null value for a NOT NULL column (e.g. PATCH
+    # {"description": null}) is invalid input, not a server failure — same
+    # §15 policy as the foreign-key case above. Unlike that one, this path
+    # is actually reachable through the handlers: ProjectsController's
+    # create/update pass a present null straight through to the NOT NULL
+    # `description` column deliberately, so this rescue is what keeps that
+    # inside the D10 envelope (a 422 matching benchmarks/apps/django's own
+    # allow_null=False rejection) instead of the ActiveRecord::NotNullViolation
+    # 500 an unmapped path would return. The column name is pulled from the
+    # PG error text so the D10 `fields` map points at the offending field.
+    column = exc.message[/column "([^"]+)"/, 1]
+    fields = column ? { column => ["must not be null"] } : nil
+    render_error("validation_error", "a required field must not be null", :unprocessable_content, fields: fields)
   end
 end

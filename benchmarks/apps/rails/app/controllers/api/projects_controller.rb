@@ -33,7 +33,21 @@ module Api
       project = Project.new(
         owner_id: params[:owner_id],
         name: params[:name],
-        description: params[:description] || ""
+        # description absent -> "" (the schema.md default for a new row);
+        # description present-but-null -> nil is passed through, hits the
+        # NOT NULL column, and D10Envelope#render_null_violation maps it to
+        # 422 validation_error — deliberately NOT `params[:description] ||
+        # ""`, which would silently coalesce a client's explicit null to ""
+        # on create while update rejected it, two contracts for one field.
+        # Rejecting present-null matches benchmarks/apps/django exactly
+        # (verified live: its create null -> 422, create absent -> "");
+        # benchmarks/apps/gin-gorm instead treats null as omitted, but its
+        # own create and update already disagree on null and this suite
+        # doesn't pin that corner — a uniform "present canonical field that
+        # is null is invalid input -> 422" is the internally consistent
+        # choice (name via presence, owner_id via belongs_to, description
+        # via the NOT NULL constraint all land on the same 422).
+        description: params.key?(:description) ? params[:description] : ""
       )
       project.save!
       render_ok(serialize(project), status: :created)
@@ -41,6 +55,10 @@ module Api
 
     def update
       project = find_project!
+      # Same rule as create, symmetrically: a present key is applied
+      # verbatim (including a null, which then 422s via the NOT NULL
+      # constraint for description / presence for name), an absent key
+      # leaves the column unchanged. See create's description comment.
       project.name = params[:name] if params.key?(:name)
       project.description = params[:description] if params.key?(:description)
       project.save!

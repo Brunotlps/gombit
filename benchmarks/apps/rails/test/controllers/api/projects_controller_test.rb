@@ -90,6 +90,42 @@ module Api
       assert_equal "#{padded}2", JSON.parse(response.body)["data"]["description"]
     end
 
+    # A create with description omitted entirely gets the schema.md default
+    # (""), matching benchmarks/apps/django (verified live: its create with
+    # description absent -> 201, "").
+    test "create without description defaults to empty string" do
+      post "/api/projects", params: { owner_id: @owner.id, name: "x" }, as: :json
+      assert_response :created
+      assert_equal "", JSON.parse(response.body)["data"]["description"]
+    end
+
+    # A present-but-null description (valid JSON, distinct from an omitted
+    # key) must stay inside the D10 envelope as validation_error, not escape
+    # as an ActiveRecord::NotNullViolation 500. Regression test for a real
+    # 500 (reproduced live before the fix); would fail on the prior commit,
+    # where create coalesced null -> "" (201) and update passed null through
+    # to the NOT NULL column unrescued (500) — two contracts for one field.
+    test "rejects null description on create" do
+      post "/api/projects", params: { owner_id: @owner.id, name: "x", description: nil }, as: :json
+      assert_response :unprocessable_content
+      body = JSON.parse(response.body)
+      assert_equal "validation_error", body.dig("error", "code")
+      assert_includes body.dig("error", "fields", "description"), "must not be null"
+    end
+
+    test "rejects null description on update without partially applying" do
+      post "/api/projects", params: { owner_id: @owner.id, name: "Original", description: "keep" }, as: :json
+      project_id = JSON.parse(response.body)["data"]["id"]
+
+      patch "/api/projects/#{project_id}", params: { description: nil }, as: :json
+      assert_response :unprocessable_content
+      assert_equal "validation_error", JSON.parse(response.body).dig("error", "code")
+
+      # The rejected update must not have partially applied.
+      get "/api/projects/#{project_id}"
+      assert_equal "keep", JSON.parse(response.body)["data"]["description"]
+    end
+
     test "get nonexistent id is not found" do
       get "/api/projects/999999999"
       assert_response :not_found
