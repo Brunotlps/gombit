@@ -782,6 +782,80 @@ around, three real gaps closed, all confirmed true before fixing.
   `test_create_and_update_preserve_description_whitespace` covering findings
   2 and 3 directly. 15 tests total, all passing against real Postgres.
 
+**Phase 4b — Rails + ActiveRecord — done (fairness-check extension and
+compose/Docker app service deferred, same as every prior sub-slice's own
+still-open items).**
+
+- `benchmarks/apps/rails`: the canonical API idiomatically in Rails +
+  ActiveRecord — Ruby 3.3.12, Rails 8.1.3.1, pg 1.6.3, puma 8.0.2, all
+  pinned exact (issue §16/§17). Host had no Ruby installed at all; developed
+  and tested via `ruby:3.3` in Docker (bind-mounted source, a persistent
+  named volume for the gem cache, `--network host` to reach the shared
+  Postgres container) — the app itself has no Docker dependency, only this
+  session's development environment did.
+- Applied every lesson `benchmarks/apps/django`'s two review rounds
+  surfaced, verified from the start instead of relearned: `t.text` (not
+  Rails' migration-generator default `t.string`/`VARCHAR(255)`) for
+  `email`/`name`; `t.references` with no `on_delete:`/`deferrable:` option,
+  which Rails leaves as Postgres's own immediate/`NO ACTION` default
+  (verified via `psql \d projects` showing no `DEFERRABLE` clause from the
+  very first migration — no follow-up migration needed the way Django's
+  was); `TIMESTAMPTZ` columns via
+  `config/initializers/datetime_type.rb`'s documented
+  `ActiveSupport.on_load(:active_record_postgresqladapter)` hook (Rails'
+  Postgres adapter defaults to `timestamp without time zone` otherwise);
+  D10's `validation_error` mapped to status 422 explicitly for a malformed
+  JSON body (Rails' own `ActionDispatch::Http::Parameters::ParseError` is
+  native HTTP 400, the same mismatch Django's `exception_handler` had after
+  its own review); and `error.code` assertions in every rejection test from
+  the first commit, not status-only.
+- **Two idiomatic-Rails defaults turned out to satisfy contract
+  requirements other implementations needed dedicated code for, discovered
+  while writing the model rather than while debugging a test failure:**
+  `belongs_to :owner` defaults to a required association in Rails 5+,
+  which validates that the association actually *loads* — this rejects
+  `owner_id: 0` and a nonexistent `owner_id` uniformly (no user has id 0
+  either) for free, the case `gin-gorm`'s `binding:"required"` and
+  `django`'s serializer `min_value=1` both needed dedicated code for.
+  `validates :name, presence: true` alone rejects both `""` and
+  whitespace-only names, because ActiveSupport's `String#blank?` (which the
+  presence validator uses) is already whitespace-aware — `gin-gorm` and
+  `django` each needed a separate `strip`/`trim`-based check added
+  specifically because their frameworks' own "required"/blank checks only
+  catch the empty string.
+- The list endpoint's N+1 guard matches `gin-gorm`'s pinned 3-query/2-query
+  shape *exactly* (verified against real Postgres query logs), unlike
+  Django's 2-query JOIN strategy, which needed its own documented deviation
+  in `benchmarks/docs/schema.md`. `Project.includes(:owner)` (not
+  `.joins`/`.references`, which would force a JOIN) preloads owners via one
+  batched `IN (...)` query, the same strategy `gin-gorm`'s GORM
+  `.Preload("Owner")` uses, so no new documentation was needed there.
+- 18-test suite (`bin/rails test`) mirrors `gin-gorm`/`gombit`/`django`'s
+  contract test-for-test. One test-infrastructure risk anticipated and
+  designed around from the start rather than hit and fixed afterward: list
+  tests round-robin project ownership over the *actual* ids `User.create!`
+  returns, not an assumed `1..user_count` range — Rails' default
+  transactional tests roll back each test's rows but not Postgres
+  sequences, the exact gap `django`'s own list-test fixture fell into
+  before its review round fixed it.
+- CI: added a Ruby 3.3.12 setup (`ruby/setup-ruby`, bundler-cache) +
+  `bin/rails test` step to the existing `database-postgres` job, against a
+  fifth database (`gombit_bench_rails_test`) — unlike Django's test runner,
+  verified locally that `bin/rails test` does **not** auto-create a missing
+  database (a nonexistent target raises a connection error), so CI needs an
+  explicit `CREATE DATABASE` step first, the same pattern `gin-gorm`/
+  `gombit` use rather than Django's throwaway-database convenience.
+- Removed several `rails new`-generated files that would have referenced
+  gems intentionally not pinned (`brakeman`, `bundler-audit`, `rubocop`,
+  `thruster`/`bootsnap`) or assumed a `Dockerfile`/TLS-terminating proxy
+  this benchmark doesn't have yet (`config.assume_ssl`/`force_ssl` both
+  disabled, documented in the app's own README) — and deleted
+  `config/master.key`/`credentials.yml.enc` entirely rather than committing
+  either, since `SECRET_KEY_BASE` is supplied via env var and Rails itself
+  refuses to boot in production without one set (verified: no
+  `SECRET_KEY_BASE` set → a loud boot-time `ArgumentError`, not a silent
+  insecure fallback the way Django's placeholder default is).
+
 ### Phase 5 — Workload depth: auth overhead, TechEmpower-inspired, concurrency sweep
 
 - Gombit-only auth-overhead benchmark: no-auth / JWT / cookie-session /

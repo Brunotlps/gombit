@@ -1,0 +1,17 @@
+# DATABASE_URL, not per-environment host/username/password blocks: matches
+# every other benchmarks/apps/ implementation's env var convention. See
+# ../README.md for the pool-size/POOL_MAX_OPEN reasoning.
+default: &default
+  adapter: postgresql
+  encoding: unicode
+  pool: <%= ENV.fetch("POOL_MAX_OPEN", 20) %>
+  url: <%= ENV["DATABASE_URL"] %>
+
+development:
+  <<: *default
+
+test:
+  <<: *default
+
+production:
+  <<: *default

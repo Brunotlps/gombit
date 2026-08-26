@@ -46,6 +46,10 @@ __pycache__/
 .venv/
 *.egg-info/
 
+# Ruby (benchmarks/apps/rails)
+/benchmarks/apps/rails/.bundle/
+/benchmarks/apps/rails/config/*.key
+
 # Node / frontend (future Vite apps)
 node_modules/
 npm-debug.log*

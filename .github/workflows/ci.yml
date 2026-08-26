@@ -236,6 +236,30 @@ jobs:
           DATABASE_URL: postgres://gombit:gombit@127.0.0.1:5432/gombit_bench_django?sslmode=disable
         run: python manage.py test projects -v 2
 
+      - name: Setup Ruby
+        uses: ruby/setup-ruby@v1
+        with:
+          ruby-version: "3.3.12"
+          working-directory: benchmarks/apps/rails
+          bundler-cache: true
+
+      # Unlike Django's manage.py test (verified to create its own
+      # throwaway test database even when the target name doesn't exist
+      # yet), Rails' bin/rails test does not auto-create a missing database
+      # — verified locally by pointing DATABASE_URL at a nonexistent
+      # database and getting a connection failure, not an auto-created one.
+      - name: Create rails benchmark app test database
+        run: |
+          PGPASSWORD=gombit psql -h 127.0.0.1 -U gombit -d gombit \
+            -c 'CREATE DATABASE gombit_bench_rails_test;'
+
+      - name: Run rails benchmark app tests
+        working-directory: benchmarks/apps/rails
+        env:
+          RAILS_ENV: test
+          DATABASE_URL: postgres://gombit:gombit@127.0.0.1:5432/gombit_bench_rails_test?sslmode=disable
+        run: bin/rails test
+
   database-mysql:
     name: Database (mysql)
     needs: test

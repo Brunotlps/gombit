@@ -21,13 +21,14 @@ benchmarks/
     ├── gin-gorm/            primary framework-tax control — see its own README
     ├── gombit/              real Gombit app (Huma, Atlas migrations) — see its own README
     ├── django/              Django + DRF ecosystem-context app (Phase 4) — see its own README
+    ├── rails/               Rails + ActiveRecord ecosystem-context app (Phase 4) — see its own README
     └── fairness_test.go     cross-implementation check: builds and runs both real binaries, compares over HTTP
 ```
 
 Everything else in the suite's target layout (`workloads/`, `scripts/`,
-`config/`, `results/`, `docs/methodology.md`, `Makefile`, and the `rails`,
-`laravel`, `nestjs` implementations under `apps/`) is scoped to later phases
-of the plan above and doesn't exist yet.
+`config/`, `results/`, `docs/methodology.md`, `Makefile`, and the `laravel`,
+`nestjs` implementations under `apps/`) is scoped to later phases of the
+plan above and doesn't exist yet.
 
 ## Running the framework-tax matrix
 
