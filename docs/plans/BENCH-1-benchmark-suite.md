@@ -192,7 +192,21 @@ SQLite/PostgreSQL/MySQL matrix green throughout (AGENTS.md §5.1).
   has the new entry. Satisfied for the schema/collector/config; the
   `make benchmark-*` orchestration that consumes them is the next slice.
 
-**Post-landing correction (review on PR #183,
+**Post-landing correction, round 2 (review on PR #183,
+github.com/gombit-dev/gombit/pull/183#pullrequestreview-5034497111):** the
+round-1 fix for finding 3 added `-framework-versions`/`-runtime-versions`
+flags parsed by a `parseKeyVals` that fail-*opened* — a token with no `=` (a
+bare `django`) was silently dropped, and the test pinned that drop as correct.
+That reintroduced, on the required version-map flags, the exact fail-open
+finding 2 had just forbidden for `-concurrency`. Reproduced live
+(`-framework-versions 'gombit=v0.1.0,django'` → `django` vanished, exit 0),
+then made `parseKeyVals` return `(map, error)` like `parseIntList`: a missing
+`=`, empty key, empty pair (trailing/doubled comma), or duplicate key is an
+error and the CLI exits 1; wholly-empty input still yields an empty non-nil
+map. Inverted the test to assert those inputs fail, and verified live that a
+malformed map now exits 1 while a valid one still records every pair.
+
+**Post-landing correction, round 1 (review on PR #183,
 github.com/gombit-dev/gombit/pull/183#pullrequestreview-5034253957):** five
 findings, all real — the row schema was right but the reproducibility contract
 fail-opened the very fields it exists to capture. All fixed and tested.

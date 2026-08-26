@@ -33,14 +33,21 @@ func main() {
 
 	concurrencyLevels, err := parseIntList(*concurrency)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "collect-host-info: -concurrency: %v\n", err)
-		os.Exit(1)
+		fatalf("-concurrency: %v", err)
+	}
+	frameworks, err := parseKeyVals(*frameworkVersions)
+	if err != nil {
+		fatalf("-framework-versions: %v", err)
+	}
+	runtimes, err := parseKeyVals(*runtimeVersions)
+	if err != nil {
+		fatalf("-runtime-versions: %v", err)
 	}
 
 	m := metadata.Collect(context.Background(), metadata.Options{
 		PostgresVersion:   *postgres,
-		FrameworkVersions: parseKeyVals(*frameworkVersions),
-		RuntimeVersions:   parseKeyVals(*runtimeVersions),
+		FrameworkVersions: frameworks,
+		RuntimeVersions:   runtimes,
 		BenchmarkTool:     *benchmarkTool,
 		ResourceLimits:    *resourceLimits,
 		DurationSeconds:   *duration,
@@ -50,9 +57,13 @@ func main() {
 	})
 
 	if err := write(*out, m); err != nil {
-		fmt.Fprintf(os.Stderr, "collect-host-info: %v\n", err)
-		os.Exit(1)
+		fatalf("%v", err)
 	}
+}
+
+func fatalf(format string, args ...any) {
+	fmt.Fprintf(os.Stderr, "collect-host-info: "+format+"\n", args...)
+	os.Exit(1)
 }
 
 // write encodes m to path (or stdout when path is empty), checking the close
@@ -94,20 +105,36 @@ func parseIntList(s string) ([]int, error) {
 	return out, nil
 }
 
-// parseKeyVals parses comma-separated key=value pairs into a map. Empty input
-// yields an empty (non-nil) map so downstream JSON is {} rather than null.
-func parseKeyVals(s string) map[string]string {
+// parseKeyVals parses comma-separated key=value pairs into a map. Like
+// parseIntList, it fails closed: a token with no '=' (a bare 'django'), an
+// empty key, or a duplicate key is an error, not a silently dropped element —
+// these are the required framework_versions / runtime_versions this metadata
+// records, so a forgotten '=' must fail rather than omit the version that ran.
+// Empty input yields an empty (non-nil) map so downstream JSON is {} not null.
+func parseKeyVals(s string) (map[string]string, error) {
 	out := map[string]string{}
 	for _, part := range strings.Split(s, ",") {
 		token := strings.TrimSpace(part)
 		if token == "" {
-			continue
+			// A leading/trailing/doubled comma is malformed input for a
+			// record of exactly what ran, not a value to skip.
+			if strings.TrimSpace(s) == "" {
+				continue // wholly empty input -> empty map, no pairs
+			}
+			return nil, fmt.Errorf("empty key=value pair in %q", s)
 		}
 		key, value, ok := strings.Cut(token, "=")
 		if !ok {
-			continue
+			return nil, fmt.Errorf("missing '=' in %q", token)
 		}
-		out[strings.TrimSpace(key)] = strings.TrimSpace(value)
+		key = strings.TrimSpace(key)
+		if key == "" {
+			return nil, fmt.Errorf("empty key in %q", token)
+		}
+		if _, dup := out[key]; dup {
+			return nil, fmt.Errorf("duplicate key %q", key)
+		}
+		out[key] = strings.TrimSpace(value)
 	}
-	return out
+	return out, nil
 }
