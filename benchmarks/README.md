@@ -102,9 +102,11 @@ the §7 limits and captures `cpu_percent`/`rss_bytes` (Phase 6) is the next
 slice.
 
 Once `results.json` exists, `make benchmark-summary` regenerates `summary.md`
-from it — per-(framework, concurrency) aggregates with the mean and
-coefficient of variation of throughput across trials, latency means, and a ⚠
-flag on any group whose trials vary by more than 5% (issue §7). The Markdown is
+from it — one table per benchmark, one row per (framework, concurrency). The
+headline throughput and latency numbers are the **median** across trials (issue
+§7's "report at minimum the median result", robust to one noisy trial); each row
+also carries the throughput coefficient of variation (stddev/mean) and a ⚠ flag
+on any group whose trials vary by more than 5% (issue §7). The Markdown is
 generated from the structured rows, never hand-edited, and leads with the
 coordinated-omission / same-host caveats so a copied table can't be read as
 more than it is.

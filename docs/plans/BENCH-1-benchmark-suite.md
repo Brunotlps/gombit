@@ -1239,17 +1239,52 @@ the next slices.**
 
 **Trial-variance summarizer (`benchmarks/internal/summary` + `summarize` /
 `make benchmark-summary`) — done.** Reads `results.json`, groups the trial
-rows by (framework, benchmark, concurrency), and computes per-group mean /
-sample stddev / coefficient of variation of throughput plus latency means,
-flagging any group whose throughput CoV exceeds 5% (issue §7's
-coefficient-of-variation flag). Renders `summary.md` from those structured
-aggregates — Markdown generated from data, never hand-authored (§9) — leading
-with the coordinated-omission / same-host caveats so a copied table isn't read
-as more than it is. Pure and unit-tested (grouping, the exact mean/stddev/CoV
-math, the >5% flag, single-trial zero-dispersion, the Markdown shape). This is
-the `results.json → summary.md` half of Phase 7 landed early to satisfy Phase
-5's "trial variance recorded" AC; the README `## Performance` marker-block
-integration and `methodology.md` remain Phase 7.
+rows by (framework, benchmark, concurrency), and computes per-group median
+(the issue's published statistic) / mean / sample stddev / coefficient of
+variation of throughput plus per-metric latency medians, flagging any group
+whose throughput CoV exceeds 5% (issue §7's coefficient-of-variation flag).
+Renders `summary.md` — one table per benchmark, all frameworks together — from
+those structured aggregates (Markdown generated from data, never hand-authored
+(§9)), leading with the coordinated-omission / same-host caveats so a copied
+table isn't read as more than it is. Pure and unit-tested (grouping, exact
+median/mean/stddev/CoV math, the >5% flag with row-level placement,
+single-trial zero-dispersion, one-table-per-benchmark for multi-workload
+input, the Markdown shape). This is the `results.json → summary.md` half of
+Phase 7 landed early to satisfy Phase 5's "trial variance recorded" AC; the
+README `## Performance` marker-block integration and `methodology.md` remain
+Phase 7.
+
+**Post-landing correction (review on PR #185,
+github.com/gombit-dev/gombit/pull/185#pullrequestreview-5035614322):** the
+per-group variance math was correct, but the *report architecture* was not —
+three findings, all reproduced on that HEAD, all fixed.
+
+- **One table per benchmark was a comment the sort key contradicted
+  (BLOCKING).** `Summarize` sorted groups framework-primary while
+  `WriteMarkdown` renders one table per benchmark by walking benchmark-adjacent
+  runs. With two workloads that split each workload across the frameworks:
+  a two-framework × two-benchmark `results.json` produced four `##` tables
+  (`crud-list`, `techempower`, `crud-list`, `techempower`) instead of two, so
+  the frameworks never sat in the same table for the same benchmark. Fixed by
+  sorting benchmark-primary (`(benchmark, framework, concurrency)`), the order
+  the renderer's walk actually needs, and rewriting the stale "first-seen order"
+  comment. New `TestWriteMarkdownOneTablePerBenchmark` asserts exactly one
+  heading per workload with every framework in it — it fails on the old sort.
+- **The tests only confirmed the code agreed with itself (MAJOR).** The
+  `row()` helper hard-coded `Benchmark: "crud-list"` (so multi-workload was
+  never exercised) and the flag test only asserted `⚠` appeared *somewhere*
+  (so flag-every-row or flag-none both passed). Added a `benchmark` parameter,
+  and `TestWriteMarkdownFlagPlacement` now pins `⚠` to the high-variance row
+  and asserts its absence from the low-variance row.
+- **Published the mean; the issue asked for the median (MAJOR).** Issue §7:
+  "report at minimum the median result across trials." The headline column was
+  `RequestsPerSecond.Mean`. Added `Stats.Median` (and per-metric latency
+  medians), made the median the published headline, and kept CoV on the mean
+  (CoV = stddev/mean is the legitimate stability measure). New
+  `TestSummarizeMedianDistinctFromMean` uses a skewed `[100,200,900]` group
+  (median 200, mean 400) so the two can't be confused, and asserts the row
+  publishes 200. Each of the three new/strengthened tests was confirmed to fail
+  on the pre-fix behavior.
 
 **Post-landing correction (review on PR #184,
 github.com/gombit-dev/gombit/pull/184#pullrequestreview-5035211655):** the

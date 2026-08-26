@@ -19,9 +19,14 @@ import (
 // DefaultCoVThreshold is the >5% trial-variance flag from issue #141 §7.
 const DefaultCoVThreshold = 0.05
 
-// Stats is the mean, sample standard deviation, and coefficient of variation
-// (stddev/mean) of one metric across a group's trials.
+// Stats is the median, mean, sample standard deviation, and coefficient of
+// variation (stddev/mean) of one metric across a group's trials. Median is the
+// issue's published location statistic (#141: "report at minimum the median
+// result across trials") — it is the reported headline, so one noisy trial
+// can't become the number someone copies; Mean/StdDev feed CoV, the stability
+// measure, not the headline.
 type Stats struct {
+	Median float64 `json:"median"`
 	Mean   float64 `json:"mean"`
 	StdDev float64 `json:"stddev"`
 	CoV    float64 `json:"cov"`
@@ -52,8 +57,10 @@ type Group struct {
 
 // Summarize groups the results and computes per-group stats. covThreshold is
 // the fraction (e.g. 0.05) above which a group's throughput CoV sets
-// HighVariance. Groups are returned in a deterministic order (framework,
-// benchmark, concurrency).
+// HighVariance. Groups are returned benchmark-primary — deterministic order
+// (benchmark, framework, concurrency) — so every framework for one workload is
+// contiguous, which is the order WriteMarkdown's one-table-per-benchmark walk
+// requires and the comparison the report exists to show.
 func Summarize(results []result.Result, covThreshold float64) []Group {
 	type key struct {
 		framework, benchmark string
@@ -105,10 +112,10 @@ func Summarize(results []result.Result, covThreshold float64) []Group {
 	sort.SliceStable(groups, func(i, j int) bool {
 		a, b := groups[i], groups[j]
 		switch {
-		case a.Framework != b.Framework:
-			return a.Framework < b.Framework
 		case a.Benchmark != b.Benchmark:
 			return a.Benchmark < b.Benchmark
+		case a.Framework != b.Framework:
+			return a.Framework < b.Framework
 		default:
 			return a.Concurrency < b.Concurrency
 		}
@@ -116,9 +123,9 @@ func Summarize(results []result.Result, covThreshold float64) []Group {
 	return groups
 }
 
-// computeStats returns the mean, sample (n-1) standard deviation, and CoV of
-// xs. A single trial has no dispersion (stddev/CoV 0); a zero mean yields CoV 0
-// rather than a division by zero.
+// computeStats returns the median, mean, sample (n-1) standard deviation, and
+// CoV of xs. A single trial has no dispersion (stddev/CoV 0) and median==mean;
+// a zero mean yields CoV 0 rather than a division by zero.
 func computeStats(xs []float64) Stats {
 	n := len(xs)
 	if n == 0 {
@@ -129,8 +136,9 @@ func computeStats(xs []float64) Stats {
 		sum += x
 	}
 	mean := sum / float64(n)
+	med := median(xs)
 	if n == 1 {
-		return Stats{Mean: mean}
+		return Stats{Median: med, Mean: mean}
 	}
 	var ss float64
 	for _, x := range xs {
@@ -142,14 +150,32 @@ func computeStats(xs []float64) Stats {
 	if mean != 0 {
 		cov = std / mean
 	}
-	return Stats{Mean: mean, StdDev: std, CoV: cov}
+	return Stats{Median: med, Mean: mean, StdDev: std, CoV: cov}
+}
+
+// median returns the middle value of xs (mean of the two middle values for an
+// even count), without mutating the caller's slice. xs must be non-empty.
+func median(xs []float64) float64 {
+	s := append([]float64(nil), xs...)
+	sort.Float64s(s)
+	n := len(s)
+	if n%2 == 1 {
+		return s[n/2]
+	}
+	return (s[n/2-1] + s[n/2]) / 2
 }
 
 // WriteMarkdown renders the human report from the groups — one table per
-// benchmark, one row per (framework, concurrency), with the throughput CoV and
-// a ⚠ marker on high-variance rows. It leads with the methodology caveats the
-// numbers must be read with (closed-loop coordinated omission, same-host
-// topology) so a copied table can't be read as more than it is.
+// benchmark, one row per (framework, concurrency). The headline numbers are the
+// **median** across trials (issue #141's published location statistic, robust
+// to one noisy trial); `rps CoV` is the coefficient of variation of throughput
+// (on the mean) and ⚠ marks high-variance rows. It leads with the methodology
+// caveats the numbers must be read with (closed-loop coordinated omission,
+// same-host topology) so a copied table can't be read as more than it is.
+//
+// Groups must be benchmark-contiguous (as Summarize returns them): the
+// one-table-per-benchmark layout is a walk over that order, so an unsorted or
+// framework-primary slice would split a workload across several tables.
 func WriteMarkdown(w io.Writer, groups []Group) error {
 	bw := &errWriter{w: w}
 	bw.printf("# Benchmark summary\n\n")
@@ -157,11 +183,14 @@ func WriteMarkdown(w io.Writer, groups []Group) error {
 	bw.printf("**Read with:** the load model is closed-loop `constant-vus` (N concurrent clients), ")
 	bw.printf("so reported tail latency is subject to **coordinated omission** and understates true ")
 	bw.printf("client-observed wait; the load generator shares the host with the app. ")
-	bw.printf("`rps CoV` is the coefficient of variation of throughput across trials; ")
-	bw.printf("⚠ marks a group whose trials vary by more than %.0f%%, whose mean should be distrusted.\n",
+	bw.printf("Headline `rps`/`p50`/`p95`/`p99` are the **median** across trials; ")
+	bw.printf("`rps CoV` is the coefficient of variation of throughput (stddev/mean) across trials; ")
+	bw.printf("⚠ marks a group whose trials vary by more than %.0f%%, whose numbers should be distrusted.\n",
 		groupsThreshold(groups)*100)
 
-	// One table per benchmark, in first-seen order (groups are already sorted).
+	// One table per benchmark. Summarize returns benchmark-contiguous groups, so
+	// a heading opens each time the benchmark changes and every framework for a
+	// workload lands in that one table.
 	var lastBench string
 	for i, g := range groups {
 		if g.Benchmark != lastBench {
@@ -169,7 +198,7 @@ func WriteMarkdown(w io.Writer, groups []Group) error {
 				bw.printf("\n")
 			}
 			bw.printf("\n## %s\n\n", g.Benchmark)
-			bw.printf("| framework | concurrency | trials | rps (mean) | rps CoV | p50 ms | p95 ms | p99 ms | errors |\n")
+			bw.printf("| framework | concurrency | trials | rps (median) | rps CoV | p50 ms | p95 ms | p99 ms | errors |\n")
 			bw.printf("| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n")
 			lastBench = g.Benchmark
 		}
@@ -179,8 +208,8 @@ func WriteMarkdown(w io.Writer, groups []Group) error {
 		}
 		bw.printf("| %s | %d | %d | %.0f | %.1f%%%s | %.1f | %.1f | %.1f | %d |\n",
 			g.Framework, g.Concurrency, g.Trials,
-			g.RequestsPerSecond.Mean, g.RequestsPerSecond.CoV*100, flag,
-			g.LatencyP50.Mean, g.LatencyP95.Mean, g.LatencyP99.Mean, g.Errors)
+			g.RequestsPerSecond.Median, g.RequestsPerSecond.CoV*100, flag,
+			g.LatencyP50.Median, g.LatencyP95.Median, g.LatencyP99.Median, g.Errors)
 	}
 	return bw.err
 }
