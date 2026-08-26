@@ -95,22 +95,17 @@ export class ProjectService {
   }
 
   private serialize(project: Project): ProjectData {
+    // created_at/updated_at are already ISO-8601 strings with microseconds —
+    // the entities' isoTimestamp transformer reshapes the raw pg value at the
+    // entity boundary, so the serializer does no timestamp string surgery.
     return {
       id: Number(project.id),
       owner_id: Number(project.owner_id),
       owner_name: project.owner.name,
       name: project.name,
       description: project.description,
-      created_at: this.iso(project.created_at),
-      updated_at: this.iso(project.updated_at),
+      created_at: project.created_at,
+      updated_at: project.updated_at,
     };
-  }
-
-  // The pg driver hands timestamptz back as a raw string like
-  // "2026-08-26 16:20:21.962946+00" (see data-source.ts); reshape it to the
-  // canonical "2026-08-26T16:20:21.962946Z" the siblings emit, preserving the
-  // microseconds. Session TZ is UTC, so the offset is always +00.
-  private iso(raw: string): string {
-    return raw.replace(' ', 'T').replace(/\+00(:00)?$/, 'Z');
   }
 }

@@ -28,7 +28,16 @@ export const dataSourceOptions: DataSourceOptions = {
   // same ceiling every implementation uses. NestJS/Node is single-process
   // (one event loop), so this pool is the one global pool for the whole
   // server — the same single-pool topology gin-gorm/gombit's Go binary has.
-  extra: { max: Number(process.env.POOL_MAX_OPEN ?? 20) },
+  //
+  // options: '-c timezone=UTC' forces every connection's session time zone to
+  // UTC, so timestamptz always renders with a +00 offset (the serializer's
+  // isoTimestamp transformer normalizes +00 -> Z). Without this the app would
+  // inherit the server's TimeZone, and the "+00 -> Z" conversion would be a
+  // coincidence rather than a guarantee.
+  extra: {
+    max: Number(process.env.POOL_MAX_OPEN ?? 20),
+    options: '-c timezone=UTC',
+  },
 };
 
 export const AppDataSource = new DataSource(dataSourceOptions);

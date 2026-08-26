@@ -1083,13 +1083,46 @@ app service deferred). This completes all six canonical CRUD implementations
   not a JOIN — no documented deviation needed, unlike Django/Laravel's
   choices), counted directly with a custom TypeORM logger in
   `query-count.e2e-spec.ts`.
-- 20-test suite (`jest`, ts-jest, `--runInBand` against a dedicated
+- 21-test suite (`jest`, ts-jest, `--runInBand` against a dedicated
   `gombit_bench_nestjs_test` database; e2e via supertest through the real
   request pipeline, plus a pure formula unit test) mirrors the five sibling
   suites. CI: an `actions/setup-node` 24 step + `npm ci` + `npm run build`
   (the production path is compiled output) + `npm test` added to the
   `database-postgres` job, against a database it creates explicitly (the
   tests run migrations but don't create the database).
+
+**Post-landing correction (review on PR #182,
+github.com/gombit-dev/gombit/pull/182#pullrequestreview-5033886519):** three
+real MAJOR findings, all confirmed and fixed.
+
+- The microsecond read-path fix was fragile: `ProjectService.iso()` did
+  string surgery assuming the value was always a raw pg string with a `+00`
+  offset. That held only by two coincidences the review named — TypeORM
+  0.3.31 not hydrating the `timestamptz` alias to a JS `Date` (a `Date` has no
+  `.replace` → a 500), and the session TZ happening to be UTC (nothing set
+  it). Made it an entity-level fact instead: forced the session TZ to UTC
+  (`extra.options: '-c timezone=UTC'` in `data-source.ts`, so `+00` is
+  guaranteed), moved the string→ISO logic into an `isoTimestamp` column
+  transformer that is defensive against receiving a `Date` (returns a valid
+  ISO string rather than throwing — so the read-path test catches any
+  precision loss instead of the app 500ing) and against a non-`+00` offset,
+  and removed the service's string surgery. Re-verified the read-path test
+  still catches removing the parser override (now as a value mismatch, not a
+  crash) and that live timestamps still render `...Z` with microseconds.
+- `query-count.e2e-spec.ts` built its own `DataSource` but never ran
+  migrations — it passed only because Jest's file order ran the migrating
+  spec first, and it hard-coded a `_test` default URL that disagreed with
+  `data-source.ts`. Fixed by reusing `dataSourceOptions` (same url/entities/
+  migrations, and the `setTypeParser` side effect) and calling
+  `runMigrations()` on its own connection. Verified it now passes standalone
+  against a freshly-created database (the review's exact "relation does not
+  exist" scenario).
+- The PATCH `updated_at: () => 'now()'` write path was claimed but untested —
+  if the raw-SQL function value were ever dropped, PATCH would still 200 and
+  leave `updated_at == created_at`, and the read-path test (which only INSERTs
+  and GETs) could not see it. Added an "advances updated_at" test; verified it
+  fails when the `now()` value is removed from the update. 21 tests total
+  after this round.
 
 ### Phase 5 — Workload depth: auth overhead, TechEmpower-inspired, concurrency sweep
 

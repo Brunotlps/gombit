@@ -56,6 +56,29 @@ describe('projects api', () => {
     expect((await http().get(`/api/projects/${id}`)).status).toBe(404);
   });
 
+  // ProjectService.update sets updated_at to SQL now() (never a JS Date); if
+  // that raw-SQL function value were ever dropped/stringified, PATCH would
+  // still 200 but leave updated_at equal to created_at. gin-gorm/gombit pin
+  // the equivalent (UpdatedAt not before CreatedAt after PATCH); this asserts
+  // updated_at strictly advances. Timestamps are ISO strings (microsecond),
+  // so lexicographic comparison is chronological.
+  it('advances updated_at on update', async () => {
+    const owner = await makeOwner();
+    const create = await http()
+      .post('/api/projects')
+      .send({ owner_id: owner, name: 'x', description: 'd' });
+    const created = create.body.data;
+    expect(created.updated_at).toBe(created.created_at); // equal on insert
+
+    await new Promise((resolve) => setTimeout(resolve, 10));
+    const update = await http().patch(`/api/projects/${created.id}`).send({ name: 'y' });
+    const updated = update.body.data;
+
+    expect(updated.created_at).toBe(created.created_at); // created_at unchanged
+    expect(updated.updated_at > updated.created_at).toBe(true);
+    expect(updated.updated_at).not.toBe(created.updated_at);
+  });
+
   it('rejects a blank name on create', async () => {
     const owner = await makeOwner();
     for (const name of ['', '   ']) {

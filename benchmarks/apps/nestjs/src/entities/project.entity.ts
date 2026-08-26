@@ -6,6 +6,7 @@ import {
   ManyToOne,
   PrimaryGeneratedColumn,
 } from 'typeorm';
+import { isoTimestamp } from './iso-timestamp.transformer';
 import { User } from './user.entity';
 
 // benchmarks/docs/schema.md "Tables" — projects. `id`/`owner_id` are bigint
@@ -35,10 +36,10 @@ export class Project {
   @Column({ type: 'text', default: '' })
   description!: string;
 
-  @Column({ type: 'timestamptz', precision: 6 })
+  @Column({ type: 'timestamptz', precision: 6, transformer: isoTimestamp })
   @Index()
   created_at!: string;
 
-  @Column({ type: 'timestamptz', precision: 6 })
+  @Column({ type: 'timestamptz', precision: 6, transformer: isoTimestamp })
   updated_at!: string;
 }

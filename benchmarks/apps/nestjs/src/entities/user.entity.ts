@@ -1,5 +1,6 @@
 import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
 import { Project } from './project.entity';
+import { isoTimestamp } from './iso-timestamp.transformer';
 
 // benchmarks/docs/schema.md "Tables" — users. Columns are `text` (unbounded,
 // matching the canonical schema and every sibling), not TypeORM's default
@@ -17,10 +18,9 @@ export class User {
   @Column({ type: 'text' })
   name!: string;
 
-  // Raw string (the pg driver is configured in data-source.ts to return
-  // timestamptz as text, preserving microseconds a JS Date cannot hold);
+  // ISO-8601 string with microseconds (see isoTimestamp / data-source.ts);
   // the DB default now() sets it on insert.
-  @Column({ type: 'timestamptz', precision: 6 })
+  @Column({ type: 'timestamptz', precision: 6, transformer: isoTimestamp })
   created_at!: string;
 
   @OneToMany(() => Project, (project) => project.owner)

@@ -1,12 +1,10 @@
-// Side-effect import: registers the pg timestamptz->string type parser
-// (data-source.ts) so this standalone DataSource, which doesn't go through
-// the app module, also reads timestamps as raw strings the serializer can
-// format. Jest isolates module state per test file, so it must be imported
-// here too.
-import '../src/data-source';
 import { DataSource, Logger } from 'typeorm';
+// Reuse the app's own DataSource options (same url, entities, and migrations)
+// rather than a hand-rolled config — importing data-source.ts also registers
+// the pg timestamptz->string type parser, which Jest's per-file module
+// isolation would otherwise drop for this standalone DataSource.
+import { dataSourceOptions } from '../src/data-source';
 import { Project } from '../src/entities/project.entity';
-import { User } from '../src/entities/user.entity';
 import { ProjectService } from '../src/project/project.service';
 import { projectOwnerId } from '../src/seed-formulas';
 
@@ -35,17 +33,11 @@ describe('list query count', () => {
 
   beforeAll(async () => {
     logger = new CountingLogger();
-    dataSource = new DataSource({
-      type: 'postgres',
-      url:
-        process.env.DATABASE_URL ??
-        'postgres://gombit:gombit@127.0.0.1:55432/gombit_bench_nestjs_test?sslmode=disable',
-      entities: [User, Project],
-      synchronize: false,
-      logger,
-      logging: ['query'],
-    });
+    dataSource = new DataSource({ ...dataSourceOptions, logger, logging: ['query'] });
     await dataSource.initialize();
+    // Own its schema: run the migrations rather than depending on another
+    // spec file having migrated the shared database first.
+    await dataSource.runMigrations();
     service = new ProjectService(dataSource.getRepository(Project));
   });
 

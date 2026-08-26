@@ -134,15 +134,25 @@ in CI):
 - **Microsecond timestamp fidelity is a real NestJS-specific risk on the
   *read* path**: the `pg` driver parses `timestamptz` into a JS `Date`, which
   holds only milliseconds, silently dropping the microseconds a
-  `timestamptz(6)` column stores. `src/data-source.ts` overrides the `pg`
-  type parsers for OID 1114/1184 to return the raw string, and the serializer
-  reshapes it to the canonical `...Z` ISO form — preserving full microseconds.
-  Pinned by `schema-contract.e2e-spec.ts`'s read-path test, which round-trips
-  a known `.123456` through the API and fails if the override is removed (the
-  column-precision and FK assertions still pass — the DDL is unchanged, so
-  they can't see this). *Writes* carry microseconds inherently: created_at is
-  the DB `now()` default and updated_at is set to the SQL `now()` on update
-  (`src/project/project.service.ts`), never a JS `Date`.
+  `timestamptz(6)` column stores. Three things make the correct value an
+  entity-level fact rather than a coincidence: (1) `src/data-source.ts`
+  overrides the `pg` type parsers for OID 1114/1184 to return the raw string;
+  (2) it forces every connection's session TZ to UTC
+  (`extra.options: '-c timezone=UTC'`) so `timestamptz` always renders with a
+  `+00` offset; (3) the entities carry an `isoTimestamp` **column
+  transformer** (`src/entities/iso-timestamp.transformer.ts`) that reshapes
+  the raw string to the canonical `...Z` form at the entity boundary — the
+  serializer does no timestamp string surgery. The transformer is defensive:
+  if it ever receives a JS `Date` (a future TypeORM hydrating the `timestamptz`
+  alias, or the parser override being bypassed) it returns a valid ISO string
+  instead of throwing, so the read-path test catches the precision loss rather
+  than the app 500ing. Pinned by `schema-contract.e2e-spec.ts`'s read-path
+  test, which round-trips a known `.123456` through the API and fails if the
+  override is removed (the column-precision and FK assertions still pass — the
+  DDL is unchanged, so they can't see this). *Writes* carry microseconds
+  inherently: created_at is the DB `now()` default and updated_at is set to
+  the SQL `now()` on update (`src/project/project.service.ts`), never a JS
+  `Date`; that update path is pinned by the "advances updated_at" test.
 - `id`/`owner_id` are `bigint`, which TypeORM surfaces as strings; the
   serializer converts them to numbers for the response (ids fit in a JS
   number).
