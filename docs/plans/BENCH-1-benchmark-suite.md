@@ -162,18 +162,85 @@ SQLite/PostgreSQL/MySQL matrix green throughout (AGENTS.md §5.1).
 
 - Add the BENCH-1 backlog entry (§2). — **done**
 - Create the `benchmarks/` directory tree (§5); `micro/` landed in Phase 2,
-  the rest (`apps/`, `workloads/`, `scripts/`, `config/`, `results/`,
-  `docs/`) is still open.
+  `apps/` in Phase 3-4, and `internal/`, `scripts/`, `config/`, `results/`,
+  `docs/` now exist (`workloads/` and the `make benchmark-*` orchestration are
+  still open, next slice).
 - Implement the result schema + metadata collector in `benchmarks/internal/`
-  (Go structs matching the issue's `results.json` shape; a `metadata.json`
-  collector reading `git rev-parse`, `uname`, `go version`, `docker version`,
-  `docker compose version`, CPU/RAM). — not yet done.
-- Pin and document the load generator (k6) and PostgreSQL image (§4). — not
-  yet done.
-- **AC:** `go build ./benchmarks/...` succeeds; `docs/GOMBIT_BUILD_PLAN.md`
-  has the new entry. Partially satisfied — the backlog entry and `micro/`
-  build, but the result-schema/metadata-collector/load-generator work is
-  still open.
+  — **done.** `benchmarks/internal/result` is the `results.json` schema (issue
+  §9's recommended shape plus a `schema_version`), with JSON and CSV encoders
+  (the CSV flattens `latency_ms` and sorts deterministically so a regenerated
+  file diffs cleanly), unit-tested for round-trip, snake_case/nested-latency
+  wire shape, empty-is-`[]`-not-`null`, and sort order.
+  `benchmarks/internal/metadata` is the reproducibility-metadata struct and a
+  best-effort collector (git SHA + dirty, `uname`, `docker`/`compose`
+  versions via an **injectable** `Runner` so it's tested without those tools
+  installed; OS/arch/logical-CPU/Go-version from `runtime`; CPU model + RAM
+  parsed from `/proc` via pure, separately-tested functions). A missing tool
+  degrades to an empty field rather than failing the run.
+  `benchmarks/scripts/collect-host-info` is the thin CLI that writes
+  `metadata.json` (host discovery + run parameters passed as flags); verified
+  end-to-end producing real metadata on the dev host.
+- Pin and document the load generator (k6) and PostgreSQL image (§4). —
+  **done** in `benchmarks/config/versions.env` (k6 version, `POSTGRES_IMAGE`,
+  the §7 resource limits — Postgres 2 vCPU/2 GiB, app 2 vCPU/**1 GiB** —
+  `POOL_MAX_OPEN=20`, and the workload concurrency (`1,10,100,500,1000`)/
+  duration/warm-up/trial defaults), a single source of truth the orchestrator
+  sources and feeds to the metadata collector. `benchmarks/compose.yml`
+  references `${POSTGRES_IMAGE}` so the image pin lives in exactly one place.
+- **AC:** `go build ./benchmarks/...` succeeds (it does, including the new
+  packages, and `go test ./...` covers their unit tests); `docs/GOMBIT_BUILD_PLAN.md`
+  has the new entry. Satisfied for the schema/collector/config; the
+  `make benchmark-*` orchestration that consumes them is the next slice.
+
+**Post-landing correction, round 2 (review on PR #183,
+github.com/gombit-dev/gombit/pull/183#pullrequestreview-5034497111):** the
+round-1 fix for finding 3 added `-framework-versions`/`-runtime-versions`
+flags parsed by a `parseKeyVals` that fail-*opened* — a token with no `=` (a
+bare `django`) was silently dropped, and the test pinned that drop as correct.
+That reintroduced, on the required version-map flags, the exact fail-open
+finding 2 had just forbidden for `-concurrency`. Reproduced live
+(`-framework-versions 'gombit=v0.1.0,django'` → `django` vanished, exit 0),
+then made `parseKeyVals` return `(map, error)` like `parseIntList`: a missing
+`=`, empty key, empty pair (trailing/doubled comma), or duplicate key is an
+error and the CLI exits 1; wholly-empty input still yields an empty non-nil
+map. Inverted the test to assert those inputs fail, and verified live that a
+malformed map now exits 1 while a valid one still records every pair.
+
+**Post-landing correction, round 1 (review on PR #183,
+github.com/gombit-dev/gombit/pull/183#pullrequestreview-5034253957):** five
+findings, all real — the row schema was right but the reproducibility contract
+fail-opened the very fields it exists to capture. All fixed and tested.
+
+- `GitDirty` was a plain `bool`, so a failed/missing `git status` recorded
+  `git_dirty: false` — a clean-tree claim for a check that never ran, even
+  when `rev-parse` had returned a SHA. Changed to `*bool`, set only when the
+  status check succeeds; a failure leaves it nil (JSON `null` = unknown).
+  Added a test where `rev-parse` succeeds and `status` errors, asserting
+  `git_dirty` is null, not false.
+- The CLI's `parseIntList` silently dropped invalid concurrency tokens
+  (`1,10,abc,100` → `[1,10,100]`, exit 0) — a recorder writing a different
+  sweep than it was given and calling it success. Now returns an error and the
+  CLI exits 1; tested (`main_test.go`).
+- `framework_versions`/`runtime_versions`/`concurrency` serialized as JSON
+  `null` at the CLI's default (no flags). `Collect` now initializes empty
+  maps/slice (`{}`/`[]`), the CLI gained `-framework-versions`/
+  `-runtime-versions` flags, and a wire-shape test (`json.go` previously had
+  none) fails if any of them encodes as null. Also gave `parseCPUModel` an
+  ARM/aarch64 fallback (`Model`/`Hardware`, since ARM `/proc/cpuinfo` has no
+  `model name`), tested.
+- `versions.env` had `APP_MEMORY=2g` (the issue's app budget is **1 GiB** —
+  the Postgres number had been copied onto the app), omitted `1000` from the
+  concurrency set the issue's minimum requires (a comment isn't a pin), and
+  duplicated the Postgres image already pinned in `compose.yml`. Corrected the
+  app memory, put `1000` in the data (the orchestrator attempts and, if
+  unsustainable, drops it from the *reported* set), and pointed `compose.yml`
+  at `${POSTGRES_IMAGE}` so the pin is single-sourced.
+- Deterministic sorting was applied to the derived CSV but not the canonical
+  `results.json` (the artifact Phase 7 commits), and the CSV sort test only
+  distinguished rows by `framework`. Extracted one `sortedCopy` used by both
+  encoders, and added a fixture that shares `framework` and differs on
+  benchmark/concurrency/trial so the full comparator is exercised for both
+  JSON and CSV.
 
 ### Phase 2 — Go abstraction-overhead microbenchmarks — **done**
 

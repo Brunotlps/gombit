@@ -4,12 +4,18 @@
 # developed and fairness-tested against it locally.
 #
 # Version pin: issue #141 requires major.minor (or digest), not a
-# major-only floating tag. This repo's CI (.github/workflows/ci.yml) already
-# uses postgres:16-alpine for the SQLite/PostgreSQL/MySQL matrix; this pins
-# the same major version to minor precision rather than diverging from it.
+# major-only floating tag. The pin lives once in
+# benchmarks/config/versions.env (POSTGRES_IMAGE); this file references it via
+# ${POSTGRES_IMAGE}. Run compose with that env file so the two can't drift:
+#
+#   docker compose --env-file benchmarks/config/versions.env \
+#     -f benchmarks/compose.yml up -d postgres
+#
+# The `:-postgres:16.4-alpine` default keeps a bare `docker compose up` (no
+# env file) working with the same pinned image.
 services:
   postgres:
-    image: postgres:16.4-alpine
+    image: ${POSTGRES_IMAGE:-postgres:16.4-alpine}
     environment:
       POSTGRES_USER: gombit
       POSTGRES_PASSWORD: gombit
