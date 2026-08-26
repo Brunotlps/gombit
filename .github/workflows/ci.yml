@@ -260,6 +260,34 @@ jobs:
           DATABASE_URL: postgres://gombit:gombit@127.0.0.1:5432/gombit_bench_rails_test?sslmode=disable
         run: bin/rails test
 
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: "8.3"
+          extensions: pdo_pgsql, pgsql, mbstring, bcmath
+          tools: composer:v2
+          coverage: none
+
+      - name: Install laravel benchmark app dependencies
+        working-directory: benchmarks/apps/laravel
+        run: composer install --no-interaction --prefer-dist --no-progress
+
+      # Like Rails' bin/rails test (and unlike Django's manage.py test),
+      # Laravel's RefreshDatabase migrates but does not create the database
+      # itself — a dedicated test database it will migrate:fresh into, kept
+      # separate from the auth/gin-gorm/gombit/django/rails databases.
+      - name: Create laravel benchmark app test database
+        run: |
+          PGPASSWORD=gombit psql -h 127.0.0.1 -U gombit -d gombit \
+            -c 'CREATE DATABASE gombit_bench_laravel_test;'
+
+      - name: Run laravel benchmark app tests
+        working-directory: benchmarks/apps/laravel
+        env:
+          DB_CONNECTION: pgsql
+          DATABASE_URL: postgres://gombit:gombit@127.0.0.1:5432/gombit_bench_laravel_test?sslmode=disable
+        run: php artisan test
+
   database-mysql:
     name: Database (mysql)
     needs: test
