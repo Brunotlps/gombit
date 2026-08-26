@@ -23,13 +23,16 @@ benchmarks/
     ├── django/              Django + DRF ecosystem-context app (Phase 4) — see its own README
     ├── rails/               Rails + ActiveRecord ecosystem-context app (Phase 4) — see its own README
     ├── laravel/             Laravel + Eloquent ecosystem-context app (Phase 4) — see its own README
+    ├── nestjs/              NestJS + TypeORM ecosystem-context app (Phase 4) — see its own README
     └── fairness_test.go     cross-implementation check: builds and runs both real binaries, compares over HTTP
 ```
 
-Everything else in the suite's target layout (`workloads/`, `scripts/`,
-`config/`, `results/`, `docs/methodology.md`, `Makefile`, and the `nestjs`
-implementation under `apps/`) is scoped to later phases of the plan above
-and doesn't exist yet.
+All six canonical CRUD implementations now exist (the Go control, the real
+Gombit app, and the four ecosystem apps). Everything else in the suite's
+target layout (`workloads/`, `scripts/`, `config/`, `results/`,
+`docs/methodology.md`, `Makefile`, per-app `compose.yml` services, and the
+extension of `fairness_test.go` to all six) is scoped to later phases of the
+plan above and doesn't exist yet.
 
 ## Running the framework-tax matrix
 

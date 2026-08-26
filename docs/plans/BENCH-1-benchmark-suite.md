@@ -1031,6 +1031,99 @@ compose app service deferred, same as every prior sub-slice).**
   `APP_KEY`) is gitignored and not committed; `.env.example` is the
   documented template and `APP_KEY` is supplied at runtime.
 
+**Phase 4d — NestJS + TypeORM — done (fairness-check extension and compose
+app service deferred). This completes all six canonical CRUD implementations
+(the Go control, the real Gombit app, and the four ecosystem apps).**
+
+- `benchmarks/apps/nestjs`: the canonical API idiomatically in NestJS +
+  TypeORM — Node 24, NestJS 11.2.3, TypeORM 0.3.31, pg 8.23.0, TypeScript
+  5.9.3, all direct deps pinned exact in `package.json` with the full tree in
+  the committed `package-lock.json` (`npm ci`; `node_modules`/`dist` not
+  committed). Node is the host toolchain, so no Docker was needed (unlike
+  `../rails`/`../laravel`).
+- **Two deliberate version choices, documented rather than defaulted:** (1)
+  TypeORM **0.3.31**, not the 1.x major that shipped mid-2026 —
+  `@nestjs/typeorm@11.0.3`'s integration is built around the mature 0.3.x
+  line (peer only tentatively lists `^1.0.0-dev`), and the issue's
+  "conventional Nest ORM" language favors the battle-tested stack over the
+  1.x boundary. (2) **TypeScript 5.9.3**, not the 7.0 major now published —
+  NestJS 11 is built for TS 5.x, so a 7.0 (native-compiler) jump is
+  unnecessary risk. Same reasoning applied to `@types/node` (24.x, matching
+  Node 24) and jest (29, matching ts-jest 29).
+- Production config (§17): `NODE_ENV=production`, **compiled output**
+  (`nest build` → `dist/`, run via `node dist/main`) — never a ts-node/watch
+  dev server. Single Node process (one event loop) — the booted-once,
+  persistent-process model like the Go binary / Rails / Django, and unlike
+  Laravel's per-request FPM re-bootstrap. Pooling (§18): one global pool,
+  `extra.max = POOL_MAX_OPEN` (20). Logging (§19): TypeORM query logging off,
+  no per-request access log.
+- **The one genuinely NestJS-specific correctness risk — microsecond
+  timestamp fidelity on the *read* path — found and pinned:** the `pg` driver
+  parses `timestamptz` into a JS `Date`, which holds only milliseconds, so a
+  `timestamptz(6)` column silently loses microseconds every sibling keeps.
+  `src/data-source.ts` overrides the `pg` type parsers (OID 1114/1184) to
+  return the raw string, which the serializer reshapes to the canonical
+  `...Z` form. Writes carry microseconds inherently (created_at is the DB
+  `now()` default, updated_at set to SQL `now()` on update — no JS `Date`).
+  Pinned by `schema-contract.e2e-spec.ts`'s read-path test, which round-trips
+  a known `.123456` through the API; verified it earns its place by removing
+  the parser override and confirming that test fails while the
+  column-precision and FK assertions still pass (the DDL is unchanged, so
+  they can't see the read-path bug — the same independent-invariant lesson
+  from the Laravel review round, applied up front here).
+- Applied the rest of the accumulated lessons from the start: `text` columns,
+  a non-deferrable FK (verified via `psql` and a DB-backed schema test),
+  present-null `description` rejected as 422 (via the DTO's
+  `@ValidateIf(present) @IsString`) matching rails/django/laravel, FK-lean
+  422 for a bad owner, malformed JSON → 422, `error.code` asserted on every
+  rejection. Whitespace/empty-string preservation needed no work — NestJS
+  does not trim request strings by default (unlike Laravel's TrimStrings).
+- The N+1 guard matches `../gin-gorm`'s pinned 3-query/2-query shape exactly
+  via TypeORM's `relationLoadStrategy: 'query'` (a batched owner `IN (...)`,
+  not a JOIN — no documented deviation needed, unlike Django/Laravel's
+  choices), counted directly with a custom TypeORM logger in
+  `query-count.e2e-spec.ts`.
+- 21-test suite (`jest`, ts-jest, `--runInBand` against a dedicated
+  `gombit_bench_nestjs_test` database; e2e via supertest through the real
+  request pipeline, plus a pure formula unit test) mirrors the five sibling
+  suites. CI: an `actions/setup-node` 24 step + `npm ci` + `npm run build`
+  (the production path is compiled output) + `npm test` added to the
+  `database-postgres` job, against a database it creates explicitly (the
+  tests run migrations but don't create the database).
+
+**Post-landing correction (review on PR #182,
+github.com/gombit-dev/gombit/pull/182#pullrequestreview-5033886519):** three
+real MAJOR findings, all confirmed and fixed.
+
+- The microsecond read-path fix was fragile: `ProjectService.iso()` did
+  string surgery assuming the value was always a raw pg string with a `+00`
+  offset. That held only by two coincidences the review named — TypeORM
+  0.3.31 not hydrating the `timestamptz` alias to a JS `Date` (a `Date` has no
+  `.replace` → a 500), and the session TZ happening to be UTC (nothing set
+  it). Made it an entity-level fact instead: forced the session TZ to UTC
+  (`extra.options: '-c timezone=UTC'` in `data-source.ts`, so `+00` is
+  guaranteed), moved the string→ISO logic into an `isoTimestamp` column
+  transformer that is defensive against receiving a `Date` (returns a valid
+  ISO string rather than throwing — so the read-path test catches any
+  precision loss instead of the app 500ing) and against a non-`+00` offset,
+  and removed the service's string surgery. Re-verified the read-path test
+  still catches removing the parser override (now as a value mismatch, not a
+  crash) and that live timestamps still render `...Z` with microseconds.
+- `query-count.e2e-spec.ts` built its own `DataSource` but never ran
+  migrations — it passed only because Jest's file order ran the migrating
+  spec first, and it hard-coded a `_test` default URL that disagreed with
+  `data-source.ts`. Fixed by reusing `dataSourceOptions` (same url/entities/
+  migrations, and the `setTypeParser` side effect) and calling
+  `runMigrations()` on its own connection. Verified it now passes standalone
+  against a freshly-created database (the review's exact "relation does not
+  exist" scenario).
+- The PATCH `updated_at: () => 'now()'` write path was claimed but untested —
+  if the raw-SQL function value were ever dropped, PATCH would still 200 and
+  leave `updated_at == created_at`, and the read-path test (which only INSERTs
+  and GETs) could not see it. Added an "advances updated_at" test; verified it
+  fails when the `now()` value is removed from the update. 21 tests total
+  after this round.
+
 ### Phase 5 — Workload depth: auth overhead, TechEmpower-inspired, concurrency sweep
 
 - Gombit-only auth-overhead benchmark: no-auth / JWT / cookie-session /
