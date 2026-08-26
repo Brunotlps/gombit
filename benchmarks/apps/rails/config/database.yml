@@ -1,10 +1,16 @@
 # DATABASE_URL, not per-environment host/username/password blocks: matches
-# every other benchmarks/apps/ implementation's env var convention. See
-# ../README.md for the pool-size/POOL_MAX_OPEN reasoning.
+# every other benchmarks/apps/ implementation's env var convention.
+#
+# pool: POOL_MAX_OPEN divided across WEB_CONCURRENCY (config/puma.rb pins
+# both to 20/2 by default) — config/puma.rb's workers > 0 means each
+# worker is a separate forked process with its own connection pool, the
+# same reasoning benchmarks/apps/django's gunicorn --workers split applies
+# to its own POOL_MAX_OPEN. See ../README.md's "Database connection
+# pooling" for the full explanation.
 default: &default
   adapter: postgresql
   encoding: unicode
-  pool: <%= ENV.fetch("POOL_MAX_OPEN", 20) %>
+  pool: <%= ENV.fetch("POOL_MAX_OPEN", 20).to_i / [ENV.fetch("WEB_CONCURRENCY", 2).to_i, 1].max %>
   url: <%= ENV["DATABASE_URL"] %>
 
 development:

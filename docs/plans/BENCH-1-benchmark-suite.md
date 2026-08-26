@@ -856,6 +856,61 @@ still-open items).**
   `SECRET_KEY_BASE` set → a loud boot-time `ArgumentError`, not a silent
   insecure fallback the way Django's placeholder default is).
 
+**Post-landing correction (review on PR #179,
+github.com/gombit-dev/gombit/pull/179#pullrequestreview-5026967229):** the
+CRUD wire contract (envelope, N+1 shape, seed formulas) was correctly
+built, but the "production configuration" this PR claimed to pin was still
+the Rails scaffold default in three places — all three confirmed true by
+reproducing the actual behavior, not by re-reading the diff, and all three
+fixed.
+
+- **BLOCKING — request logging (issue §19).** Claim: the documented
+  production command logs every request, and the health-check silencing
+  targets a route (`/up`) this app doesn't serve, so it silences nothing.
+  Verified by booting the pinned config against real Postgres and hitting
+  both `/livez` and `/api/projects`: each produced a full
+  `Started`/`Processing`/`Completed` log line at `info`, including the
+  health check. `config/routes.rb`'s own comment claimed `/up` was "still
+  available... left in place" — it was not; only `/livez` was ever defined.
+  Fixed: `config/environments/production.rb`'s `RAILS_LOG_LEVEL` default
+  changed from `"info"` to `"warn"`, `silence_healthcheck_path` repointed
+  at `/livez`, and the false routes.rb comment corrected. Verified live
+  after the fix: the same two requests plus a malformed-JSON POST produced
+  no log output at all, and a direct `Rails.logger.warn`/`.error` check
+  confirmed the `warn` threshold still surfaces real errors — satisfying
+  "errors still logged" while eliminating the per-request noise gin-gorm
+  and Django's own documented production commands never had.
+- **MAJOR — worker topology (issue §18/CPU budget).** Claim: this app
+  pinned Puma's single-process generator default onto a 2 vCPU budget,
+  which MRI's GVL can't use a second core from, while `django`'s sibling
+  had already left the equivalent scaffold default and pinned
+  `--workers 4`. Accepted without needing further verification (the GVL's
+  single-core-per-process behavior is well-established, not something
+  worth re-deriving here) — the fix, not the diagnosis, needed rigor.
+  Fixed: `config/puma.rb` pins `WEB_CONCURRENCY` to `2` (one worker per
+  pinned vCPU) with `preload_app!`; `config/database.yml`'s pool size is
+  now `POOL_MAX_OPEN` divided by `WEB_CONCURRENCY`, the same per-worker
+  split `django`'s gunicorn configuration uses. Verified against real
+  Postgres: cluster-mode boot with 2 workers, ten concurrent requests
+  split across both with no connection errors, and
+  `ActiveRecord::Base.connection_pool.size` reporting `10` per worker as
+  computed (20 total).
+- **MAJOR — schema claims the tests couldn't fail (issue schema.md
+  equivalence).** Claim: the "TIMESTAMPTZ and non-deferrable FK verified
+  against `psql \d`" narrative was true only of one manual check during
+  development; none of the 18 tests queried `information_schema`/
+  `pg_constraint`, so a `datetime_type.rb` load hook that silently stopped
+  firing (e.g. after a future Rails upgrade renames the hook) would still
+  pass the full suite on plain `timestamp without time zone` columns.
+  Fixed: added `SchemaContractTest`, querying `information_schema.columns`
+  and `pg_constraint` directly. Verified the test actually catches what it
+  claims to, not just that it passes today: disabled the `datetime_type.rb`
+  initializer and confirmed the timestamptz assertion failed with the exact
+  expected message; separately altered the FK to `DEFERRABLE INITIALLY
+  DEFERRED` via raw SQL and confirmed only the FK assertion failed, the
+  timestamptz one still passing independently. 20 tests total after this
+  round, all passing against real Postgres.
+
 ### Phase 5 — Workload depth: auth overhead, TechEmpower-inspired, concurrency sweep
 
 - Gombit-only auth-overhead benchmark: no-auth / JWT / cookie-session /

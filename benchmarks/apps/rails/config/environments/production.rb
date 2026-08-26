@@ -28,18 +28,33 @@ Rails.application.configure do
   config.assume_ssl = false
   config.force_ssl = false
 
-  # Skip http-to-https redirect for the default health check endpoint.
-  # config.ssl_options = { redirect: { exclude: ->(request) { request.path == "/up" } } }
+  # Skip http-to-https redirect for the health check endpoint (inert while
+  # force_ssl is false above, kept for anyone who re-enables it later).
+  # config.ssl_options = { redirect: { exclude: ->(request) { request.path == "/livez" } } }
 
   # Log to STDOUT with the current request id as a default log tag.
   config.log_tags = [ :request_id ]
   config.logger   = ActiveSupport::TaggedLogging.logger(STDOUT)
 
-  # Change to "debug" to log everything (including potentially personally-identifiable information!).
-  config.log_level = ENV.fetch("RAILS_LOG_LEVEL", "info")
+  # issue #141 §19: per-request access logging "can massively distort
+  # synthetic benchmarks" and must be disabled for every implementation
+  # during a benchmark run (errors still logged). Rails' scaffolded default
+  # ("info") logs a Started/Processing/Completed line for every single
+  # request — verified live: every /api/projects and /livez hit produced
+  # one. gin-gorm's gin.New() has no logger middleware and Django's
+  # documented gunicorn command leaves --access-logfile off, so "info" here
+  # would be the only implementation logging per-request by default.
+  # "warn" is quiet at the request level but still surfaces real errors.
+  config.log_level = ENV.fetch("RAILS_LOG_LEVEL", "warn")
 
-  # Prevent health checks from clogging up the logs.
-  config.silence_healthcheck_path = "/up"
+  # Must name the actual health-check route (config/routes.rb defines
+  # /livez, not Rails' own default /up) or this silences nothing — verified
+  # live: with "/up" here, a GET /livez still produced a full
+  # Started/Processing/Completed log line at "info". Kept even now that
+  # log_level defaults to "warn", since RAILS_LOG_LEVEL=info is a supported
+  # override for local debugging and shouldn't reintroduce a
+  # health-check-per-poll log flood if used.
+  config.silence_healthcheck_path = "/livez"
 
   # Don't log any deprecations.
   config.active_support.report_deprecations = false

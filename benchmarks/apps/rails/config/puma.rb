@@ -31,6 +31,25 @@ threads threads_count, threads_count
 # Specifies the `port` that Puma will listen on to receive requests.
 port ENV.fetch("PORT", 8083)
 
+# issue #141 gives every implementation a 2 vCPU budget. Puma's own
+# generator default (WEB_CONCURRENCY unset) is a single process — MRI's
+# GVL means that one process cannot use a second core for Ruby work,
+# unlike gin-gorm's goroutines or a multi-worker gunicorn deployment.
+# Pinned to 2 workers (one per vCPU) as this app's actual production
+# configuration, matching benchmarks/apps/django's own gunicorn --workers
+# pin rather than leaving a framework generator default undocumented as if
+# it were a decision — see ../README.md's "Database connection pooling"
+# for how POOL_MAX_OPEN (config/database.yml) is split across these
+# workers the same way Django's is split across its own.
+workers ENV.fetch("WEB_CONCURRENCY", 2).to_i
+
+# Required for clustered (workers > 0) mode: shares the app's boot memory
+# across forked workers, and is what makes Rails' own Puma integration
+# reconnect ActiveRecord after each fork automatically (verified: booting
+# with workers 2 against real Postgres and hitting both workers with
+# concurrent requests raised no stale/shared-connection errors).
+preload_app!
+
 # Allow puma to be restarted by `bin/rails restart` command.
 plugin :tmp_restart
 

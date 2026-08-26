@@ -53,15 +53,17 @@ match `benchmarks/compose.yml`):
 | `PORT` | `8083` | |
 | `SECRET_KEY_BASE` | none — Rails refuses to boot in production without it | |
 | `RAILS_ALLOWED_HOSTS` | `127.0.0.1,localhost` | comma-separated; matches `../django`'s `DJANGO_ALLOWED_HOSTS` |
-| `RAILS_MAX_THREADS` | `3` | Puma thread pool size per process |
+| `RAILS_LOG_LEVEL` | `warn` | issue #141 §19 "Request logging"; see below |
+| `RAILS_MAX_THREADS` | `3` | Puma thread pool size per worker |
+| `WEB_CONCURRENCY` | `2` | Puma worker processes; issue #141 gives every app a 2 vCPU budget — see below |
 | `POOL_MAX_OPEN` | `20` | issue #141 §18 "Connection pooling"; see below |
 
 ### Production configuration (issue #141 §17)
 
 ```text
 RAILS_ENV=production
-Puma (single process, RAILS_MAX_THREADS threads) — never bin/rails server
-in development mode
+Puma, clustered: 2 workers (one per pinned vCPU) x 3 threads — never
+bin/rails server in development mode
 ```
 
 `config/environments/production.rb` disables `assume_ssl`/`force_ssl`
@@ -70,19 +72,49 @@ front; every `benchmarks/apps/` implementation is served plain HTTP
 directly for this benchmark, so a stock Rails production config would 301
 or reject every `curl`/fairness-check request).
 
+### Request logging (issue #141 §19)
+
+Issue #141 §19: per-request access logging "can massively distort synthetic
+benchmarks" and must be disabled for every implementation during a
+benchmark run, with errors still logged and the configuration documented.
+Rails' scaffolded production default (`log_level: "info"`) logs a
+`Started`/`Processing`/`Completed` line for *every* request — verified live
+against real Postgres: a plain `GET /api/projects` and even a `GET /livez`
+health-check poll each produced one. `gin-gorm`'s `gin.New()` has no logger
+middleware, and `../django`'s documented gunicorn command leaves
+`--access-logfile` off, so `"info"` here would have been the only
+implementation logging per-request by default.
+
+`config/environments/production.rb` pins `RAILS_LOG_LEVEL` to `warn`
+(overridable for local debugging) — quiet at the request level, but still
+surfaces real errors: verified directly that a `Logger` at `warn` still
+emits `warn`/`error` calls while suppressing `info`. `silence_healthcheck_path`
+is set to `/livez` (the route this app actually serves — Rails' own default,
+`/up`, doesn't exist here); pointing it at a route that isn't served silences
+nothing, which is what an earlier version of this file did.
+
 ### Database connection pooling (issue #141 §18)
 
-Puma's *default* topology (no `WEB_CONCURRENCY` set — this app's pinned
-configuration) is a single process with a thread pool, not pre-forked
-workers — unlike `../django`'s gunicorn, which needed `POOL_MAX_OPEN`
-divided across worker processes because each gunicorn worker is a separate
-OS process with its own connection pool. A single Puma process means
-`config/database.yml`'s `pool: <%= ENV.fetch("POOL_MAX_OPEN", 20) %>` is
-already the *one* global pool for the whole server, the same single-pool
-topology `gin-gorm`/`gombit`'s single Go binary has — no per-worker division
-needed. If this app is ever run with `WEB_CONCURRENCY > 1`, `POOL_MAX_OPEN`
-would need the same per-worker split `../django`'s README documents; not
-done here because the pinned configuration doesn't use clustering.
+Issue #141 gives every implementation a 2 vCPU budget. Puma's *own*
+generator default (`WEB_CONCURRENCY` unset) is a single process — MRI's
+Global VM Lock means that one process cannot use a second core for Ruby
+work, unlike `gin-gorm`'s goroutines or `../django`'s multi-worker gunicorn.
+This app pins `WEB_CONCURRENCY=2` (`config/puma.rb`) as its actual
+production configuration, one worker per vCPU, rather than leaving the
+framework's single-process default undocumented as if it were a decision.
+
+Each Puma worker is a separate forked OS process with its own connection
+pool — the same reasoning `../django`'s gunicorn `--workers` split applies
+to its own `POOL_MAX_OPEN` — so `config/database.yml`'s `pool` is
+`POOL_MAX_OPEN` divided by `WEB_CONCURRENCY` (20 ÷ 2 = 10 per worker, 20
+total across the server). Verified against real Postgres: booting with the
+pinned 2-worker configuration and firing concurrent requests at both
+workers produced no connection errors, and `ActiveRecord::Base.connection_pool.size`
+inside a worker reports `10` as expected. Changing `WEB_CONCURRENCY` without
+also updating any hardcoded expectation of `POOL_MAX_OPEN`'s per-worker
+split would under- or over-count the real per-worker pool size — both are
+read from the same env vars in `config/database.yml` and `config/puma.rb`,
+so they stay in sync automatically.
 
 ## Test
 
@@ -120,11 +152,18 @@ exactly 2); the seed content formulas' own determinism and round-robin math
 `benchmarks/apps/shared` or reuse `../django`'s Python port); and the seed
 contract's DB-backed half, run twice at reduced scale to confirm it's
 idempotent rather than accumulating duplicate data
-(`SeedDatabaseTest`).
+(`SeedDatabaseTest`); and the schema contract itself, queried directly from
+`information_schema.columns`/`pg_constraint` rather than trusted from a
+one-time manual `psql \d` (`SchemaContractTest` — a hook that silently stops
+firing would still pass every other test in this suite on the wrong
+Postgres column types without this check; verified the check actually
+catches that by disabling the hook and by making the FK deferrable again,
+independently, and confirming each failure is caught by its own test only).
 
 ## Schema and validation notes
 
-Verified against real PostgreSQL (`psql \d users`, `\d projects`) against
+Verified against real PostgreSQL (`psql \d users`, `\d projects`, and now
+`SchemaContractTest` in CI, not just a one-time manual check) against
 [../../docs/schema.md](../../docs/schema.md) — matched from the start,
 rather than discovered as bugs afterward the way `../django`'s review round
 found several:
