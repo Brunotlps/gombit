@@ -14,9 +14,13 @@ benchmarks/
 │   └── schema.md        canonical schema/API/envelope every benchmarks/apps/ implementation targets
 ├── internal/            machine-readable output plumbing (Phase 1)
 │   ├── result/           results.json/results.csv schema + encoders (issue §9)
-│   └── metadata/         reproducibility metadata struct + host/toolchain collector
+│   ├── metadata/         reproducibility metadata struct + host/toolchain collector
+│   └── k6/               parses a crud-list.js summary into result rows (+ Validate)
+├── workloads/
+│   └── crud-list.js      the headline GET /api/projects read workload (k6)
 ├── scripts/
-│   └── collect-host-info/ CLI over internal/metadata: writes metadata.json for a run
+│   ├── collect-host-info/ CLI over internal/metadata: writes metadata.json for a run
+│   └── run-crud/          runs crud-list.js (via the pinned k6 image) against one app → results snapshot
 ├── micro/                Go abstraction-overhead microbenchmarks (Phase 2)
 │   ├── scenario/          shared resource types, Huma route registration, correctness assertions
 │   ├── nethttp/           net/http row (no router, no framework)
@@ -35,13 +39,13 @@ benchmarks/
 └── results/             generated output (issue §9); results/README.md documents the layout
 ```
 
-All six canonical CRUD implementations now exist (the Go control, the real
-Gombit app, and the four ecosystem apps), and the result schema, metadata
-collector, and run-config pins are in place. Everything else in the suite's
-target layout (`workloads/`, the `make benchmark-*` orchestration that fills
-`results/latest/`, `docs/methodology.md`, per-app `compose.yml` services, and
-the extension of `fairness_test.go` to all six) is scoped to later phases of
-the plan above and doesn't exist yet.
+All six canonical CRUD implementations exist, the result schema / metadata
+collector / run-config pins are in place, and the headline CRUD-read workload
+runs end to end against one implementation (`make benchmark-crud`). Still
+scoped to later phases: `docs/methodology.md`, per-app `compose.yml` services
+and the loop that brings all six up and runs `run-crud` over each, per-app
+resource/RSS capture (Phase 6 footprint), the other `make benchmark-*`
+workloads, and extending `fairness_test.go` to all six.
 
 ## Result schema and run metadata
 
@@ -53,6 +57,31 @@ canonical results shape lives in
 Markdown report is always generated from that, never the other way around.
 Pinned versions and limits are in
 [`benchmarks/config/versions.env`](config/versions.env).
+
+## Running the CRUD-read workload
+
+The headline workload is `GET /api/projects?page=1&limit=20`
+([`workloads/crud-list.js`](workloads/crud-list.js)), driven by the pinned k6
+image (the load generator runs in its own container, off the application
+host). Against **one already-running, already-seeded** implementation:
+
+```sh
+# start + seed the app per its own README, e.g. benchmarks/apps/gin-gorm, then:
+make benchmark-crud FRAMEWORK=gin-gorm FRAMEWORK_VERSION=v1.11.0 \
+  RUNTIME=go RUNTIME_VERSION=go1.25.7 \
+  TARGET_URL='http://127.0.0.1:8081/api/projects?page=1&limit=20'
+```
+
+It warms up (a discarded run), measures `TRIALS` times at each concurrency
+level in `benchmarks/config/versions.env`, and writes
+`benchmarks/results/latest/{results.json,results.csv,metadata.json}` plus the
+raw k6 summaries under `raw/`. A trial that sends no traffic, has any HTTP
+error, or fails a content check (a 200 with the wrong page shape) fails the
+command loudly rather than recording a bogus row — the read workload against a
+healthy app must be error-free (`benchmarks/internal/k6`'s `Summary.Validate`).
+`cpu_percent`/`rss_bytes` stay 0 for now; per-app footprint capture is Phase 6.
+The loop that brings all six apps up under compose and runs this over each is
+the next slice.
 
 ## Running the framework-tax matrix
 

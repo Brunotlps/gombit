@@ -1193,6 +1193,41 @@ real MAJOR findings, all confirmed and fixed.
 
 ### Phase 5 — Workload depth: auth overhead, TechEmpower-inspired, concurrency sweep
 
+**Headline CRUD-read workload + `make benchmark-crud` — the per-implementation
+measurement engine — done; the all-six compose loop and footprint capture are
+the next slices.**
+
+- `benchmarks/workloads/crud-list.js`: the headline `GET /api/projects?page=1&limit=20`
+  workload (issue §"Required headline workload"), run by the pinned k6 image
+  (`grafana/k6:0.55.0` — the load generator runs in its own container, off the
+  application host, satisfying issue §"Load generator"). It is the *measured*
+  run only (constant VUs for the duration); warm-up is a separate short
+  invocation whose summary the orchestrator discards, so no warm-up traffic
+  pollutes the metrics. `handleSummary` writes a compact machine-readable
+  summary (throughput, p50/p95/p99, HTTP errors, failed content checks).
+- `benchmarks/internal/k6`: parses that summary into the load-generator-derived
+  fields of a `result.Result` (`Merge` keeps the identity/config fields the
+  orchestrator set), plus `Summary.Validate` — a trial with no traffic (target
+  unreachable), any HTTP error, or any failed content check is a failed
+  measurement, not a valid row. Unit-tested, including that k6's
+  `http_req_failed` Rate reports the *failed* count as `passes` not `fails`
+  (found by running it live — an all-200 run reported `passes:0, fails:<total>`,
+  so an earlier draft recorded every success as an error).
+- `benchmarks/scripts/run-crud` + `make benchmark-crud`: against one
+  already-running, already-seeded implementation, warms up, measures `TRIALS`
+  times at each concurrency level from `versions.env`, validates every trial,
+  and writes `results/latest/{results.json,results.csv,metadata.json}` + the
+  raw k6 summaries. Verified end to end against `benchmarks/apps/gin-gorm`: a
+  clean run records `errors:0` rows; an unreachable target fails the command
+  (exit 1, "N of N requests failed") with no results written, rather than
+  recording a bogus 100%-error row. The k6 container runs as the invoking uid
+  so the mounted summary file is writable. `cpu_percent`/`rss_bytes` stay 0 —
+  per-app footprint is Phase 6, and this engine doesn't manage the app process.
+- **Still open in Phase 5:** the loop that brings all six apps up under compose
+  (with the §7 resource limits) and runs `run-crud` over each; the auth,
+  TechEmpower-inspired, and concurrency-sweep workloads below; and the
+  benchstat/CoV summarization the AC's "trial variance recorded" needs.
+
 - Gombit-only auth-overhead benchmark: no-auth / JWT / cookie-session /
   cookie+CSRF variants of `GET /api/me` and `POST /api/projects`
   (`make benchmark-auth`). No cross-framework auth comparison (excluded by
