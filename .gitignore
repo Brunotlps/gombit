@@ -40,6 +40,12 @@ mem.prof
 # Atlas / makemigrations scratch
 .gombit/
 
+# Python (benchmarks/apps/django)
+__pycache__/
+*.pyc
+.venv/
+*.egg-info/
+
 # Node / frontend (future Vite apps)
 node_modules/
 npm-debug.log*

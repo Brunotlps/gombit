@@ -214,6 +214,28 @@ jobs:
             -database.dsn \
             'postgres://gombit:gombit@127.0.0.1:5432/gombit_bench_gombit?sslmode=disable'
 
+      - name: Setup Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+          cache: pip
+          cache-dependency-path: benchmarks/apps/django/requirements.txt
+
+      - name: Install django benchmark app dependencies
+        run: pip install -r benchmarks/apps/django/requirements.txt
+
+      # No "create database" step needed here, unlike gin-gorm/gombit above:
+      # Django's own test runner creates and destroys a throwaway
+      # test_gombit_bench_django database itself (verified locally by
+      # pointing DATABASE_URL at a database that doesn't exist yet and
+      # running the suite unmodified — it still passes), so the target
+      # database name in DATABASE_URL never needs to exist beforehand.
+      - name: Run django benchmark app tests
+        working-directory: benchmarks/apps/django
+        env:
+          DATABASE_URL: postgres://gombit:gombit@127.0.0.1:5432/gombit_bench_django?sslmode=disable
+        run: python manage.py test projects -v 2
+
   database-mysql:
     name: Database (mysql)
     needs: test

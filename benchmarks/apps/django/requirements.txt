@@ -1,0 +1,7 @@
+# Pinned exact versions (issue #141 §16/§17): every implementation pins its
+# dependencies so a benchmark run is reproducible. Upgrade deliberately, not
+# via a floating range.
+Django==5.2.17
+djangorestframework==3.18.0
+psycopg[binary,pool]==3.3.4
+gunicorn==26.2.0
