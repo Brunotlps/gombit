@@ -34,8 +34,18 @@ import (
 //	  GOMBIT_DATABASE_DRIVER=postgres \
 //	  GOMBIT_DATABASE_DSN="postgres://gombit:gombit@127.0.0.1:55432/gombit_bench_gombit?sslmode=disable" \
 //	  go run github.com/gombit-dev/gombit/cmd/gombit db migrate)
-//	go test -tags integration ./benchmarks/apps/gombit/... \
+//	go test -tags integration -p 1 ./benchmarks/apps/gombit/... \
 //	  -database.dsn "postgres://gombit:gombit@127.0.0.1:55432/gombit_bench_gombit?sslmode=disable"
+//
+// -p 1 is load-bearing, not a style choice: this package and the sibling
+// benchmarks/apps/gombit (main_test.go) each TRUNCATE the same
+// gombit_bench_gombit tables at the start of every test, and go test runs
+// different packages' test binaries in parallel by default (bounded by -p,
+// which defaults to GOMAXPROCS) — verified by racing the two compiled test
+// binaries against one database directly outside of `go test`, which failed
+// on every one of 15 runs with one package's TRUNCATE landing mid-assertion
+// in the other. -p 1 serializes the two binaries so only one truncates the
+// shared tables at a time.
 var databaseDSN = flag.String("database.dsn", "", "PostgreSQL DSN for gombit app integration tests (schema already migrated)")
 
 func newProjectApp(t *testing.T) *framework.App {

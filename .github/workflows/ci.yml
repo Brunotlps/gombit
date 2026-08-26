@@ -199,9 +199,18 @@ jobs:
           GOMBIT_DATABASE_DSN: postgres://gombit:gombit@127.0.0.1:5432/gombit_bench_gombit?sslmode=disable
         run: go run github.com/gombit-dev/gombit/cmd/gombit db migrate
 
+      # -p 1: this expands to two packages (benchmarks/apps/gombit and its
+      # internal/project), each a separate test binary that TRUNCATEs the
+      # same gombit_bench_gombit tables at the start of every test. go test
+      # runs different packages' binaries in parallel by default (bounded by
+      # -p, which defaults to GOMAXPROCS) — reproduced locally by racing the
+      # two binaries against one database directly: both failed on every one
+      # of 15 runs (one package's TRUNCATE landing mid-assertion in the
+      # other). -p 1 serializes the two binaries so only one truncates the
+      # shared tables at a time.
       - name: Run gombit benchmark app integration tests
         run: |
-          go test -tags integration ./benchmarks/apps/gombit/... \
+          go test -tags integration -p 1 ./benchmarks/apps/gombit/... \
             -database.dsn \
             'postgres://gombit:gombit@127.0.0.1:5432/gombit_bench_gombit?sslmode=disable'
 

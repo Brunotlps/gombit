@@ -63,8 +63,13 @@ surface wouldn't have matched its own control.
 # pure unit tests — none of this package's own; the seed formulas it shares
 # with gin-gorm are tested in benchmarks/apps/shared
 
-# per-app integration suite, needs a live, already-migrated PostgreSQL instance
-go test -tags integration ./benchmarks/apps/gombit/... \
+# per-app integration suite, needs a live, already-migrated PostgreSQL
+# instance. -p 1 is required, not cosmetic: this expands to two packages
+# (this one and internal/project), each its own test binary, and both
+# TRUNCATE the same tables on every test's setup. Without -p 1, go test
+# runs those binaries in parallel (bounded by GOMAXPROCS) and one's
+# TRUNCATE can land mid-assertion in the other.
+go test -tags integration -p 1 ./benchmarks/apps/gombit/... \
   -database.dsn "postgres://gombit:gombit@127.0.0.1:55432/gombit_bench_gombit?sslmode=disable"
 
 # cross-implementation fairness check: builds and runs both real binaries,

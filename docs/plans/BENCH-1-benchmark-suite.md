@@ -560,6 +560,47 @@ one claim checked and found incorrect, three real gaps fixed:
   `TestProjectOwnerIDRoundRobin` as if they were still gin-gorm's own —
   they moved to `shared` in this same PR. Updated both.
 
+**Post-landing correction, round 2 (review on PR #177,
+github.com/gombit-dev/gombit/pull/177#pullrequestreview-5026402067):** one
+real, blocking gap, confirmed by reproducing the failure rather than taking
+the claim on faith.
+
+- Claim: `go test -tags integration ./benchmarks/apps/gombit/...` expands to
+  two packages — `benchmarks/apps/gombit` (`main_test.go`, added in round 1)
+  and `benchmarks/apps/gombit/internal/project` (`handler_test.go`) — each
+  compiled to its own test binary, and both `TRUNCATE TABLE projects, users
+  RESTART IDENTITY CASCADE` at the start of every test against the same
+  `gombit_bench_gombit` database. `go test` runs different packages' test
+  binaries in parallel by default (bounded by `-p`, which defaults to
+  `GOMAXPROCS`), so one package's `TRUNCATE` can land mid-assertion in the
+  other. CI being green doesn't rule this out — it's a race, not a
+  deterministic failure.
+- Verified true two ways. First, built both packages' test binaries
+  separately (`go test -tags integration -c`) and ran them concurrently
+  against one throwaway, freshly Atlas-migrated database: 15/15 runs failed,
+  every time on the expected symptom (`TestSeedDatabaseNIsIdempotentAndCorrect`
+  or `TestCRUDRoundTrip` seeing row counts/content from the other package's
+  concurrent truncate). Second — to rule out an artifact of manually racing
+  the binaries — ran the actual documented command,
+  `go test -tags integration ./benchmarks/apps/gombit/...`, 25 times
+  unmodified against a fresh throwaway database: 2/25 failed with the same
+  symptom, confirming it reproduces (intermittently, as expected of a race)
+  through `go test`'s own scheduling, not just under contrived concurrency.
+- Fixed with the reviewer's own "cheapest, honest" option: added `-p 1` to
+  the CI step (`.github/workflows/ci.yml`), the `benchmarks/apps/gombit`
+  README recipe, and `internal/project/handler_test.go`'s doc-comment
+  recipe, each with a comment explaining why it's load-bearing rather than
+  a style choice. Chose this over moving the seed test into
+  `internal/project` (the reviewer's "better" alternative) because
+  `seedDatabaseN` is unexported in `package main` alongside `main.go`,
+  mirroring where a real generated Gombit app's seed command would live —
+  moving it would misrepresent that layout, and `internal/project` can't
+  import `package main` to reuse it without a cycle in the wrong direction.
+  A third database (the reviewer's "heavier than the bug" fallback) was not
+  needed. Verified the fix at the same rigor as the failure: 25/25 passes
+  with `-p 1` added to the identical command that failed 2/25 times without
+  it, against the same throwaway database.
+
 ### Phase 4 — Remaining competitor apps (Django, Rails, Laravel, NestJS)
 
 - One sub-slice per framework (can be up to 4 separate PRs if easier to
