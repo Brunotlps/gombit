@@ -47,8 +47,8 @@ func TestCollectUsesInjectedRunnerAndClock(t *testing.T) {
 	if m.GitCommit != "abc123def456" {
 		t.Errorf("GitCommit = %q", m.GitCommit)
 	}
-	if !m.GitDirty {
-		t.Error("GitDirty = false, want true (git status was non-empty)")
+	if m.GitDirty == nil || !*m.GitDirty {
+		t.Errorf("GitDirty = %v, want a non-nil true (git status was non-empty)", m.GitDirty)
 	}
 	if m.Kernel != "6.1.0-test" {
 		t.Errorf("Kernel = %q", m.Kernel)
@@ -84,12 +84,47 @@ func TestCollectCleanTreeAndMissingToolsDegrade(t *testing.T) {
 		return "ok", nil
 	}
 	m := Collect(context.Background(), Options{Run: run})
-	if m.GitDirty {
-		t.Error("GitDirty = true, want false for an empty git status")
+	if m.GitDirty == nil || *m.GitDirty {
+		t.Errorf("GitDirty = %v, want a non-nil false for an empty git status", m.GitDirty)
 	}
 	// Missing docker must leave the field empty, not fail collection.
 	if m.DockerVersion != "" || m.DockerComposeVersion != "" {
 		t.Errorf("docker versions should be empty when unavailable: %q/%q", m.DockerVersion, m.DockerComposeVersion)
+	}
+}
+
+// A failed `git status` (or missing git) must leave GitDirty unknown (nil),
+// never fail-open to a clean-tree claim — even when rev-parse succeeded and a
+// SHA was recorded.
+func TestCollectGitStatusErrorIsUnknownNotClean(t *testing.T) {
+	run := func(_ context.Context, name string, args ...string) (string, error) {
+		if name == "git" && args[0] == "rev-parse" {
+			return "deadbeef", nil
+		}
+		if name == "git" && args[0] == "status" {
+			return "fatal: not a git repository", context.Canceled // status failed
+		}
+		return "", nil
+	}
+	m := Collect(context.Background(), Options{Run: run})
+	if m.GitCommit != "deadbeef" {
+		t.Errorf("GitCommit = %q, want the SHA rev-parse returned", m.GitCommit)
+	}
+	if m.GitDirty != nil {
+		t.Errorf("GitDirty = %v, want nil (unknown) when git status failed", *m.GitDirty)
+	}
+}
+
+func TestParseCPUModelArmFallback(t *testing.T) {
+	// aarch64 /proc/cpuinfo: no "model name"; devicetree "Model" is the label.
+	arm := "processor\t: 0\nBogoMIPS\t: 108.00\nCPU implementer\t: 0x41\nCPU part\t: 0xd0b\nModel\t\t: Raspberry Pi 5 Model B Rev 1.0\n"
+	if got := parseCPUModel(arm); got != "Raspberry Pi 5 Model B Rev 1.0" {
+		t.Errorf("parseCPUModel(arm) = %q, want the Model line", got)
+	}
+	// A bare ARM cpuinfo with only CPU part codes records unknown, not junk.
+	bare := "processor\t: 0\nCPU implementer\t: 0x41\nCPU part\t: 0xd0b\n"
+	if got := parseCPUModel(bare); got != "" {
+		t.Errorf("parseCPUModel(bare arm) = %q, want empty (unknown)", got)
 	}
 }
 

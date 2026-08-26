@@ -49,18 +49,44 @@ type Result struct {
 	RSSBytes          int64   `json:"rss_bytes"`
 }
 
+// sortedCopy returns results ordered deterministically by (framework,
+// benchmark, concurrency, trial), so any regenerated artifact — the canonical
+// results.json as well as the derived results.csv — diffs cleanly regardless
+// of the order rows were collected in.
+func sortedCopy(results []Result) []Result {
+	out := make([]Result, len(results))
+	copy(out, results)
+	sort.SliceStable(out, func(i, j int) bool {
+		a, b := out[i], out[j]
+		switch {
+		case a.Framework != b.Framework:
+			return a.Framework < b.Framework
+		case a.Benchmark != b.Benchmark:
+			return a.Benchmark < b.Benchmark
+		case a.Concurrency != b.Concurrency:
+			return a.Concurrency < b.Concurrency
+		default:
+			return a.Trial < b.Trial
+		}
+	})
+	return out
+}
+
 // WriteJSON encodes results as a pretty-printed JSON array. This is the
 // canonical machine-readable output; results.csv and the Markdown report are
-// derived from it.
+// derived from it. Rows are sorted the same way WriteCSV sorts them, so the
+// committed results.json is stable across runs that collected rows in a
+// different order.
 func WriteJSON(w io.Writer, results []Result) error {
 	// Never emit `null` for an empty run — an empty array is the honest,
 	// still-parseable representation.
-	if results == nil {
-		results = []Result{}
+	out := sortedCopy(results)
+	if out == nil {
+		out = []Result{}
 	}
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
-	return enc.Encode(results)
+	return enc.Encode(out)
 }
 
 // ReadJSON decodes a results.json produced by WriteJSON.
@@ -99,21 +125,7 @@ var csvHeader = []string{
 // (framework, benchmark, concurrency, trial) so a regenerated file diffs
 // cleanly regardless of the order rows were collected in.
 func WriteCSV(w io.Writer, results []Result) error {
-	sorted := make([]Result, len(results))
-	copy(sorted, results)
-	sort.SliceStable(sorted, func(i, j int) bool {
-		a, b := sorted[i], sorted[j]
-		switch {
-		case a.Framework != b.Framework:
-			return a.Framework < b.Framework
-		case a.Benchmark != b.Benchmark:
-			return a.Benchmark < b.Benchmark
-		case a.Concurrency != b.Concurrency:
-			return a.Concurrency < b.Concurrency
-		default:
-			return a.Trial < b.Trial
-		}
-	})
+	sorted := sortedCopy(results)
 
 	cw := csv.NewWriter(w)
 	if err := cw.Write(csvHeader); err != nil {

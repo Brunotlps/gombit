@@ -27,7 +27,11 @@ type Metadata struct {
 	Timestamp     string `json:"timestamp"`
 
 	GitCommit string `json:"git_commit"`
-	GitDirty  bool   `json:"git_dirty"`
+	// GitDirty is a pointer, not a bool, so the metadata can honestly say "I
+	// did not determine this" (null) when `git status` failed or git was
+	// missing — a plain bool's zero value (false = clean) would claim a
+	// clean tree on the exact runs where the check could not run.
+	GitDirty *bool `json:"git_dirty"`
 
 	OS          string `json:"os"`
 	Kernel      string `json:"kernel"`
@@ -88,18 +92,44 @@ func Collect(ctx context.Context, opts Options) Metadata {
 		run = execRunner
 	}
 
-	commit, _ := run(ctx, "git", "rev-parse", "HEAD")
-	status, _ := run(ctx, "git", "status", "--porcelain")
+	commit, commitErr := run(ctx, "git", "rev-parse", "HEAD")
+	if commitErr != nil {
+		commit = ""
+	}
 	kernel, _ := run(ctx, "uname", "-r")
 	dockerVersion, _ := run(ctx, "docker", "version", "--format", "{{.Server.Version}}")
 	composeVersion, _ := run(ctx, "docker", "compose", "version", "--short")
+
+	// git_dirty is set only when the porcelain status actually succeeded;
+	// a failed check (or missing git) leaves it nil -> JSON null -> "unknown".
+	var gitDirty *bool
+	if status, statusErr := run(ctx, "git", "status", "--porcelain"); statusErr == nil {
+		dirty := strings.TrimSpace(status) != ""
+		gitDirty = &dirty
+	}
+
+	// Never serialize the required version maps / concurrency as JSON null:
+	// an empty {} / [] is the honest "collected, nothing to record" shape,
+	// distinct from a field that was dropped.
+	frameworkVersions := opts.FrameworkVersions
+	if frameworkVersions == nil {
+		frameworkVersions = map[string]string{}
+	}
+	runtimeVersions := opts.RuntimeVersions
+	if runtimeVersions == nil {
+		runtimeVersions = map[string]string{}
+	}
+	concurrency := opts.Concurrency
+	if concurrency == nil {
+		concurrency = []int{}
+	}
 
 	return Metadata{
 		SchemaVersion: SchemaVersion,
 		Timestamp:     now().UTC().Format(time.RFC3339),
 
 		GitCommit: commit,
-		GitDirty:  strings.TrimSpace(status) != "",
+		GitDirty:  gitDirty,
 
 		OS:          runtime.GOOS,
 		Kernel:      kernel,
@@ -113,14 +143,14 @@ func Collect(ctx context.Context, opts Options) Metadata {
 		DockerComposeVersion: composeVersion,
 		PostgresVersion:      opts.PostgresVersion,
 
-		FrameworkVersions: opts.FrameworkVersions,
-		RuntimeVersions:   opts.RuntimeVersions,
+		FrameworkVersions: frameworkVersions,
+		RuntimeVersions:   runtimeVersions,
 		BenchmarkTool:     opts.BenchmarkTool,
 
 		ResourceLimits:  opts.ResourceLimits,
 		DurationSeconds: opts.DurationSeconds,
 		WarmupSeconds:   opts.WarmupSeconds,
-		Concurrency:     opts.Concurrency,
+		Concurrency:     concurrency,
 		Trials:          opts.Trials,
 	}
 }
@@ -151,11 +181,26 @@ func ramBytes() int64 {
 	return parseMemTotalBytes(string(data))
 }
 
+// parseCPUModel reads the CPU model from /proc/cpuinfo text. x86 uses
+// "model name"; ARM/aarch64 typically has no such line, so it falls back to
+// the devicetree "Model" and then "Hardware" keys. On a host that exposes
+// none of them (a bare ARM /proc/cpuinfo with only "CPU part" hex codes) it
+// returns "" — recorded as unknown rather than a fabricated string.
 func parseCPUModel(cpuinfo string) string {
+	found := map[string]string{}
 	for _, line := range strings.Split(cpuinfo, "\n") {
 		key, value, ok := strings.Cut(line, ":")
-		if ok && strings.TrimSpace(key) == "model name" {
-			return strings.TrimSpace(value)
+		if !ok {
+			continue
+		}
+		k := strings.TrimSpace(key)
+		if _, seen := found[k]; !seen {
+			found[k] = strings.TrimSpace(value)
+		}
+	}
+	for _, key := range []string{"model name", "Model", "Hardware"} {
+		if v := found[key]; v != "" {
+			return v
 		}
 	}
 	return ""
