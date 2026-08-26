@@ -99,7 +99,7 @@ The issue deliberately leaves these open ("pick one and document why"). Recommen
 
 | Decision | Recommendation | Rationale |
 | --- | --- | --- |
-| Load generator | **k6** | Only one of {k6, wrk2, oha} with a built-in constant-arrival-rate executor (`ramping-arrival-rate`), so the coordinated-omission requirement (issue §"Load generator") is met natively instead of documented as a gap. JS scripting lets one workload script parametrize all 6 targets. Ships JSON summary export natively (`--summary-export`), feeding `results.json` directly. |
+| Load generator | **k6** | JS scripting lets one workload script parametrize all 6 targets, and it dumps its raw metrics natively (via `handleSummary`), feeding `results.json` through a tested Go parser. k6 also has a built-in constant-arrival-rate executor available for rate-based workloads. **Coordinated omission (revised on PR #184 review):** the *headline concurrency sweep* (issue §7) is an "N concurrent clients" axis — a closed-loop VU concept — so `benchmarks/workloads/crud-list.js` uses the `constant-vus` executor and the coordinated-omission limitation is documented (the issue's "constant-rate OR document" escape hatch), in the workload comment and `benchmarks/README.md`, rather than claimed away. A rate-based workload that wants CO-resistance natively can use k6's arrival-rate executor. Topology is a k6 container on the host network, on the same machine as the app (issue's "another container on the same host"), recorded as such. |
 | PostgreSQL pin | `postgres:16.4-alpine`, digest captured into `metadata.json` at run time via `docker inspect` | Repo's existing CI convention is `postgres:16-alpine` (major-only); issue requires major.minor or digest. Bump precision without diverging from the CI convention's major version. |
 | Go microbenchmark location | `benchmarks/micro/{nethttp,gin,huma,gombit}`, one package per row, sharing types/route registration/assertions via `benchmarks/micro/scenario`; `internal/contractspike`'s M0-2 spike stays untouched as a historical, standalone artifact, cross-linked but not extended | Matches the issue's own suggested tree and keeps one discoverable home for all benchmark code. "Reuse, not reimplement" is satisfied by cross-linking the spike's result, not by physically colocating new code in `internal/`; the spike's widget routes were never going to be literally extended anyway. One package per row also gets Huma's `contract.Install` process-isolation requirement (the Gombit row mutates process-global `huma.NewError`) for free from `go test`'s one-process-per-package model, instead of needing a special-cased package boundary for just that row. |
 | Gombit/Gin+GORM benchmark *server* apps (real HTTP, not in-process) | Live in `benchmarks/apps/gombit` and `benchmarks/apps/gin-gorm` as `package main` inside the **root Go module** | They only need deps already in `go.sum` (Gin, Huma, GORM, `pgx`/`lib/pq`). Matches the existing precedent of `examples/` living in the root module and being covered by `go build ./...` in CI — no nested `go.mod` needed. |
@@ -1228,6 +1228,44 @@ the next slices.**
   TechEmpower-inspired, and concurrency-sweep workloads below; and the
   benchstat/CoV summarization the AC's "trial variance recorded" needs.
 
+**Post-landing correction (review on PR #184,
+github.com/gombit-dev/gombit/pull/184#pullrequestreview-5035211655):** the
+measurement engine described one experiment and executed another; four
+findings, all real, fixed.
+
+- The workload used k6's `vus`+`duration` shortcut (default `gracefulStop`
+  30s, so a "30s trial" was up to 60s of wall clock, and a slower app got a
+  longer experiment), and `duration_seconds` recorded the *flag*, not elapsed.
+  Switched to an explicit `constant-vus` scenario with `gracefulStop: 0s`, and
+  the parser now records the actual elapsed window from k6's
+  `state.testRunDurationMs` (verified: a 3s run records `duration_seconds ≈
+  3.001`). Documented that this is closed-loop load subject to coordinated
+  omission (the issue's "constant-rate OR document" path — the concurrency
+  sweep is a client-count axis, so VUs are the right executor), corrected the
+  §4 plan claim that arrival-rate met CO natively, fixed the "off the
+  application host" comments to the honest "same machine, host network"
+  topology, and removed a comment about thresholds that didn't exist.
+- The interpretation the PR exists to get right — including the
+  `http_req_failed` Rate whose *failed* count is `passes` not `fails` — lived
+  in untested JavaScript; a one-token change to `fails` would have passed
+  every Go test. Moved all mapping into the Go parser (`benchmarks/internal/k6`):
+  the workload now dumps k6's raw `{metrics, state}`, and the parser is
+  unit-tested against two **real captured k6 goldens** (`testdata/`), one
+  all-200 and one all-refused — the all-refused golden (`http_req_failed
+  passes == count`) is what pins the inversion.
+- `run-crud`'s "appends" was `os.Create` (truncate): a second framework's run
+  against the same out-dir erased the first, so the planned six-app loop would
+  keep only the last. Now merges by framework key (re-running one framework
+  replaces its rows, other frameworks kept), with the metadata version maps
+  unioned; both the merge and "a `Validate` failure writes nothing" are unit
+  tested via an injected k6 seam and the captured goldens.
+- `metadata.resource_limits` recorded the pinned `app 2cpu/1g; postgres
+  2cpu/2g` budget that this engine never applies (it starts nothing) — the
+  `git_dirty: false` fail-open on a different field. `run-crud` now records an
+  honest "not applied (run-crud does not start or constrain the app)"; the
+  compose loop that actually enforces and observes the §7 limits is the next
+  slice.
+
 - Gombit-only auth-overhead benchmark: no-auth / JWT / cookie-session /
   cookie+CSRF variants of `GET /api/me` and `POST /api/projects`
   (`make benchmark-auth`). No cross-framework auth comparison (excluded by
@@ -1305,10 +1343,12 @@ they must not touch `ci.yml`'s existing database/migrations/conformance jobs.
 
 ## 8. Open questions to confirm before Phase 1
 
-1. **k6 as the load generator** — confirms native constant-arrival-rate
-   support satisfies the coordinated-omission requirement; alternative is
-   wrk2 (simpler, but text-output-only and no native arrival-rate control
-   for the concurrency sweep).
+1. **k6 as the load generator** — chosen for JS parametrization of one script
+   across all 6 targets and native raw-metrics dump; alternative is wrk2
+   (simpler, but text-output-only). The headline concurrency sweep uses
+   closed-loop `constant-vus` (the issue's client-count axis) with coordinated
+   omission documented, not k6's arrival-rate executor (revised on PR #184
+   review — see the load-generator row in §4).
 2. **Seed size** (1,000 users / 100,000 projects as specified, vs. a smaller
    documented size) — depends on how slow local/CI seeding turns out to be;
    decide empirically in Phase 3, not up front.

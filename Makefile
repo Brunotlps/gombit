@@ -19,7 +19,11 @@ TARGET_URL ?=
 # Where the snapshot is written.
 OUT_DIR ?= benchmarks/results/latest
 
-RESOURCE_LIMITS ?= app $(APP_CPUS)cpu/$(APP_MEMORY); postgres $(POSTGRES_CPUS)cpu/$(POSTGRES_MEMORY)
+# The pinned intended limits (issue #141 §7). run-crud does NOT apply these —
+# it starts nothing — so it records an honest "not applied" string instead;
+# these are only surfaced by benchmark-metadata, labelled as intended. The
+# compose loop (next slice) is what will actually enforce and record them.
+INTENDED_LIMITS ?= intended (not yet enforced): app $(APP_CPUS)cpu/$(APP_MEMORY); postgres $(POSTGRES_CPUS)cpu/$(POSTGRES_MEMORY)
 
 .PHONY: benchmark-crud benchmark-metadata
 
@@ -42,8 +46,10 @@ benchmark-crud:
 		-duration "$(DURATION_SECONDS)s" -warmup "$(WARMUP_SECONDS)s" -trials "$(TRIALS)" \
 		-k6-image "grafana/k6:$(K6_VERSION)" \
 		-out-dir "$(OUT_DIR)" \
-		-postgres-version "$(POSTGRES_IMAGE)" \
-		-resource-limits "$(RESOURCE_LIMITS)"
+		-postgres-version "$(POSTGRES_IMAGE)"
+	@# resource-limits deliberately omitted: run-crud does not start or
+	@# constrain the app, so it records its honest "not applied" default
+	@# rather than the intended pins this target never enforces.
 
 ## benchmark-metadata: write just the reproducibility metadata for the current
 ## host and pinned run configuration to OUT_DIR/metadata.json.
@@ -56,4 +62,4 @@ benchmark-metadata:
 		-concurrency "$(CONCURRENCY)" \
 		-duration-seconds "$(DURATION_SECONDS)" -warmup-seconds "$(WARMUP_SECONDS)" \
 		-trials "$(TRIALS)" \
-		-resource-limits "$(RESOURCE_LIMITS)"
+		-resource-limits "$(INTENDED_LIMITS)"

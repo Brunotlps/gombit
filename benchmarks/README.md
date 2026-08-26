@@ -62,8 +62,21 @@ Pinned versions and limits are in
 
 The headline workload is `GET /api/projects?page=1&limit=20`
 ([`workloads/crud-list.js`](workloads/crud-list.js)), driven by the pinned k6
-image (the load generator runs in its own container, off the application
-host). Against **one already-running, already-seeded** implementation:
+image. **Load model and topology (read before citing any number):** the
+workload uses a closed-loop `constant-vus` executor — `VUS` concurrent clients
+for the measured window — because the issue's concurrency sweep
+(1/10/100/500/1000) is a client-count axis. Closed-loop load is subject to
+**coordinated omission**: when the app slows, a client waits before its next
+request, so the reported tail latency understates true client-observed wait.
+This is the issue's "constant-rate *or* document the limitation" path, taken
+by documenting it. `gracefulStop` is `0s`, so the measured window is exactly
+the requested duration and `duration_seconds` records the *actual* elapsed run
+time (from k6's state), not the flag. The k6 container runs on the host
+network on the **same machine** as the app (the issue's "another container on
+the same host"), so at high concurrency k6 contends for CPU with the app —
+this is the recorded topology, not a separate load-generation host.
+
+Against **one already-running, already-seeded** implementation:
 
 ```sh
 # start + seed the app per its own README, e.g. benchmarks/apps/gin-gorm, then:
@@ -73,15 +86,18 @@ make benchmark-crud FRAMEWORK=gin-gorm FRAMEWORK_VERSION=v1.11.0 \
 ```
 
 It warms up (a discarded run), measures `TRIALS` times at each concurrency
-level in `benchmarks/config/versions.env`, and writes
-`benchmarks/results/latest/{results.json,results.csv,metadata.json}` plus the
-raw k6 summaries under `raw/`. A trial that sends no traffic, has any HTTP
-error, or fails a content check (a 200 with the wrong page shape) fails the
-command loudly rather than recording a bogus row — the read workload against a
-healthy app must be error-free (`benchmarks/internal/k6`'s `Summary.Validate`).
-`cpu_percent`/`rss_bytes` stay 0 for now; per-app footprint capture is Phase 6.
-The loop that brings all six apps up under compose and runs this over each is
-the next slice.
+level in `benchmarks/config/versions.env`, and **merges** its rows into
+`benchmarks/results/latest/{results.json,results.csv,metadata.json}` (raw k6
+summaries under `raw/`) — re-running one framework replaces that framework's
+rows while other frameworks are kept, so running each in turn accumulates all
+six. A trial that sends no traffic, has any HTTP error, or fails a content
+check (a 200 with the wrong page shape) fails the command loudly **with
+nothing written** rather than recording a bogus row — the read workload
+against a healthy app must be error-free (`benchmarks/internal/k6`'s
+`Summary.Validate`). `run-crud` does not start or resource-constrain the app,
+so `metadata.resource_limits` says so honestly; the compose loop that enforces
+the §7 limits and captures `cpu_percent`/`rss_bytes` (Phase 6) is the next
+slice.
 
 ## Running the framework-tax matrix
 
