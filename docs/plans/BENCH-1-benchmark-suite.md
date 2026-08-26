@@ -244,24 +244,217 @@ SQLite/PostgreSQL/MySQL matrix green throughout (AGENTS.md §5.1).
 
 ### Phase 3 — Canonical schema, seed, and CRUD apps (Gombit + Gin+GORM)
 
-- Define the `users`/`projects` schema + indexes (issue §3) as the canonical
-  PostgreSQL DDL, expressed through each framework's own migration
-  mechanism but converging on the same SQL.
-- Deterministic seed (1,000 users / 100,000 projects, or a documented smaller
-  size if local setup time proves prohibitive) with a single reproducible
-  command.
-- Implement `benchmarks/apps/gombit` (normal Gombit app, production mode) and
-  `benchmarks/apps/gin-gorm` (idiomatic Gin+GORM control) exposing the
-  canonical CRUD routes (`GET/POST/PATCH/DELETE /api/projects...`) with
-  Gombit's `{data, meta}` envelope on both, equivalent pagination.
-- Add automated fairness checks (issue §15/§16): same route surface, same
-  JSON shape, same paginated record count, same ordered IDs for a known
-  query, N+1 detection via SQL query counting for the list endpoint.
-- `compose.yml`: pinned PostgreSQL service, resource limits, app services for
-  these two.
+**Phase 3a — schema + seed + Gin+GORM control — done.**
+
+- Canonical schema documented at
+  [benchmarks/docs/schema.md](../../benchmarks/docs/schema.md): `users`/
+  `projects` DDL, the five canonical routes, the D10-envelope-for-both-apps
+  decision (deliberately different from `benchmarks/micro/scenario`'s
+  per-stack-idiomatic choice — see that doc for why), response field list,
+  and the deterministic-seed spec (1,000 users / 100,000 projects — the
+  issue's recommended size worked fine, no need to shrink it).
+- `benchmarks/apps/shared`: `PageMeta` (`page`/`limit`/`total` — not
+  `contract.PageMeta`, which uses `per_page`; issue #141 specifies `limit`)
+  and `ProjectData`, shared by every Go implementation so "same JSON shape"
+  (issue §15) is true by construction between them, not by two
+  hand-maintained struct definitions staying in sync.
+- `benchmarks/apps/gin-gorm`: the primary framework-tax control (issue
+  "isolates the incremental cost of adopting Gombit rather than changing
+  programming languages"). GORM `AutoMigrate` (not Atlas — this is the
+  control's own idiomatic migration mechanism); `.Preload("Owner")` on the
+  list query, verified against real Postgres statement logs to issue
+  exactly 3 SQL statements per list request (count + page + one batched
+  owner `IN (...)`, not one owner query per row) before writing that as an
+  automated regression guard (`TestListDoesNotN1`, gated behind `-tags
+  integration` per `database/integration_test.go`'s existing convention).
+  `-seed` flag truncates and reseeds deterministically. 20/20 connection
+  pool limits per issue "Connection pooling" (overriding Gombit's own
+  25/5 Postgres default — the fairness pin is the issue's, not either
+  framework's).
+- `benchmarks/compose.yml`: pinned `postgres:16.4-alpine`, resource-limit
+  block (documented as best-effort outside Swarm, per issue's own
+  "detect/report rather than silently pretend" requirement).
+- Schema verified column-by-column against a real, running Postgres
+  instance (`psql \d`), not assumed from the model definitions — caught and
+  fixed a real gap this way (`Project.Name`/timestamp columns were
+  nullable; the schema doc requires `NOT NULL`).
+
+**Post-landing correction, round 1 (PR review on #176, github.com/gombit-dev/gombit/pull/176#pullrequestreview-5017796308):**
+Phase 3a's first landed version had a real specification contradiction and
+several fairness/coverage gaps; all fixed:
+
+- `benchmarks/docs/schema.md` claimed the list endpoint issues 2 SQL
+  statements; the handler and `TestListDoesNotN1` both said 3 (`COUNT` +
+  page + batched owner `IN (...)`) — the document future implementations
+  are supposed to converge on disagreed with the implementation it was
+  documenting. Corrected to pin 3 for a non-empty page (and 2 for an empty
+  one, now covered by `TestListDoesNotN1EmptyPage`), with the reasoning for
+  why an empty page differs spelled out so it reads as a documented
+  boundary, not an inconsistency.
+- `POST /api/projects` with a nonexistent `owner_id` hit the FK constraint
+  and returned 500 `internal`, not a 4xx — a bad client-supplied reference
+  is invalid input (issue §15), not a server fault. Fixed
+  (`TestCreateRejectsInvalidOwnerID`) by detecting the Postgres SQLSTATE
+  (`23503`) directly rather than through `database.MapPersistError`, which
+  only special-cased unique violations.
+- The control app imported `github.com/gombit-dev/gombit/contract` for its
+  D10 envelope types, and `contract.ErrorEnvelope` is a `huma.StatusError`
+  — so the "no Huma" control linked Huma in its dependency graph even
+  though no handler touched it directly. Fixed by adding framework-free
+  `Data`/`DataMeta`/`ErrorEnvelope` types (same JSON shape, zero Huma/GORM-
+  helper dependency) to `benchmarks/apps/shared`; verified with
+  `go list -deps` that `contract`/`database`/`huma` no longer appear in
+  `benchmarks/apps/gin-gorm`'s dependency graph at all. This also fixed the
+  FK bug above at the root: `database.MapPersistError` was never the right
+  tool for a table with no unique business key.
+- The seed contract (deterministic 1,000/100,000 content, round-robin
+  ownership, truncate+`RESTART IDENTITY` idempotency) had no automated
+  coverage — `seedDatabase` was only exercised manually. Fixed by
+  extracting the pure content formulas into their own functions (tested
+  without a database or build tag: `TestSeedContentIsDeterministic`,
+  `TestProjectOwnerIDRoundRobin`) and parameterizing the truncate-then-seed
+  path (`seedDatabaseN`) so an integration test can run the real path twice
+  at reduced scale and assert it doesn't accumulate duplicate data
+  (`TestSeedDatabaseNIsIdempotentAndCorrect`).
+- None of the above had CI coverage: every test in the package was
+  `//go:build integration`, and no CI job passed that tag for this
+  package — a green PR was not evidence any of this worked. Fixed by
+  adding a step to `.github/workflows/ci.yml`'s existing `database-postgres`
+  job. Uses a **separate** `gombit_bench` database on that job's Postgres
+  service, not the `gombit` database `auth`/`database`/`admin` already use:
+  `auth.User` also maps to a table named `users` (no `TableName()`
+  override), with different columns than `gin-gorm`'s `User` — sharing a
+  database would let one `AutoMigrate` alter the schema the other relies
+  on. Validated the exact CI command (`psql -c 'CREATE DATABASE ...'` then
+  `go test -tags integration ...`) locally against a freshly created
+  database before trusting the YAML, not just written and assumed correct.
+
+**Post-landing correction, round 2 (Merge Warden review on #176,
+github.com/gombit-dev/gombit/pull/176#pullrequestreview-5018114825):** one
+claim checked and found not applicable, three real gaps fixed:
+
+- Claimed `TestListDoesNotN1`'s exact-count assertions were unreliable
+  because `gorm.Open` issues initialization queries the counting logger
+  would pick up. Checked directly against this driver/version (`gorm.Open`,
+  then a forced `Ping()`, with a throwaway counting logger attached) — zero
+  queries traced either way, so the specific failure mode doesn't reproduce
+  here. Switched both counting tests to `db.Session(&gorm.Session{Logger:
+  counter})` on the already-open connection anyway: strictly more robust
+  regardless (no first-connection cost of any kind, present or future
+  driver behavior), and it was the suggested fix, so there was no reason
+  not to adopt the better pattern even without a reproducing bug.
+- `updateProjectRequest.Name`'s `binding:"omitempty,max=255"` skips
+  `max=255` once the pointed-to value is empty, not only when the pointer
+  is nil — checked directly (a standalone `omitempty,max=255` validator
+  call against `&""`) and confirmed `{"name":""}` passes binding
+  unchanged, silently bypassing the same non-blank-name rule `POST
+  /api/projects` enforces via `required`. Fixed with an explicit check in
+  the handler (`TestUpdateRejectsBlankName`, including that a rejected
+  PATCH doesn't partially apply).
+- `queryCounter` read/wrote its fields with no synchronization. Not
+  currently racing (every caller drives it from one goroutine per test),
+  but GORM doesn't guarantee `Trace` runs on the caller's goroutine, so
+  this was correct-by-accident, not correct-by-construction. Added a
+  mutex and thread-safe `Count()`/`Queries()` accessors; verified the full
+  suite still passes under `-race`.
+- `updated.UpdatedAt.After(created.UpdatedAt)` asserted a stronger
+  invariant (strictly later) than the one that actually matters (not
+  earlier), risking flakiness if two round trips ever land in the same
+  timestamp-resolution window. Changed to `!updated.UpdatedAt.Before(...)`.
+
+**Post-landing correction, round 3 (PR review on #176,
+github.com/gombit-dev/gombit/pull/176#pullrequestreview-5022158018):** round
+2's blank-name fix was itself incomplete — applied to `update` only, not
+`create`, which taught the resource two different name contracts depending
+on which verb touched it. `create`'s `binding:"required,max=255"` rejects
+the empty string but not a whitespace-only one; verified directly against
+live Postgres before fixing: `POST {"owner_id":1,"name":"   "}` returned
+`201 Created` with the name stored as three spaces, while the identical
+value already failed on `PATCH`. Fixed by extracting `blankNameError` as a
+shared check both handlers call — the point being that a rule expressed
+identically in two places, the way the previous round's inline
+`strings.TrimSpace` check in `update` alone was, is exactly how this class
+of asymmetry gets introduced in the first place; a rule that can't drift
+between call sites because there's only one call site is the actual fix,
+not just symmetric coverage today. `TestCreateRejectsBlankName` and
+`TestUpdateRejectsBlankName` now share one `blankNames = []string{"",
+"   "}` table so the same asymmetry can't quietly return through one test
+being updated and the other not.
+
+**Post-landing correction, round 4 (Merge Warden review on #176,
+github.com/gombit-dev/gombit/pull/176#pullrequestreview-5024765519):**
+claimed, not applicable — `Project.Owner` being a value `User` rather than
+`*User` would supposedly make `db.Save(&row)` attempt to upsert a zero-value
+`User` whenever a `Project` is saved without `.Preload("Owner")` first
+(exactly what `create` and `update` both do). Checked three ways before
+concluding otherwise, not just reasoned about:
+
+- Source: `gorm@v1.31.1/callbacks/associations.go`'s `SaveBeforeAssociations`,
+  struct-kind branch — `if _, zero := rel.Field.ValueOf(ctx, reflectValue);
+  !zero { ... }` — explicitly skips saving a belongs-to association when
+  the field is GORM's own notion of the zero value, before any SQL is
+  built.
+- Empirical, the exact `update()` path: loaded a real `Project` via
+  `First` (no `Preload`, `Owner` left zero-value), mutated it, called
+  `Save`, with GORM's own verbose logger attached. One `UPDATE projects`
+  statement; no statement against `users` at all; `SELECT count(*) FROM
+  users` unchanged before/after; zero rows with `email = ''`.
+- Empirical, the exact `create()` path: built a `Project{OwnerID: 1, ...}`
+  with `Owner` left zero-value, called `Create`, same logger. One `INSERT
+  INTO projects` statement; same unchanged user-count and empty-email
+  checks.
+
+Both handlers' actual call patterns are covered by this, not just a
+similar-looking synthetic case. Not changing `Owner` to `*User`: doing so
+isn't free the way the round-2 `db.Session` swap was — every read site
+(`toProjectData`) would need a nil guard and a decision about what
+`OwnerName` means for an un-preloaded project, for a bug that doesn't
+exist on this GORM version against this exact code. `owner_id` is also a
+`NOT NULL` foreign key (`benchmarks/docs/schema.md`) — every `Project`
+genuinely always has an owner once preloaded, so a non-pointer association
+isn't a modeling mismatch either, just an ORM-level "not loaded yet" state
+a pointer wouldn't describe any more precisely.
+
+**Post-landing correction, round 5 (Merge Warden review on #176,
+github.com/gombit-dev/gombit/pull/176#pullrequestreview-5024924257):**
+false positive, no functional bug — the review claimed
+`database.MapPersistError` was still mapping FK violations to 500 and
+should be fixed in `github.com/gombit-dev/gombit/database`. That framework
+function isn't called anywhere in `benchmarks/apps/gin-gorm` — round 1
+already replaced it with a local, independent `mapPersistError` that
+handles the FK case correctly (`shared.ValidationError`, 422), verified
+repeatedly since. The finding's own diff hunk showed why: it's anchored
+right where `mapLoadError`/`mapPersistError`'s doc comments *mention*
+`database.MapLoadError`/`database.MapPersistError` by name — explaining
+what's deliberately *not* used and why — which a lightweight scanner (or a
+human skimming fast) can misread as describing what the code still calls.
+Re-verified before concluding it was a false positive, not just assumed:
+`grep` for `gombit-dev/gombit/database` in the package matches only inside
+those two comments, `go list -deps` confirms `contract`/`database`/`huma`
+are absent from the package's dependency graph, and
+`TestCreateRejectsInvalidOwnerID` still passes against real Postgres, 422
+not 500. No code-behavior change; reworded both comments to lead with
+"local, standalone implementation, not a call to \[framework function\]"
+instead of naming the framework function first — the ambiguity was real
+even though the bug wasn't, and it's a one-time fix to stop tripping the
+same misread again.
+
+**Phase 3b — still open:**
+
+- `benchmarks/apps/gombit`: the same canonical API as a normal Gombit app
+  (Huma handlers, `framework.App`, Atlas migrations, production mode).
+- Cross-implementation fairness checks (issue §15/§16) — same route
+  surface, same paginated record count, same ordered IDs for a known query
+  — which need a second implementation to compare against and so couldn't
+  land in 3a. `TestListDoesNotN1` (3a) is the query-count half of this,
+  already passing for gin-gorm alone.
+- `benchmarks/compose.yml` app services for both apps, with resource
+  limits.
 - **AC:** `make benchmark-crud` runs Gombit and Gin+GORM against the same
   Postgres instance and produces comparable `results.json` rows; fairness
-  tests fail loudly on route/shape/query-count divergence.
+  tests fail loudly on route/shape/query-count divergence. Not yet
+  satisfied — `results.json` also still depends on Phase 1's open
+  result-schema/summarizer work.
 
 ### Phase 4 — Remaining competitor apps (Django, Rails, Laravel, NestJS)
 

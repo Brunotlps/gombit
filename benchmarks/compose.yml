@@ -1,0 +1,35 @@
+# PostgreSQL service shared by every benchmarks/apps/ implementation.
+# App services are added as each implementation lands (Phase 3+); this file
+# currently only stands up the database so `benchmarks/apps/*` can be
+# developed and fairness-tested against it locally.
+#
+# Version pin: issue #141 requires major.minor (or digest), not a
+# major-only floating tag. This repo's CI (.github/workflows/ci.yml) already
+# uses postgres:16-alpine for the SQLite/PostgreSQL/MySQL matrix; this pins
+# the same major version to minor precision rather than diverging from it.
+services:
+  postgres:
+    image: postgres:16.4-alpine
+    environment:
+      POSTGRES_USER: gombit
+      POSTGRES_PASSWORD: gombit
+      POSTGRES_DB: gombit_bench
+    ports:
+      - "127.0.0.1:55432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U gombit -d gombit_bench"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    # Issue #141 resource-limits requirement: 2 vCPU / 2 GiB for PostgreSQL.
+    # Docker Compose only enforces these under Swarm (`deploy.resources`) or
+    # when the CLI is invoked with `--compatibility`; plain `docker compose
+    # up` on a non-Swarm host silently ignores them. benchmarks/scripts (not
+    # yet written) must detect and report this rather than claim limits were
+    # applied when they weren't (issue: "detect/report that fact rather than
+    # silently pretending limits were applied").
+    deploy:
+      resources:
+        limits:
+          cpus: "2"
+          memory: 2g

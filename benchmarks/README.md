@@ -7,16 +7,23 @@ Full plan: [docs/plans/BENCH-1-benchmark-suite.md](../docs/plans/BENCH-1-benchma
 
 ```text
 benchmarks/
-└── micro/              Go abstraction-overhead microbenchmarks (Phase 2)
-    ├── scenario/        shared resource types, Huma route registration, correctness assertions
-    ├── nethttp/         net/http row (no router, no framework)
-    ├── gin/             idiomatic plain-Gin row
-    ├── huma/            bare Huma-over-Gin row
-    └── gombit/           full framework.App row
+├── compose.yml          PostgreSQL only so far (see docs/schema.md)
+├── docs/
+│   └── schema.md        canonical schema/API/envelope every benchmarks/apps/ implementation targets
+├── micro/                Go abstraction-overhead microbenchmarks (Phase 2)
+│   ├── scenario/          shared resource types, Huma route registration, correctness assertions
+│   ├── nethttp/           net/http row (no router, no framework)
+│   ├── gin/               idiomatic plain-Gin row
+│   ├── huma/              bare Huma-over-Gin row
+│   └── gombit/             full framework.App row
+└── apps/                 canonical realistic-application CRUD comparison (Phase 3)
+    ├── shared/             response-shape types common to the Go implementations
+    └── gin-gorm/            primary framework-tax control — see its own README
 ```
 
-Everything else in the suite's target layout (`apps/`, `workloads/`, `scripts/`,
-`config/`, `results/`, `docs/methodology.md`, `compose.yml`, `Makefile`) is
+Everything else in the suite's target layout (`workloads/`, `scripts/`,
+`config/`, `results/`, `docs/methodology.md`, `Makefile`, and the `gombit`,
+`django`, `rails`, `laravel`, `nestjs` implementations under `apps/`) is
 scoped to later phases of the plan above and doesn't exist yet.
 
 ## Running the framework-tax matrix
