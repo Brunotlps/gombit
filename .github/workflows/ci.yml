@@ -215,7 +215,7 @@ jobs:
             'postgres://gombit:gombit@127.0.0.1:5432/gombit_bench_gombit?sslmode=disable'
 
       - name: Setup Python
-        uses: actions/setup-python@v6
+        uses: actions/setup-python@v7
         with:
           python-version: "3.12"
           cache: pip
