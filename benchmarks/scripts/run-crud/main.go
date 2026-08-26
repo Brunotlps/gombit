@@ -50,6 +50,7 @@ type runConfig struct {
 	outDir           string
 	postgresVersion  string
 	resourceLimits   string
+	k6Image          string
 }
 
 // k6Runner runs the workload once at vus concurrency for duration; a non-empty
@@ -61,10 +62,10 @@ type k6Runner func(vus int, duration, summaryPath string) error
 func main() {
 	var (
 		cfg      runConfig
-		k6Image  = flag.String("k6-image", "grafana/k6:0.55.0", "pinned k6 image (the load generator)")
 		workload = flag.String("workload", "benchmarks/workloads/crud-list.js", "k6 workload script")
 		conc     = flag.String("concurrency", "1,10,100", "comma-separated concurrency levels (VUs)")
 	)
+	flag.StringVar(&cfg.k6Image, "k6-image", "grafana/k6:0.55.0", "pinned k6 image (the load generator); recorded as benchmark_tool")
 	flag.StringVar(&cfg.targetURL, "target-url", "", "the app's GET list endpoint, e.g. http://127.0.0.1:8081/api/projects?page=1&limit=20")
 	flag.StringVar(&cfg.framework, "framework", "", "framework name for the result rows, e.g. gin-gorm")
 	flag.StringVar(&cfg.frameworkVersion, "framework-version", "", "framework version")
@@ -100,7 +101,7 @@ func main() {
 		fatalf("resolve out dir: %v", err)
 	}
 
-	if err := run(cfg, dockerK6Runner(*k6Image, workloadAbs, cfg.targetURL)); err != nil {
+	if err := run(cfg, dockerK6Runner(cfg.k6Image, workloadAbs, cfg.targetURL)); err != nil {
 		fatalf("%v", err)
 	}
 }
@@ -155,12 +156,15 @@ func run(cfg runConfig, k6run k6Runner) error {
 		PostgresVersion:   cfg.postgresVersion,
 		FrameworkVersions: map[string]string{cfg.framework: cfg.frameworkVersion},
 		RuntimeVersions:   map[string]string{cfg.runtimeName: cfg.runtimeVersion},
-		BenchmarkTool:     "k6",
-		ResourceLimits:    cfg.resourceLimits,
-		DurationSeconds:   durationSeconds(cfg.duration),
-		WarmupSeconds:     durationSeconds(cfg.warmup),
-		Concurrency:       cfg.concurrency,
-		Trials:            cfg.trials,
+		// The actual load-generator image that ran, not a bare "k6" token —
+		// issue #141's reproducibility metadata requires the benchmark-tool
+		// version, and overriding -k6-image must be reflected here.
+		BenchmarkTool:   cfg.k6Image,
+		ResourceLimits:  cfg.resourceLimits,
+		DurationSeconds: durationSeconds(cfg.duration),
+		WarmupSeconds:   durationSeconds(cfg.warmup),
+		Concurrency:     cfg.concurrency,
+		Trials:          cfg.trials,
 	})
 	if err := writeOutputs(cfg.outDir, cfg.framework, rows, meta); err != nil {
 		return err

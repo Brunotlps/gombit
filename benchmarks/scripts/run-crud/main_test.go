@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/gombit-dev/gombit/benchmarks/internal/result"
@@ -98,8 +99,9 @@ func TestRunWritesAndAccumulatesAcrossFrameworks(t *testing.T) {
 
 	for _, fw := range []string{"gin-gorm", "gombit"} {
 		cfg := runConfig{
-			targetURL: "http://unused", framework: fw, concurrency: []int{10},
-			duration: "1s", warmup: "1s", trials: 1, outDir: dir,
+			targetURL: "http://unused", framework: fw, frameworkVersion: "v" + fw,
+			concurrency: []int{10}, duration: "1s", warmup: "1s", trials: 1,
+			outDir: dir, k6Image: "grafana/k6:0.55.0",
 		}
 		if err := run(cfg, k6run); err != nil {
 			t.Fatalf("run(%s) = %v", fw, err)
@@ -121,5 +123,19 @@ func TestRunWritesAndAccumulatesAcrossFrameworks(t *testing.T) {
 	}
 	if !frameworks["gin-gorm"] || !frameworks["gombit"] {
 		t.Errorf("second run truncated the first: frameworks = %v", frameworks)
+	}
+
+	// metadata records the ACTUAL k6 image that ran (not a bare "k6"), and the
+	// version maps accumulate both frameworks across the two runs.
+	meta, err := os.ReadFile(filepath.Join(dir, "metadata.json")) //nolint:gosec // dir is t.TempDir()
+	if err != nil {
+		t.Fatalf("read metadata.json: %v", err)
+	}
+	s := string(meta)
+	if !strings.Contains(s, `"benchmark_tool": "grafana/k6:0.55.0"`) {
+		t.Errorf("metadata benchmark_tool is not the k6 image that ran:\n%s", s)
+	}
+	if !strings.Contains(s, `"gin-gorm": "vgin-gorm"`) || !strings.Contains(s, `"gombit": "vgombit"`) {
+		t.Errorf("metadata framework_versions did not accumulate both runs:\n%s", s)
 	}
 }

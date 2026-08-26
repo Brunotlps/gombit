@@ -1199,30 +1199,37 @@ the next slices.**
 
 - `benchmarks/workloads/crud-list.js`: the headline `GET /api/projects?page=1&limit=20`
   workload (issue §"Required headline workload"), run by the pinned k6 image
-  (`grafana/k6:0.55.0` — the load generator runs in its own container, off the
-  application host, satisfying issue §"Load generator"). It is the *measured*
-  run only (constant VUs for the duration); warm-up is a separate short
-  invocation whose summary the orchestrator discards, so no warm-up traffic
-  pollutes the metrics. `handleSummary` writes a compact machine-readable
-  summary (throughput, p50/p95/p99, HTTP errors, failed content checks).
-- `benchmarks/internal/k6`: parses that summary into the load-generator-derived
-  fields of a `result.Result` (`Merge` keeps the identity/config fields the
-  orchestrator set), plus `Summary.Validate` — a trial with no traffic (target
-  unreachable), any HTTP error, or any failed content check is a failed
-  measurement, not a valid row. Unit-tested, including that k6's
-  `http_req_failed` Rate reports the *failed* count as `passes` not `fails`
-  (found by running it live — an all-200 run reported `passes:0, fails:<total>`,
-  so an earlier draft recorded every success as an error).
+  (`grafana/k6:0.55.0`) in a container on the host network, on the **same
+  machine** as the app (the issue's "another container on the same host"). It
+  uses an explicit closed-loop `constant-vus` executor (`gracefulStop: 0s`) at
+  the concurrency level — the concurrency sweep is a client-count axis — with
+  the resulting **coordinated omission** documented (the issue's constant-rate
+  OR document path), not hidden. Measured run only; warm-up is a separate short
+  invocation the orchestrator discards. `handleSummary` dumps k6's **raw**
+  `{metrics, state}` — no interpretation in JavaScript.
+- `benchmarks/internal/k6`: parses that raw summary into the
+  load-generator-derived fields of a `result.Result` — including `DurationSeconds`
+  from the actual elapsed `state.testRunDurationMs` (not the flag), the
+  percentiles, and the `http_req_failed` Rate whose *failed* count is `passes`
+  not `fails` — with `Merge` keeping the orchestrator's identity/config fields,
+  and `Summary.Validate` rejecting any trial with no traffic, HTTP errors, or
+  failed content checks. Unit-tested against two **real captured k6 goldens**
+  (`testdata/`, all-200 and all-refused); the all-refused golden (`passes ==
+  count`) is what pins the inversion a one-token change would otherwise break.
 - `benchmarks/scripts/run-crud` + `make benchmark-crud`: against one
   already-running, already-seeded implementation, warms up, measures `TRIALS`
   times at each concurrency level from `versions.env`, validates every trial,
-  and writes `results/latest/{results.json,results.csv,metadata.json}` + the
-  raw k6 summaries. Verified end to end against `benchmarks/apps/gin-gorm`: a
-  clean run records `errors:0` rows; an unreachable target fails the command
-  (exit 1, "N of N requests failed") with no results written, rather than
-  recording a bogus 100%-error row. The k6 container runs as the invoking uid
-  so the mounted summary file is writable. `cpu_percent`/`rss_bytes` stay 0 —
-  per-app footprint is Phase 6, and this engine doesn't manage the app process.
+  and **merges** the rows into `results/latest/{results.json,results.csv,metadata.json}`
+  (+ raw k6 summaries) by framework key — re-running one framework replaces its
+  rows, others kept, so the six-app loop accumulates. `metadata.benchmark_tool`
+  records the actual k6 image that ran, and `metadata.resource_limits` honestly
+  says "not applied" (this engine starts/constrains nothing). Verified end to
+  end against `benchmarks/apps/gin-gorm`: a clean run records `errors:0` rows
+  and `duration_seconds ≈ 3.001` for a 3s run; an unreachable target fails the
+  command (exit 1, "N of N requests failed") with **nothing written**. The k6
+  container runs as the invoking uid so the mounted summary file is writable.
+  `cpu_percent`/`rss_bytes` stay 0 — per-app footprint (and enforcing/observing
+  the §7 limits) is the compose loop / Phase 6, not this engine.
 - **Still open in Phase 5:** the loop that brings all six apps up under compose
   (with the §7 resource limits) and runs `run-crud` over each; the auth,
   TechEmpower-inspired, and concurrency-sweep workloads below; and the
@@ -1265,6 +1272,20 @@ findings, all real, fixed.
   honest "not applied (run-crud does not start or constrain the app)"; the
   compose loop that actually enforces and observes the §7 limits is the next
   slice.
+
+**Post-landing correction, round 2 (review on PR #184,
+github.com/gombit-dev/gombit/pull/184#pullrequestreview-5035408343):** two
+metadata-path gaps, both fixed. (1) `run()` recorded `benchmark_tool: "k6"` — a
+bare token, not the image it exec'd — so overriding `-k6-image` left the
+reproducibility file describing the wrong tool version. Put the image on
+`runConfig` and record it; a test asserts `metadata.json`'s `benchmark_tool` is
+the actual image and that the version maps accumulate across two framework
+runs. (2) The Phase 5 "done" bullets above still described the first-commit
+engine ("off the application host", an interpreted `handleSummary`); rewritten
+to match the code (same-machine topology, `constant-vus` + documented CO, raw
+`{metrics,state}` dump, merge-by-framework, honest `benchmark_tool`/
+`resource_limits`) so the prose someone copies into methodology is accurate on
+its own, not only in the correction below it.
 
 - Gombit-only auth-overhead benchmark: no-auth / JWT / cookie-session /
   cookie+CSRF variants of `GET /api/me` and `POST /api/projects`
