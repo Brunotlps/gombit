@@ -17,14 +17,16 @@ benchmarks/
 │   ├── huma/              bare Huma-over-Gin row
 │   └── gombit/             full framework.App row
 └── apps/                 canonical realistic-application CRUD comparison (Phase 3)
-    ├── shared/             response-shape types common to the Go implementations
-    └── gin-gorm/            primary framework-tax control — see its own README
+    ├── shared/             response-shape + seed-content types common to both Go implementations
+    ├── gin-gorm/            primary framework-tax control — see its own README
+    ├── gombit/              real Gombit app (Huma, Atlas migrations) — see its own README
+    └── fairness_test.go     cross-implementation check: builds and runs both real binaries, compares over HTTP
 ```
 
 Everything else in the suite's target layout (`workloads/`, `scripts/`,
-`config/`, `results/`, `docs/methodology.md`, `Makefile`, and the `gombit`,
-`django`, `rails`, `laravel`, `nestjs` implementations under `apps/`) is
-scoped to later phases of the plan above and doesn't exist yet.
+`config/`, `results/`, `docs/methodology.md`, `Makefile`, and the `django`,
+`rails`, `laravel`, `nestjs` implementations under `apps/`) is scoped to
+later phases of the plan above and doesn't exist yet.
 
 ## Running the framework-tax matrix
 

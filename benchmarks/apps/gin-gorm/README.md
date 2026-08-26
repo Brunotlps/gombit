@@ -31,10 +31,9 @@ Env vars (all optional, defaults match `benchmarks/compose.yml`):
 ## Test
 
 ```sh
-# pure unit tests (seed content formulas) — no DB, no build tag
-go test ./benchmarks/apps/gin-gorm/...
-
-# full suite, needs a live PostgreSQL instance
+# needs a live PostgreSQL instance — this package has no non-integration
+# test files of its own; the seed-content formulas it shares with gombit
+# are tested once in benchmarks/apps/shared
 docker compose -f benchmarks/compose.yml up -d postgres
 go test -tags integration ./benchmarks/apps/gin-gorm/... \
   -database.dsn "postgres://gombit:gombit@127.0.0.1:55432/gombit_bench?sslmode=disable"
@@ -58,19 +57,24 @@ boundary; query-count regression guards for both a non-empty page
 (`TestListDoesNotN1`, exactly 3 SQL statements — count, page, one batched
 owner `IN (...)` preload, not one owner query per row) and an empty one
 (`TestListDoesNotN1EmptyPage`, exactly 2 — no rows means no owners to
-preload); and the seed contract itself — deterministic content formulas
-(`TestSeedContentIsDeterministic`, `TestProjectOwnerIDRoundRobin`, no DB
-needed) and the real truncate-then-seed path run twice at reduced scale to
-confirm it's idempotent rather than accumulating duplicate data
-(`TestSeedDatabaseNIsIdempotentAndCorrect`).
+preload); and the seed contract's own DB-backed half — the real
+truncate-then-seed path run twice at reduced scale to confirm it's
+idempotent rather than accumulating duplicate data
+(`TestSeedDatabaseNIsIdempotentAndCorrect`). The seed content formulas
+themselves (`UserEmail`, `ProjectOwnerID`, ...) and their pure,
+no-database tests (`TestSeedContentIsDeterministic`,
+`TestProjectOwnerIDRoundRobin`) live in
+[../shared](../shared) — shared with `gombit` so the two apps can't
+silently seed different content for the same row N.
 
 ## Status
 
-Schema, seed, and this control app are done. Still open (tracked in
-[docs/plans/BENCH-1-benchmark-suite.md](../../../docs/plans/BENCH-1-benchmark-suite.md)
-Phase 3): the `gombit` app implementing the same API, and the
-cross-implementation fairness checks (same route surface, same JSON shape,
-same query count) that only make sense once a second implementation exists
-to compare against. `benchmarks/compose.yml` currently only runs the
-`postgres` service; an app service for this container is added once
-resource-limit parity across implementations is being measured, not before.
+Schema, seed, this control app, the `gombit` app implementing the same API,
+and the cross-implementation fairness check comparing them are all done
+(tracked in [docs/plans/BENCH-1-benchmark-suite.md](../../../docs/plans/BENCH-1-benchmark-suite.md)
+Phase 3). See [../gombit/README.md](../gombit/README.md) for the Gombit-side
+details, including one discovered framework gap and two bugs the fairness
+comparison caught. Still open: wiring the fairness check into automated CI
+(it needs both databases at the full canonical 1,000/100,000 scale, deferred
+to Phase 8's lighter-seed CI work) and `benchmarks/compose.yml` app services
+for both apps — currently only the `postgres` service runs.

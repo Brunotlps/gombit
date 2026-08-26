@@ -439,22 +439,167 @@ instead of naming the framework function first — the ambiguity was real
 even though the bug wasn't, and it's a one-time fix to stop tripping the
 same misread again.
 
-**Phase 3b — still open:**
+**Phase 3b — the `gombit` app and cross-implementation fairness checks — done
+(CI wiring for the fairness check itself deferred to Phase 8; see below).**
 
-- `benchmarks/apps/gombit`: the same canonical API as a normal Gombit app
-  (Huma handlers, `framework.App`, Atlas migrations, production mode).
-- Cross-implementation fairness checks (issue §15/§16) — same route
-  surface, same paginated record count, same ordered IDs for a known query
-  — which need a second implementation to compare against and so couldn't
-  land in 3a. `TestListDoesNotN1` (3a) is the query-count half of this,
-  already passing for gin-gorm alone.
-- `benchmarks/compose.yml` app services for both apps, with resource
-  limits.
+- `benchmarks/apps/gombit/internal/project`: the canonical API as a normal
+  Gombit app — Huma handlers, `framework.App`, GORM, using
+  `benchmarks/apps/shared`'s response types for the success envelope and
+  Gombit's own `contract`/`database` packages for error mapping,
+  unmodified (issue "do not bypass ... normal Gombit response handling").
+- Real Atlas migration (`gombit db makemigrations`/`migrate`, AGENTS.md D3
+  — not `AutoMigrate`), committed under
+  `benchmarks/apps/gombit/database/migrations/`. Verified the generated
+  DDL is structurally identical to `gin-gorm`'s `AutoMigrate` output down
+  to the auto-generated index names (`idx_users_email`,
+  `idx_projects_owner_id`, `idx_projects_created_at`,
+  `fk_projects_owner`) — both use the same `gormschema` code underneath,
+  just through different appliers.
+- **Two real bugs caught by testing against the live control, not just
+  against the spec:**
+  - Huma defaults `POST` to 200; `gin-gorm` returns 201. Fixed with
+    `huma.Operation.DefaultStatus`.
+  - Gombit's own `API.Prefix` default is `/api/v1`; the canonical route
+    spec and `gin-gorm` both use `/api` with no version segment. Left at
+    the framework default, this app's route surface would not have
+    matched its own control's. Fixed by setting `cfg.API.Prefix = "/api"`
+    explicitly in `main.go`.
+- **One discovered, deliberately unpatched framework gap:**
+  `database.MapPersistError` only special-cases unique-constraint
+  violations, so `POST /api/projects` with a nonexistent `owner_id` (a
+  foreign-key violation) falls through to 500 `internal`, unlike
+  `gin-gorm`'s 422. Not fixed here — issue #141 requires using Gombit's
+  normal public APIs as-is, and this app's whole point is measuring what a
+  real Gombit user gets today, warts included. Pinned by
+  `TestCreateInvalidOwnerIDReturnsInternalError` so a future framework fix
+  (or regression) shows up as an expected test change; see
+  `benchmarks/apps/gombit/README.md` for the full writeup. Fixing
+  `database.MapPersistError` is out of scope for BENCH-1 — worth its own
+  follow-up issue against the `database` package.
+- `internal/project`'s own integration suite (`TestCRUDRoundTrip`,
+  blank-name rejection on create and update, pagination/ordering, the
+  3-query/2-query N+1 guard via mutating `app.DB().Logger` — `gorm.DB`
+  embeds `*Config` by pointer, so this affects every query the app
+  instance issues without needing a second `database.DB`) mirrors
+  `gin-gorm`'s suite test-for-test, gated behind `-tags integration` the
+  same way, wired into the same CI job against a third database
+  (`gombit_bench_gombit`, since this app's Atlas-migrated tables shouldn't
+  share a database with `gin-gorm`'s `AutoMigrate`'d ones either).
+  Verified the full CI recipe (create database, install Atlas, `gombit db
+  migrate`, run tests) locally against a freshly created database, not
+  just written and assumed correct.
+- `benchmarks/apps/fairness_test.go`: `TestCrossImplementationFairness`
+  builds and runs both real binaries (subprocess + HTTP, not shared Go
+  internals — gin-gorm is `package main`, and this is also the only shape
+  of comparison that will still work once Phase 4 adds
+  Django/Rails/Laravel/NestJS) against their own already-seeded databases
+  and checks: identical paginated content and ordering for the canonical
+  seed (timestamps excluded — each binary was seeded at a different real
+  time), and identical 404 behavior for a nonexistent id. Passes,
+  verified twice for flakiness, with confirmed clean subprocess teardown.
+  **Not yet wired into routine PR CI**: it needs both databases seeded at
+  the full canonical 1,000/100,000 scale, which is heavier than what
+  belongs in a PR smoke job — needs the lighter seed-size mechanism
+  Phase 8 (CI integration, smoke vs. full) already anticipates. Verified
+  locally in this phase instead.
 - **AC:** `make benchmark-crud` runs Gombit and Gin+GORM against the same
   Postgres instance and produces comparable `results.json` rows; fairness
-  tests fail loudly on route/shape/query-count divergence. Not yet
-  satisfied — `results.json` also still depends on Phase 1's open
-  result-schema/summarizer work.
+  tests fail loudly on route/shape/query-count divergence. The fairness
+  check itself is done and passing; `make benchmark-crud` and
+  `results.json` still depend on Phase 1's open result-schema/summarizer
+  work and are not yet satisfied.
+- `benchmarks/compose.yml` app services for both apps — still open, moved
+  to a follow-up alongside Phase 8's CI work.
+
+**Post-landing correction (review on PR #177, github.com/gombit-dev/gombit/pull/177#pullrequestreview-5026216966):**
+one claim checked and found incorrect, three real gaps fixed:
+
+- Claimed the child-process env override in `startApp` (`cmd.Env =
+  append(cmd.Environ(), "DATABASE_URL="+dsn, ...)`) loses to a
+  pre-existing `DATABASE_URL` in the parent's environment, because
+  `os.Getenv` returns the first match. Checked at the source rather than
+  argued about: `syscall`'s `copyenv()` does document first-occurrence-wins
+  for a process's *own* already-received environ — but `os/exec.Cmd.Start`
+  calls `dedupEnv` before ever calling `execve`, and that function's own
+  comment says "Construct the output in reverse order, to preserve the
+  *last* occurrence of each key." Verified directly with a real child Go
+  binary reading via `os.Getenv` while the parent had `DATABASE_URL` set to
+  a different value — the appended override won, every time. No code
+  change; added a comment at the call site citing the exact source so the
+  same claim doesn't recur.
+- `TestCrossImplementationFairness` compared the two implementations'
+  pages to each other but never against the actual canonical dataset —
+  two empty, unseeded (but migrated) databases would return matching
+  `{total:0, data:[]}` on both sides and pass. Confirmed by literally
+  reproducing it: pointed the test at two fresh, Atlas-migrated-but-never-seeded
+  databases before the fix (would have passed) and after (fails with
+  `meta.total = 0, want 100000`). Fixed by adding `assertCanonicalSeed`,
+  checking each side independently against `shared.SeedProjectCount`,
+  `shared.ProjectName`, `shared.ProjectOwnerID`, and page size *before*
+  the relative comparison runs.
+- `createProjectBody.OwnerID` had no lower bound, so `{"owner_id":0,...}`
+  — a present, well-typed field, not the "nonexistent id" case
+  `TestCreateInvalidOwnerIDReturnsInternalError` documents — passed Huma
+  validation and hit the same FK-violation 500. gin-gorm's
+  `binding:"required"` already rejects this input (Gin's `required`
+  treats a non-pointer `uint` zero value as absent), so this was a real,
+  fixable asymmetry, not another instance of the discovered
+  `database.MapPersistError` gap. Fixed with `minimum:"1"` on `OwnerID`;
+  verified live that `owner_id:0` now 422s while `owner_id:999999` still
+  500s — two different inputs, two different (and now each individually
+  correct) outcomes. Added `TestCreateRejectsZeroOwnerID`.
+- `benchmarks/apps/gombit`'s `seedDatabaseN` was copied from `gin-gorm`
+  without the idempotency test an earlier review round added specifically
+  because the seed contract had no automated coverage
+  (`TestSeedDatabaseNIsIdempotentAndCorrect`). Added the same test for
+  `gombit` (`benchmarks/apps/gombit/main_test.go`), verified passing
+  against real Postgres.
+- `benchmarks/apps/gin-gorm/README.md` still described Phase 3b (the
+  `gombit` app, the fairness check) as future work, and its Test section
+  still pointed at `TestSeedContentIsDeterministic`/
+  `TestProjectOwnerIDRoundRobin` as if they were still gin-gorm's own —
+  they moved to `shared` in this same PR. Updated both.
+
+**Post-landing correction, round 2 (review on PR #177,
+github.com/gombit-dev/gombit/pull/177#pullrequestreview-5026402067):** one
+real, blocking gap, confirmed by reproducing the failure rather than taking
+the claim on faith.
+
+- Claim: `go test -tags integration ./benchmarks/apps/gombit/...` expands to
+  two packages — `benchmarks/apps/gombit` (`main_test.go`, added in round 1)
+  and `benchmarks/apps/gombit/internal/project` (`handler_test.go`) — each
+  compiled to its own test binary, and both `TRUNCATE TABLE projects, users
+  RESTART IDENTITY CASCADE` at the start of every test against the same
+  `gombit_bench_gombit` database. `go test` runs different packages' test
+  binaries in parallel by default (bounded by `-p`, which defaults to
+  `GOMAXPROCS`), so one package's `TRUNCATE` can land mid-assertion in the
+  other. CI being green doesn't rule this out — it's a race, not a
+  deterministic failure.
+- Verified true two ways. First, built both packages' test binaries
+  separately (`go test -tags integration -c`) and ran them concurrently
+  against one throwaway, freshly Atlas-migrated database: 15/15 runs failed,
+  every time on the expected symptom (`TestSeedDatabaseNIsIdempotentAndCorrect`
+  or `TestCRUDRoundTrip` seeing row counts/content from the other package's
+  concurrent truncate). Second — to rule out an artifact of manually racing
+  the binaries — ran the actual documented command,
+  `go test -tags integration ./benchmarks/apps/gombit/...`, 25 times
+  unmodified against a fresh throwaway database: 2/25 failed with the same
+  symptom, confirming it reproduces (intermittently, as expected of a race)
+  through `go test`'s own scheduling, not just under contrived concurrency.
+- Fixed with the reviewer's own "cheapest, honest" option: added `-p 1` to
+  the CI step (`.github/workflows/ci.yml`), the `benchmarks/apps/gombit`
+  README recipe, and `internal/project/handler_test.go`'s doc-comment
+  recipe, each with a comment explaining why it's load-bearing rather than
+  a style choice. Chose this over moving the seed test into
+  `internal/project` (the reviewer's "better" alternative) because
+  `seedDatabaseN` is unexported in `package main` alongside `main.go`,
+  mirroring where a real generated Gombit app's seed command would live —
+  moving it would misrepresent that layout, and `internal/project` can't
+  import `package main` to reuse it without a cycle in the wrong direction.
+  A third database (the reviewer's "heavier than the bug" fallback) was not
+  needed. Verified the fix at the same rigor as the failure: 25/25 passes
+  with `-p 1` added to the identical command that failed 2/25 times without
+  it, against the same throwaway database.
 
 ### Phase 4 — Remaining competitor apps (Django, Rails, Laravel, NestJS)
 

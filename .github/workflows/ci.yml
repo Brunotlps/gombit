@@ -179,6 +179,41 @@ jobs:
             -database.dsn \
             'postgres://gombit:gombit@127.0.0.1:5432/gombit_bench?sslmode=disable'
 
+      # A third, separate database: the gombit benchmark app applies its
+      # schema via a real Atlas migration (committed under
+      # benchmarks/apps/gombit/database/migrations/), not AutoMigrate, so it
+      # can't safely share gombit_bench's already-AutoMigrate'd tables
+      # either.
+      - name: Create gombit benchmark app database
+        run: |
+          PGPASSWORD=gombit psql -h 127.0.0.1 -U gombit -d gombit \
+            -c 'CREATE DATABASE gombit_bench_gombit;'
+
+      - name: Install Atlas CLI
+        run: curl -sSf https://atlasgo.sh | sh -s -- --community
+
+      - name: Apply gombit benchmark app migration
+        working-directory: benchmarks/apps/gombit
+        env:
+          GOMBIT_DATABASE_DRIVER: postgres
+          GOMBIT_DATABASE_DSN: postgres://gombit:gombit@127.0.0.1:5432/gombit_bench_gombit?sslmode=disable
+        run: go run github.com/gombit-dev/gombit/cmd/gombit db migrate
+
+      # -p 1: this expands to two packages (benchmarks/apps/gombit and its
+      # internal/project), each a separate test binary that TRUNCATEs the
+      # same gombit_bench_gombit tables at the start of every test. go test
+      # runs different packages' binaries in parallel by default (bounded by
+      # -p, which defaults to GOMAXPROCS) — reproduced locally by racing the
+      # two binaries against one database directly: both failed on every one
+      # of 15 runs (one package's TRUNCATE landing mid-assertion in the
+      # other). -p 1 serializes the two binaries so only one truncates the
+      # shared tables at a time.
+      - name: Run gombit benchmark app integration tests
+        run: |
+          go test -tags integration -p 1 ./benchmarks/apps/gombit/... \
+            -database.dsn \
+            'postgres://gombit:gombit@127.0.0.1:5432/gombit_bench_gombit?sslmode=disable'
+
   database-mysql:
     name: Database (mysql)
     needs: test
