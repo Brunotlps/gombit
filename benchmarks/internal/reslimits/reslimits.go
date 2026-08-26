@@ -11,10 +11,14 @@
 // Swarm-mode stack, an older Compose (v1, and early v2 that needed
 // `--compatibility`), or a host missing the required cgroup controllers can
 // leave the container unlimited. So the evidence is the *running container*,
-// not the file. This package reads what the kernel actually gave the container
+// not the file. This package reads the limits Docker recorded for the container
 // (via `docker inspect`'s HostConfig — NanoCpus and Memory, where 0 means
-// unlimited) and classifies it against the intended budget, producing the
-// honest string that lands in a run's metadata.resource_limits.
+// unlimited). These are the daemon's post-adapt create config, not a read of
+// `/sys/fs/cgroup`, but the daemon zeroes or rejects a limit it cannot apply,
+// so reading them back is an honest signal that an intended ceiling was
+// dropped. It classifies them against the intended budget, producing the honest
+// string a run can record as metadata.resource_limits (that wiring is a later
+// slice; today the string is produced and printed, not yet auto-recorded).
 package reslimits
 
 import (

@@ -35,7 +35,7 @@ import (
 	"github.com/gombit-dev/gombit/benchmarks/internal/result"
 )
 
-const resourceLimitsNotApplied = "not applied (run-crud does not start or constrain the app; app runs outside compose)"
+const resourceLimitsNotApplied = "not applied (run-crud does not start or constrain the app; pass -resource-limits with an inspect-limits verdict to record a verified ceiling)"
 
 type runConfig struct {
 	targetURL        string

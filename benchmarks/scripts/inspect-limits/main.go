@@ -1,23 +1,27 @@
 // Command inspect-limits reports whether a running container actually received
 // the resource ceiling the benchmark intended (issue #141 §7 requires the suite
 // to "detect and report that fact rather than silently pretending limits were
-// applied"). It reads the container's applied limits from `docker inspect` and
-// classifies them against the intended budget via benchmarks/internal/reslimits,
-// printing the honest resource_limits string the compose loop records in run
-// metadata.
+// applied"). It reads the limits Docker recorded for the container from
+// `docker inspect` and classifies them against the intended budget via
+// benchmarks/internal/reslimits, printing the honest verdict.
 //
 //	# after `docker compose ... up -d gin-gorm`:
 //	go run ./benchmarks/scripts/inspect-limits \
 //	  -container benchmarks-gin-gorm-1 -cpus 2 -memory 1g
 //
-// With -strict it exits non-zero when the budget was not enforced, so a
-// bring-up script can refuse to record numbers gathered under the wrong limits.
+// This command only *prints* the verdict. Wiring the string into what a run
+// records as metadata.resource_limits — automatically in the six-app compose
+// loop, or by hand via `run-crud -resource-limits "$(inspect-limits …)"` — is a
+// later slice. With -strict it exits non-zero unless the budget was fully
+// enforced, so a bring-up script can refuse to record numbers gathered under
+// the wrong limits.
 package main
 
 import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 
@@ -25,53 +29,65 @@ import (
 )
 
 func main() {
-	container := flag.String("container", "", "container name or id to inspect (required)")
-	cpus := flag.Float64("cpus", 0, "intended CPU ceiling in whole vCPUs (issue §7: 2)")
-	memory := flag.String("memory", "", "intended memory ceiling, compose-style (issue §7: 1g app / 2g postgres)")
-	inspectFile := flag.String("inspect-file", "", "read `docker inspect` JSON from this file instead of running docker (testing/offline)")
-	format := flag.String("format", "string", "output: string | json")
-	strict := flag.Bool("strict", false, "exit non-zero unless the budget was fully enforced")
-	flag.Parse()
+	os.Exit(run(os.Args[1:], os.Stdout, os.Stderr))
+}
+
+// run parses args, classifies the container's limits, writes the verdict, and
+// returns a process exit code (0 ok, 1 not-enforced under -strict, 2 usage or
+// runtime error). It is separated from main so the -strict fail-closed contract
+// and the output formats are testable via the -inspect-file seam.
+func run(args []string, stdout, stderr io.Writer) int {
+	fs := flag.NewFlagSet("inspect-limits", flag.ContinueOnError)
+	fs.SetOutput(stderr)
+	container := fs.String("container", "", "container name or id to inspect (required)")
+	cpus := fs.Float64("cpus", 0, "intended CPU ceiling in whole vCPUs (issue §7: 2)")
+	memory := fs.String("memory", "", "intended memory ceiling, compose-style (issue §7: 1g app / 2g postgres)")
+	inspectFile := fs.String("inspect-file", "", "read `docker inspect` JSON from this file instead of running docker (testing/offline)")
+	format := fs.String("format", "string", "output: string | json")
+	strict := fs.Bool("strict", false, "exit non-zero unless the budget was fully enforced")
+	if err := fs.Parse(args); err != nil {
+		return 2
+	}
 
 	if *container == "" {
-		fatalf("set -container=<name|id>")
+		return usage(stderr, "set -container=<name|id>")
 	}
 	if *cpus <= 0 || *memory == "" {
-		fatalf("set the intended budget: -cpus and -memory")
+		return usage(stderr, "set the intended budget: -cpus and -memory")
 	}
 	memBytes, err := reslimits.ParseBytes(*memory)
 	if err != nil {
-		fatalf("-memory: %v", err)
+		return usage(stderr, fmt.Sprintf("-memory: %v", err))
 	}
-	budget := reslimits.Budget{CPUs: *cpus, MemoryBytes: memBytes}
+	if *format != "string" && *format != "json" {
+		return usage(stderr, fmt.Sprintf("-format must be string or json, got %q", *format))
+	}
 
 	raw, err := inspect(*container, *inspectFile)
 	if err != nil {
-		fatalf("%v", err)
+		return fail(stderr, err.Error())
 	}
 	applied, err := reslimits.ParseInspect(raw)
 	if err != nil {
-		fatalf("%v", err)
+		return fail(stderr, err.Error())
 	}
-	report := reslimits.Classify(*container, budget, applied)
+	report := reslimits.Classify(*container, reslimits.Budget{CPUs: *cpus, MemoryBytes: memBytes}, applied)
 
-	switch *format {
-	case "json":
-		enc := json.NewEncoder(os.Stdout)
+	if *format == "json" {
+		enc := json.NewEncoder(stdout)
 		enc.SetIndent("", "  ")
 		if err := enc.Encode(report); err != nil {
-			fatalf("encode: %v", err)
+			return fail(stderr, fmt.Sprintf("encode: %v", err))
 		}
-	case "string":
-		fmt.Println(report.String())
-	default:
-		fatalf("-format must be string or json, got %q", *format)
+	} else {
+		_, _ = fmt.Fprintln(stdout, report.String())
 	}
 
 	if *strict && report.Status != reslimits.Enforced {
-		fmt.Fprintf(os.Stderr, "inspect-limits: budget not enforced (%s)\n", report.Status)
-		os.Exit(1)
+		_, _ = fmt.Fprintf(stderr, "inspect-limits: budget not enforced (%s)\n", report.Status)
+		return 1
 	}
+	return 0
 }
 
 // inspect returns the `docker inspect` JSON for container, or reads it from
@@ -87,7 +103,12 @@ func inspect(container, file string) ([]byte, error) {
 	return out, nil
 }
 
-func fatalf(format string, args ...any) {
-	fmt.Fprintf(os.Stderr, "inspect-limits: "+format+"\n", args...)
-	os.Exit(1)
+func usage(w io.Writer, msg string) int {
+	_, _ = fmt.Fprintf(w, "inspect-limits: %s\n", msg)
+	return 2
+}
+
+func fail(w io.Writer, msg string) int {
+	_, _ = fmt.Fprintf(w, "inspect-limits: %s\n", msg)
+	return 2
 }

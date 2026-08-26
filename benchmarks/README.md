@@ -17,7 +17,7 @@ benchmarks/
 │   ├── metadata/         reproducibility metadata struct + host/toolchain collector
 │   ├── k6/               parses a crud-list.js summary into result rows (+ Validate)
 │   ├── summary/          aggregates trials into per-group stats + renders summary.md (CoV flag)
-│   └── reslimits/        classifies a container's applied cgroup limits vs the §7 budget (honest detection)
+│   └── reslimits/        classifies a container's Docker-recorded limits (HostConfig) vs the §7 budget (honest detection)
 ├── workloads/
 │   └── crud-list.js      the headline GET /api/projects read workload (k6)
 ├── scripts/
@@ -63,10 +63,18 @@ Those live in `benchmarks/config/versions.env` and are requested via
 an *intention*, not proof the kernel enforced it (older Compose, Swarm mode, or
 a host without the needed cgroup controllers can silently drop it; Compose v2
 does enforce it on a plain `up`). So the suite never trusts the file: after
-bringing a container up, `scripts/inspect-limits` reads the container's applied
-cgroup limits (`docker inspect` → `internal/reslimits`) and classifies them
-against the intended budget — `enforced`, `partial`, or `not applied` — and that
-honest string is what a run records rather than a claim copied from the config.
+bringing a container up, `scripts/inspect-limits` reads the limits Docker
+recorded for the container (`docker inspect`'s `HostConfig.NanoCpus`/`Memory` —
+which the daemon zeroes or rejects when it can't apply them, an honest signal of
+a dropped ceiling) via `internal/reslimits` and classifies them against the
+intended budget — `enforced`, `partial`, or `not applied`.
+
+Today the command **prints** that verdict; nothing yet consumes it. Wiring it
+into what a run records as `metadata.resource_limits` — automatically in the
+six-app compose loop, or by hand via
+`run-crud -resource-limits "$(inspect-limits …)"` — is a later slice. Until
+then `benchmark-crud` records `run-crud`'s own honest default: it starts and
+constrains nothing, so it says "not applied" unless you pass the flag.
 
 ## Result schema and run metadata
 
