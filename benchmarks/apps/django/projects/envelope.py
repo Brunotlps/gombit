@@ -44,26 +44,24 @@ def internal(message):
     return error_response("internal", message, status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
-# _STATUS_CODES covers the D10 categories benchmarks/apps/gin-gorm's own
-# shared.ErrorEnvelope defines (not_found, conflict, validation_error,
-# internal) — the only ones this app's views raise or that DRF's own
-# exception handling produces for routes actually exercised by the fairness
-# suite. A status this app never produces on purpose (e.g. 405) falls back
-# to the nearest bucket by status range rather than inventing a fifth code
-# category no other implementation has.
-_STATUS_CODES = {
-    status.HTTP_404_NOT_FOUND: "not_found",
-    status.HTTP_409_CONFLICT: "conflict",
-    status.HTTP_422_UNPROCESSABLE_ENTITY: "validation_error",
-}
-
-
 def exception_handler(exc, context):
     """Reshapes DRF's own exception responses (malformed JSON body,
     unsupported media type, and anything else rejected before a view method
     runs) into the D10 error envelope, so every error path matches
     benchmarks/docs/schema.md — not just the ones this app's views build
     explicitly via the helpers above.
+
+    D10 fixes the status for each category (not_found -> 404,
+    conflict -> 409, validation_error -> 422, internal -> 500); a category
+    is chosen by *bucketing* DRF's native status (4xx that isn't 404/409 is
+    invalid input, full stop), and the D10 status for that category is what
+    gets returned — never DRF's own native status passed through unchanged.
+    A DRF ParseError (malformed JSON) is native HTTP 400: relabeling its
+    body as "validation_error" while leaving the status at 400 would still
+    not match benchmarks/apps/gin-gorm, which maps the equivalent
+    ShouldBindJSON failure to 422 — issue #141 §15 requires equivalent
+    invalid input to be rejected the same way, and a D10 code with the
+    wrong status is not actually D10.
     """
     response = drf_exception_handler(exc, context)
     if response is None:
@@ -74,7 +72,14 @@ def exception_handler(exc, context):
         return None
 
     if response.status_code >= 500:
-        code = "internal"
-    else:
-        code = _STATUS_CODES.get(response.status_code, "validation_error")
-    return Response({"error": {"code": code, "message": str(exc)}}, status=response.status_code)
+        return internal(str(exc))
+    if response.status_code == status.HTTP_404_NOT_FOUND:
+        return not_found(str(exc))
+    if response.status_code == status.HTTP_409_CONFLICT:
+        return conflict(str(exc))
+    # Every other 4xx DRF itself rejects a request with (malformed JSON,
+    # unsupported media type, method not allowed, throttled, ...) is
+    # invalid input by D10's own category mapping — validation_error is
+    # always 422, not whatever native 4xx DRF's exception type happened to
+    # carry.
+    return validation_error(str(exc))

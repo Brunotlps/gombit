@@ -100,6 +100,15 @@ DELETE /api/projects/{id}
   using a genuinely different fixed-count strategy (e.g. 1 query via a
   join) should document their own count here rather than silently diverging
   from this one while claiming compliance.
+
+  **`benchmarks/apps/django`** uses a genuinely different fixed-count
+  strategy: Django's `select_related("owner")` compiles to a single `JOIN`
+  for the page query, so its shape is **2 queries for both a non-empty and
+  an empty page** (`COUNT` + the joined page `SELECT` — there is no separate
+  batched owner query to skip on an empty page the way `gin-gorm`'s
+  `Preload` has one), verified against real Postgres and enforced by
+  `ProjectListTests.test_list_does_not_n_plus_1[_empty_page]`
+  (`benchmarks/apps/django/projects/tests.py`).
 - Every implementation serializes the same project fields:
   `id, owner_id, owner_name, name, description, created_at, updated_at`
   (`owner_name` is the preloaded relationship's payload — its presence in

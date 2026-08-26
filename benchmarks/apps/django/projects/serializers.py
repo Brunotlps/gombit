@@ -39,7 +39,16 @@ class CreateProjectSerializer(serializers.Serializer):
     # same rejection message instead of DRF's own "may not be blank"
     # short-circuiting just the empty-string case.
     name = serializers.CharField(max_length=255, allow_blank=True, trim_whitespace=False)
-    description = serializers.CharField(required=False, allow_blank=True, default="")
+    # trim_whitespace=False here too: description is a canonical stored
+    # field (benchmarks/docs/schema.md), not decoration — DRF's default
+    # would silently store "hello" for a client-supplied "  hello  " here
+    # while gin-gorm/gombit store it byte-for-byte. Found on review: the
+    # comment on `name` above stated the "don't alter client-provided
+    # strings" invariant but wasn't applied to the other free-text field on
+    # the same serializer.
+    description = serializers.CharField(
+        required=False, allow_blank=True, trim_whitespace=False, default=""
+    )
 
     def validate_name(self, value):
         return _reject_blank(value)
@@ -55,7 +64,9 @@ class UpdateProjectSerializer(serializers.Serializer):
     name = serializers.CharField(
         max_length=255, required=False, allow_blank=True, trim_whitespace=False
     )
-    description = serializers.CharField(required=False, allow_blank=True)
+    description = serializers.CharField(
+        required=False, allow_blank=True, trim_whitespace=False
+    )
 
     def validate_name(self, value):
         return _reject_blank(value)

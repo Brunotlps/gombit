@@ -722,6 +722,66 @@ app service deferred, same as Phase 3a/3b's own still-open items).**
   landed alone before the fairness check existed at all) supports doing
   this as its own follow-up rather than growing this PR further.
 
+**Post-landing correction (review on PR #178,
+github.com/gombit-dev/gombit/pull/178#pullrequestreview-5026651450):** one
+architectural finding accepted and fixed at the root rather than patched
+around, three real gaps closed, all confirmed true before fixing.
+
+- **Accepted and fixed at the root, not patched around:** the first version
+  of `_write_project` (wrapping every create/update in `transaction.atomic()`
+  + `connection.check_constraints()` to force Django's deferred FK check
+  immediately) was a `TestCase`-convenience workaround left on the
+  production write path issue #141 §17 actually benchmarks — an extra
+  `BEGIN`/`SET CONSTRAINTS ALL IMMEDIATE`/`COMMIT` on every `POST`/`PATCH`
+  that gunicorn's real per-request autocommit never needed. Fixed by making
+  the schema match the canonical contract instead:
+  `projects/migrations/0002_owner_fk_not_deferrable.py` drops Django's
+  auto-generated `DEFERRABLE INITIALLY DEFERRED` constraint and recreates it
+  `NOT DEFERRABLE INITIALLY IMMEDIATE`, matching `benchmarks/docs/schema.md`
+  exactly (no `DEFERRABLE` clause — Postgres's own default meaning
+  immediate). `_write_project` removed entirely; `views.py` now does plain
+  `Project.objects.create()`/`.save()`, the same shape as `gin-gorm`'s own
+  handlers. Verified: `psql \d projects` shows no `DEFERRABLE` clause, and
+  `test_create_rejects_nonexistent_owner_id` passes unmodified under
+  `TestCase`'s wrapping transaction. This incidentally also let
+  `SeedDatabaseIsIdempotentAndCorrectTests` revert from `TransactionTestCase`
+  back to plain `TestCase` (verified both pass post-fix) — the same
+  deferred constraint had been the root cause of both symptoms.
+- `description` had no `trim_whitespace=False` on either serializer, unlike
+  `name` (which had it with an explicit comment stating the invariant) — a
+  client-supplied `"  hello  "` was silently stored as `"hello"`, diverging
+  from `gin-gorm`/`gombit`, neither of which trims. Fixed on both
+  `CreateProjectSerializer` and `UpdateProjectSerializer`; verified live
+  (gunicorn) and via a new
+  `test_create_and_update_preserve_description_whitespace`.
+- `envelope.exception_handler` relabeled DRF's own rejected-request bodies
+  (malformed JSON, etc.) with a D10 `code` but kept DRF's native status —
+  a `ParseError` (native 400) became `{"code":"validation_error"}` at
+  status 400, not D10's fixed 422 for that category, so
+  `POST {"` and `gin-gorm`'s equivalent `ShouldBindJSON` failure (422)
+  didn't actually match despite both claiming `validation_error`. Fixed by
+  bucketing DRF's native status into a D10 category first, then always
+  returning *that category's* fixed status, never DRF's native one.
+  Verified live: malformed JSON now 422, not 400.
+- The query-count deviation (2 queries via a JOIN, not `gin-gorm`'s pinned
+  3) was documented only in `benchmarks/apps/django/README.md`;
+  `benchmarks/docs/schema.md` itself — the file its own text says to
+  document a differing count in — didn't mention it, so a future PR
+  extending `fairness_test.go` from the canonical doc alone would have
+  "discovered" this as a surprise. Added to `schema.md` directly. Also
+  fixed a stale claim in the app's own README ("CI wiring... still open")
+  that this same PR had already closed.
+- Test suite asserted status codes but not D10 `error.code`, so an
+  implementation could return the right status with the wrong code (or vice
+  versa) and still pass — exactly the gap that let finding 3 above ship.
+  Added `error.code` assertions to every rejection test
+  (`test_create_rejects_blank_name`, `_zero_owner_id`,
+  `_nonexistent_owner_id`, `test_get_nonexistent_id_is_not_found`,
+  `test_get_non_numeric_id_is_not_found`), plus new
+  `test_create_rejects_malformed_json` and
+  `test_create_and_update_preserve_description_whitespace` covering findings
+  2 and 3 directly. 15 tests total, all passing against real Postgres.
+
 ### Phase 5 — Workload depth: auth overhead, TechEmpower-inspired, concurrency sweep
 
 - Gombit-only auth-overhead benchmark: no-auth / JWT / cookie-session /

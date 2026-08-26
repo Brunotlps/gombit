@@ -1,5 +1,5 @@
 import psycopg.errors
-from django.db import IntegrityError, connection, transaction
+from django.db import IntegrityError
 from rest_framework import status
 from rest_framework.views import APIView
 
@@ -65,42 +65,6 @@ def _map_integrity_error(exc, conflict_message):
     return internal("persist project")
 
 
-def _write_project(write):
-    """Runs `write` (a zero-arg callable that inserts/updates a Project)
-    inside its own atomic block and forces Postgres to check deferred
-    constraints before that block exits, instead of leaving them pending
-    until the enclosing transaction commits.
-
-    Django's Postgres backend always emits foreign keys as DEFERRABLE
-    INITIALLY DEFERRED (django/db/backends/postgresql/operations.py
-    deferrable_sql — not configurable per-field), unlike
-    benchmarks/apps/gin-gorm/gombit's plain, immediately-checked FK. Outside
-    any wrapping transaction (a real request under Django's default
-    per-statement autocommit) this is invisible: the INSERT's own implicit
-    transaction ends immediately after it runs, so Postgres checks the
-    deferred constraint right there anyway. But inside any wrapping
-    transaction — this app's own test suite (TestCase wraps each test in
-    one), or a production deployment with ATOMIC_REQUESTS=True — a
-    foreign-key violation would NOT raise at Project.objects.create()/
-    .save() at all; the INSERT/UPDATE would silently "succeed" until the
-    enclosing transaction finally commits, and the immediate
-    select_related(...).get(...) reload right after would instead raise
-    Project.DoesNotExist (owner_id doesn't match any row, so the JOIN drops
-    it) — an unrelated-looking exception this app has no reason to expect
-    from a reload of a row it just wrote, instead of the IntegrityError
-    _map_integrity_error is built to classify. Verified by reproducing it:
-    removing this wrapper reproduces exactly that DoesNotExist under
-    TestCase; restoring it raises IntegrityError as expected. atomic() also
-    isolates the failure to a savepoint so catching IntegrityError doesn't
-    poison the rest of an enclosing transaction, per Django's own atomic()
-    documentation.
-    """
-    with transaction.atomic():
-        result = write()
-        connection.check_constraints()
-    return result
-
-
 class ProjectListCreateView(APIView):
     def get(self, request):
         page, limit = _clamp_page(_query_int(request, "page", 1), _query_int(request, "limit", 20))
@@ -128,12 +92,10 @@ class ProjectListCreateView(APIView):
             return validation_error("invalid request body", serializer.errors)
 
         try:
-            project = _write_project(
-                lambda: Project.objects.create(
-                    owner_id=serializer.validated_data["owner_id"],
-                    name=serializer.validated_data["name"],
-                    description=serializer.validated_data.get("description", ""),
-                )
+            project = Project.objects.create(
+                owner_id=serializer.validated_data["owner_id"],
+                name=serializer.validated_data["name"],
+                description=serializer.validated_data.get("description", ""),
             )
         except IntegrityError as exc:
             return _map_integrity_error(exc, "project already exists")
@@ -173,7 +135,7 @@ class ProjectDetailView(APIView):
             project.description = serializer.validated_data["description"]
 
         try:
-            _write_project(project.save)
+            project.save()
         except IntegrityError as exc:
             return _map_integrity_error(exc, "project already exists")
 

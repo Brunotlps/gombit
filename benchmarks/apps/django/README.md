@@ -152,8 +152,10 @@ Verified against real PostgreSQL (`psql \d users`, `\d projects`) against
 Django's PostgreSQL backend always emits foreign-key constraints as
 `DEFERRABLE INITIALLY DEFERRED` (`django/db/backends/postgresql/operations.py`
 `deferrable_sql` — a fixed backend-level choice, not a per-field option),
-unlike `gin-gorm`/`gombit`'s plain, immediately-checked FK. Outside of any
-wrapping transaction this is invisible: a request's `INSERT` runs in its own
+unlike `gin-gorm`/`gombit`'s plain, immediately-checked FK
+(`benchmarks/docs/schema.md`'s canonical FK has no `DEFERRABLE` clause at
+all — Postgres's own default, meaning immediate). Outside of any wrapping
+transaction this was invisible: a request's `INSERT` runs in its own
 implicit autocommit transaction, so Postgres checks the deferred constraint
 right there anyway, before that statement finishes.
 
@@ -168,26 +170,32 @@ instead raise `Project.DoesNotExist` — the row's `owner_id` doesn't match any
 expect from reloading a row it just wrote, and not the `IntegrityError`
 `_map_integrity_error` (`projects/views.py`) is built to classify.
 
-Verified by reproducing it directly: running `test_create_rejects_nonexistent_owner_id`
-without the fix below raised exactly that `Project.DoesNotExist`, not the
-expected `422`. Fixed with `views._write_project`, which wraps every
-create/update in its own `transaction.atomic()` block and calls
-`connection.check_constraints()` (`SET CONSTRAINTS ALL IMMEDIATE`) before
-that block exits — forcing the deferred check to happen immediately, in a
-savepoint that can be cleanly rolled back on failure without poisoning an
-enclosing transaction (the standard Django pattern for catching
-`IntegrityError` at all, per Django's own `atomic()` documentation). Verified
-fixed both ways: the full test suite (which runs inside `TestCase`'s wrapping
-transaction) and a live `curl` against gunicorn (autocommit, no wrapping
-transaction — confirms the fix doesn't only paper over the test-only
-symptom).
+Verified by reproducing it directly: `test_create_rejects_nonexistent_owner_id`
+raised exactly that `Project.DoesNotExist`, not the expected `422`, before
+the fix. **Fixed at the schema, not in Python**: an early version of this
+app compensated in every view (`transaction.atomic()` +
+`connection.check_constraints()` around each write) to force the deferred
+check immediately — caught on review as a test-only workaround left on the
+production write path this benchmark measures (an extra `BEGIN`/`SET
+CONSTRAINTS ALL IMMEDIATE`/`COMMIT` on every `POST`/`PATCH`, never exercised
+by gunicorn's real per-request autocommit). Replaced with
+`projects/migrations/0002_owner_fk_not_deferrable.py`, which drops Django's
+auto-generated `DEFERRABLE INITIALLY DEFERRED` constraint and recreates it
+`NOT DEFERRABLE INITIALLY IMMEDIATE` — matching the canonical schema exactly,
+with no runtime cost and no view-level workaround. Verified: `psql \d
+projects` now shows the FK with no `DEFERRABLE` clause at all, and
+`test_create_rejects_nonexistent_owner_id` passes under `TestCase`'s
+wrapping transaction with the views doing nothing but a plain
+`Project.objects.create()`/`.save()` — the same shape as `gin-gorm`'s own
+handlers.
 
 ## Status
 
-Schema, seed, CRUD app, and its own test suite are done (tracked in
+Schema, seed, CRUD app, its own test suite, and CI (a Python 3.12 +
+`manage.py test` step in `.github/workflows/ci.yml`'s `database-postgres`
+job) are done (tracked in
 [docs/plans/BENCH-1-benchmark-suite.md](../../../docs/plans/BENCH-1-benchmark-suite.md)
 Phase 4). Still open: a `Dockerfile`/`benchmarks/compose.yml` service (the Go
-apps don't have one yet either — deferred to Phase 8's CI work), CI wiring
-for this app's test suite, and extending the Go
-`benchmarks/apps/fairness_test.go` cross-implementation check to include
-this app as a third leg.
+apps don't have one yet either — deferred to Phase 8's CI work), and
+extending the Go `benchmarks/apps/fairness_test.go` cross-implementation
+check to include this app as a third leg.

@@ -13,7 +13,7 @@ claims to satisfy the same contract.
 """
 import json
 
-from django.test import Client, TestCase, TransactionTestCase, override_settings
+from django.test import Client, TestCase, override_settings
 
 from .management.commands.seed import (
     project_description,
@@ -74,6 +74,7 @@ class ProjectCRUDTests(TestCase):
             with self.subTest(name=name):
                 response = self._post({"owner_id": self.owner.pk, "name": name, "description": "x"})
                 self.assertEqual(response.status_code, 422, response.content)
+                self.assertEqual(response.json()["error"]["code"], "validation_error")
 
     def test_update_rejects_blank_name(self):
         create = self._post({"owner_id": self.owner.pk, "name": "Original", "description": "desc"})
@@ -83,6 +84,7 @@ class ProjectCRUDTests(TestCase):
             with self.subTest(name=name):
                 response = self._patch(project_id, {"name": name})
                 self.assertEqual(response.status_code, 422, response.content)
+                self.assertEqual(response.json()["error"]["code"], "validation_error")
 
         # A rejected update must not have partially applied.
         unchanged = _client.get(f"/api/projects/{project_id}").json()["data"]
@@ -91,6 +93,7 @@ class ProjectCRUDTests(TestCase):
     def test_create_rejects_zero_owner_id(self):
         response = self._post({"owner_id": 0, "name": "x", "description": "y"})
         self.assertEqual(response.status_code, 422, response.content)
+        self.assertEqual(response.json()["error"]["code"], "validation_error")
 
     def test_create_rejects_nonexistent_owner_id(self):
         """Unlike benchmarks/apps/gombit (which documents a real, deliberately
@@ -98,14 +101,46 @@ class ProjectCRUDTests(TestCase):
         this from-scratch Django app gets it right from the start —
         matching benchmarks/apps/gin-gorm's TestCreateRejectsInvalidOwnerID,
         the correct behavior every implementation not carrying that
-        specific Gombit gap is expected to have.
+        specific Gombit gap is expected to have. Asserts error.code, not
+        just the status: benchmarks/apps/gin-gorm's own equivalent test
+        checks error.code == "validation_error" too — a D10 code with the
+        wrong status (or a matching status with the wrong code) both fail
+        issue #141 §15's "equivalent invalid input rejected the same way."
         """
         response = self._post({"owner_id": 999999, "name": "Orphan", "description": "no such owner"})
         self.assertEqual(response.status_code, 422, response.content)
+        self.assertEqual(response.json()["error"]["code"], "validation_error")
+
+    def test_create_rejects_malformed_json(self):
+        """DRF's own ParseError for an unparseable body is native HTTP 400 —
+        envelope.exception_handler must remap it to D10's validation_error
+        status (422), not pass DRF's native 400 through unchanged, to match
+        benchmarks/apps/gin-gorm's ShouldBindJSON failure -> 422.
+        """
+        response = _client.post("/api/projects", data="{", content_type="application/json")
+        self.assertEqual(response.status_code, 422, response.content)
+        self.assertEqual(response.json()["error"]["code"], "validation_error")
+
+    def test_create_and_update_preserve_description_whitespace(self):
+        """description is a canonical stored field (benchmarks/docs/schema.md),
+        not decoration — DRF's CharField trims leading/trailing whitespace
+        by default, which would silently store different content than
+        gin-gorm/gombit for the same client input.
+        """
+        padded = "  padded  "
+        create = self._post({"owner_id": self.owner.pk, "name": "x", "description": padded})
+        self.assertEqual(create.status_code, 201, create.content)
+        self.assertEqual(create.json()["data"]["description"], padded)
+
+        project_id = create.json()["data"]["id"]
+        patch = self._patch(project_id, {"description": padded + "2"})
+        self.assertEqual(patch.status_code, 200, patch.content)
+        self.assertEqual(patch.json()["data"]["description"], padded + "2")
 
     def test_get_nonexistent_id_is_not_found(self):
         response = _client.get("/api/projects/999999999")
         self.assertEqual(response.status_code, 404)
+        self.assertEqual(response.json()["error"]["code"], "not_found")
 
     def test_get_non_numeric_id_is_not_found(self):
         """A route parameter that isn't an id at all must still get the D10
@@ -114,7 +149,7 @@ class ProjectCRUDTests(TestCase):
         """
         response = _client.get("/api/projects/not-a-number")
         self.assertEqual(response.status_code, 404)
-        self.assertIn("error", response.json())
+        self.assertEqual(response.json()["error"]["code"], "not_found")
 
 
 @override_settings(ALLOWED_HOSTS=["testserver"])
@@ -212,24 +247,21 @@ class SeedContentTests(TestCase):
         self.assertEqual(project_owner_id(15, user_count), 1)
 
 
-class SeedDatabaseIsIdempotentAndCorrectTests(TransactionTestCase):
+class SeedDatabaseIsIdempotentAndCorrectTests(TestCase):
     """Mirrors benchmarks/apps/gin-gorm and benchmarks/apps/gombit's
     TestSeedDatabaseNIsIdempotentAndCorrect: exercises the real
     truncate-then-seed path at a small scale, twice, to confirm it
     truncates rather than accumulates duplicate data on repeated
     invocations.
 
-    TransactionTestCase, not TestCase: plain TestCase wraps the whole test
-    method in one outer transaction, and Postgres refuses to TRUNCATE a
-    table that still has this transaction's own pending deferred
-    foreign-key trigger events (projects.owner_id is DEFERRABLE INITIALLY
-    DEFERRED — Django's own default for Postgres FKs) — calling
-    seed_database_n twice in the same transaction hits exactly that.
-    TransactionTestCase commits between operations instead of wrapping them
-    in a savepoint, so each seed_database_n() call's TRUNCATE runs against
-    a fully committed prior state, the same as it would in production
-    (where each `manage.py seed` invocation is its own fresh
-    connection/transaction to begin with).
+    Plain TestCase, not TransactionTestCase: an earlier version of
+    projects.owner_id's foreign key was DEFERRABLE INITIALLY DEFERRED
+    (Django's Postgres default), which made two TRUNCATEs inside one
+    TestCase-wrapped transaction fail ("pending trigger events").
+    projects/migrations/0002_owner_fk_not_deferrable.py made the constraint
+    NOT DEFERRABLE to match the canonical schema, which incidentally
+    resolved this too — verified directly by running this test under both
+    TestCase and TransactionTestCase after that migration; both pass.
     """
 
     def test_seed_database_n_is_idempotent_and_correct(self):
