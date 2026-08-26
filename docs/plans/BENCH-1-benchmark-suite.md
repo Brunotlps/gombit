@@ -1233,7 +1233,23 @@ the next slices.**
 - **Still open in Phase 5:** the loop that brings all six apps up under compose
   (with the §7 resource limits) and runs `run-crud` over each; the auth,
   TechEmpower-inspired, and concurrency-sweep workloads below; and the
-  benchstat/CoV summarization the AC's "trial variance recorded" needs.
+  CoV summarization the AC's "trial variance recorded" needs — **done** (see
+  the summarizer note below); still open is the multi-app loop that produces a
+  full six-framework `results.json` for it to summarize.
+
+**Trial-variance summarizer (`benchmarks/internal/summary` + `summarize` /
+`make benchmark-summary`) — done.** Reads `results.json`, groups the trial
+rows by (framework, benchmark, concurrency), and computes per-group mean /
+sample stddev / coefficient of variation of throughput plus latency means,
+flagging any group whose throughput CoV exceeds 5% (issue §7's
+coefficient-of-variation flag). Renders `summary.md` from those structured
+aggregates — Markdown generated from data, never hand-authored (§9) — leading
+with the coordinated-omission / same-host caveats so a copied table isn't read
+as more than it is. Pure and unit-tested (grouping, the exact mean/stddev/CoV
+math, the >5% flag, single-trial zero-dispersion, the Markdown shape). This is
+the `results.json → summary.md` half of Phase 7 landed early to satisfy Phase
+5's "trial variance recorded" AC; the README `## Performance` marker-block
+integration and `methodology.md` remain Phase 7.
 
 **Post-landing correction (review on PR #184,
 github.com/gombit-dev/gombit/pull/184#pullrequestreview-5035211655):** the

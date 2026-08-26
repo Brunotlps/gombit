@@ -15,12 +15,14 @@ benchmarks/
 ├── internal/            machine-readable output plumbing (Phase 1)
 │   ├── result/           results.json/results.csv schema + encoders (issue §9)
 │   ├── metadata/         reproducibility metadata struct + host/toolchain collector
-│   └── k6/               parses a crud-list.js summary into result rows (+ Validate)
+│   ├── k6/               parses a crud-list.js summary into result rows (+ Validate)
+│   └── summary/          aggregates trials into per-group stats + renders summary.md (CoV flag)
 ├── workloads/
 │   └── crud-list.js      the headline GET /api/projects read workload (k6)
 ├── scripts/
 │   ├── collect-host-info/ CLI over internal/metadata: writes metadata.json for a run
-│   └── run-crud/          runs crud-list.js (via the pinned k6 image) against one app → results snapshot
+│   ├── run-crud/          runs crud-list.js (via the pinned k6 image) against one app → results snapshot
+│   └── summarize/         results.json -> summary.md (make benchmark-summary)
 ├── micro/                Go abstraction-overhead microbenchmarks (Phase 2)
 │   ├── scenario/          shared resource types, Huma route registration, correctness assertions
 │   ├── nethttp/           net/http row (no router, no framework)
@@ -98,6 +100,14 @@ against a healthy app must be error-free (`benchmarks/internal/k6`'s
 so `metadata.resource_limits` says so honestly; the compose loop that enforces
 the §7 limits and captures `cpu_percent`/`rss_bytes` (Phase 6) is the next
 slice.
+
+Once `results.json` exists, `make benchmark-summary` regenerates `summary.md`
+from it — per-(framework, concurrency) aggregates with the mean and
+coefficient of variation of throughput across trials, latency means, and a ⚠
+flag on any group whose trials vary by more than 5% (issue §7). The Markdown is
+generated from the structured rows, never hand-edited, and leads with the
+coordinated-omission / same-host caveats so a copied table can't be read as
+more than it is.
 
 ## Running the framework-tax matrix
 
