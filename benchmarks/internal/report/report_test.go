@@ -9,54 +9,67 @@ import (
 	"github.com/gombit-dev/gombit/benchmarks/internal/result"
 )
 
-func crudRow(fw string, conc, trial int, rps float64) result.Result {
+func crudRow(fw string, conc, trial int, rps, p50, p95, p99 float64) result.Result {
 	return result.Result{
 		Framework: fw, Benchmark: "crud-list", Concurrency: conc, Trial: trial,
 		RequestsPerSecond: rps,
+		LatencyMs:         result.Latency{P50: p50, P95: p95, P99: p99},
 	}
 }
 
-func TestRenderCRUDPivotAndFootprint(t *testing.T) {
+func TestRenderCRUDCarriesTailsAndCoVFlag(t *testing.T) {
 	results := []result.Result{
-		crudRow("gin-gorm", 10, 1, 18000), crudRow("gin-gorm", 10, 2, 18200),
-		crudRow("gin-gorm", 100, 1, 25000),
-		crudRow("gombit", 10, 1, 12000), crudRow("gombit", 10, 2, 9000),
+		// Both frameworks at the headline concurrency (100). gin-gorm is stable;
+		// gombit's trials (12000, 9000) vary ~20% -> must be flagged.
+		crudRow("gin-gorm", 100, 1, 25000, 1, 2, 3), crudRow("gin-gorm", 100, 2, 25200, 1, 2, 3),
+		crudRow("gombit", 100, 1, 12000, 2, 5, 8), crudRow("gombit", 100, 2, 9000, 2, 5, 8),
+		// A lower-concurrency row that must NOT be the one published.
+		crudRow("gin-gorm", 10, 1, 18000, 1, 1, 1),
 	}
 	prints := []footprint.Footprint{
-		{Framework: "gombit", Variant: footprint.VariantContainer, ColdStart: footprint.ColdStart{MedianMs: 120},
-			IdleRSSBytes: 12 << 20, LoadedRSSBytes: 40 << 20, CPUPercentUnderLoad: 150, ImageSizeBytes: 30 << 20},
 		{Framework: "gin-gorm", Variant: footprint.VariantContainer, ColdStart: footprint.ColdStart{MedianMs: 117},
 			IdleRSSBytes: 8 << 20, LoadedRSSBytes: 19 << 20, CPUPercentUnderLoad: 140, ImageSizeBytes: 22 << 20},
-		// An embedded row must not appear in the container footprint table.
-		{Framework: "gombit", Variant: footprint.VariantEmbedded, BinarySizeBytes: 25 << 20},
+		{Framework: "gombit", Variant: footprint.VariantEmbedded, BinarySizeBytes: 25 << 20}, // must not appear
 	}
 	dirty := false
 	meta := metadata.Metadata{
 		GitCommit: "abcdef1234567890", GitDirty: &dirty, Timestamp: "2026-08-27T00:00:00Z",
 		OS: "linux", Arch: "amd64", CPUModel: "Test CPU", LogicalCPUs: 8, RAMBytes: 16 << 30,
-		PostgresVersion: "postgres:16.4-alpine", ResourceLimits: "enforced: 2 vCPU / 1 GiB", BenchmarkTool: "grafana/k6:0.55.0",
+		PostgresVersion: "postgres:16.4-alpine", ResourceLimits: "enforced", BenchmarkTool: "grafana/k6:0.55.0",
 	}
 
 	out := Render(results, prints, meta)
 
-	// CRUD table: median of gin-gorm@10 is (18000+18200)/2 = 18100; columns are
-	// the union of concurrencies (10, 100), gombit missing @100 -> em dash.
+	// Framework-tax section always present (even without data).
+	if !strings.Contains(out, "### Framework tax") || !strings.Contains(out, "BenchmarkFrameworkTax") {
+		t.Errorf("framework-tax section/placeholder missing:\n%s", out)
+	}
+	// CRUD table: headline concurrency, req/s + tails, ⚠ on the noisy row only.
 	for _, want := range []string{
-		"### PostgreSQL CRUD read", "| framework | 10 VUs | 100 VUs |",
-		"| gin-gorm | 18100 | 25000 |", "| gombit | 10500 | — |",
+		"At **100 concurrent clients**",
+		"| framework | req/s | p50 ms | p95 ms | p99 ms |",
+		"| gin-gorm | 25100 | 1.0 | 2.0 | 3.0 |",
+		"| gombit | 10500 ⚠ | 2.0 | 5.0 | 8.0 |",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("CRUD table missing %q\n%s", want, out)
 		}
 	}
-	// Footprint table: sorted, embedded excluded, MB conversions.
+	// The stable gin-gorm row must not be flagged.
+	if line := lineWith(out, "| gin-gorm | 25100"); strings.Contains(line, "⚠") {
+		t.Errorf("stable row should not be flagged: %q", line)
+	}
+	// Footprint table: container only, MB conversions, embedded excluded.
 	if !strings.Contains(out, "| gin-gorm | 117 | 8.0 | 19.0 | 140 | 22.0 |") {
 		t.Errorf("footprint row wrong:\n%s", out)
 	}
-	if strings.Contains(out, "25.0 |") && strings.Contains(out, "embedded") {
+	if strings.Contains(out, "embedded") {
 		t.Errorf("embedded variant leaked into the report:\n%s", out)
 	}
-	// Methodology from metadata.
+	// CPU caption is not a "lower is better" quality claim.
+	if !strings.Contains(out, "not* a quality score") {
+		t.Errorf("footprint caption should not call CPU 'lower is better':\n%s", out)
+	}
 	for _, want := range []string{"Test CPU", "8 logical CPUs", "abcdef123456", "postgres:16.4-alpine", "methodology.md"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("methodology missing %q\n%s", want, out)
@@ -64,10 +77,23 @@ func TestRenderCRUDPivotAndFootprint(t *testing.T) {
 	}
 }
 
+func TestPickConcurrencyFallsBackToMax(t *testing.T) {
+	// No headline (100) level -> the highest present (500) is published.
+	results := []result.Result{
+		crudRow("x", 10, 1, 100, 1, 1, 1),
+		crudRow("x", 500, 1, 90, 2, 2, 2),
+	}
+	out := Render(results, nil, metadata.Metadata{})
+	if !strings.Contains(out, "At **500 concurrent clients**") {
+		t.Errorf("expected fallback to the max concurrency:\n%s", out)
+	}
+}
+
 func TestRenderEmptyDataIsHonest(t *testing.T) {
 	out := Render(nil, nil, metadata.Metadata{})
 	for _, want := range []string{
-		"run `make benchmark-crud-all`", "run `make benchmark-footprint`", "metadata not yet recorded",
+		"### Framework tax", "run `make benchmark-crud-all`", "run `make benchmark-footprint`",
+		"metadata not yet recorded",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("empty render missing %q\n%s", want, out)
@@ -75,7 +101,7 @@ func TestRenderEmptyDataIsHonest(t *testing.T) {
 	}
 }
 
-func TestReplaceBlockAndDrift(t *testing.T) {
+func TestReplaceBlockAndInSync(t *testing.T) {
 	readme := "# App\n\n## Performance\n\n" + StartMarker + "\nOLD CONTENT\n" + EndMarker + "\n\n## Next\n"
 	block := "NEW CONTENT\n"
 
@@ -86,22 +112,19 @@ func TestReplaceBlockAndDrift(t *testing.T) {
 	if !strings.Contains(updated, "NEW CONTENT") || strings.Contains(updated, "OLD CONTENT") {
 		t.Errorf("block not replaced:\n%s", updated)
 	}
-	// Everything outside the markers is preserved.
 	if !strings.Contains(updated, "## Performance") || !strings.Contains(updated, "## Next") {
 		t.Errorf("content outside markers lost:\n%s", updated)
 	}
-	// Idempotent: replacing again yields the same, so drift is false against it.
-	drift, err := CheckDrift(updated, block)
+	// InSync: true means "matches / no drift".
+	sync, err := InSync(updated, block)
 	if err != nil {
-		t.Fatalf("CheckDrift: %v", err)
+		t.Fatalf("InSync: %v", err)
 	}
-	if !drift {
-		t.Error("re-rendering the same block should report no drift")
+	if !sync {
+		t.Error("re-rendering the same block should be in sync")
 	}
-	// The original README (OLD CONTENT) does drift.
-	drift, _ = CheckDrift(readme, block)
-	if drift {
-		t.Error("stale README should report drift")
+	if sync, _ := InSync(readme, block); sync {
+		t.Error("stale README should not be in sync")
 	}
 }
 
@@ -109,4 +132,13 @@ func TestReplaceBlockMissingMarkers(t *testing.T) {
 	if _, err := ReplaceBlock("no markers here", "x"); err == nil {
 		t.Error("missing markers should error")
 	}
+}
+
+func lineWith(s, sub string) string {
+	for _, l := range strings.Split(s, "\n") {
+		if strings.Contains(l, sub) {
+			return l
+		}
+	}
+	return ""
 }

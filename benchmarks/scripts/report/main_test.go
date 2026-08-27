@@ -45,6 +45,33 @@ func TestWriteThenCheckIsClean(t *testing.T) {
 	}
 }
 
+// The CLI must actually decode -results and render real numbers, not ignore the
+// flag and always emit placeholders.
+func TestWriteRendersRealResults(t *testing.T) {
+	dir := t.TempDir()
+	readme := filepath.Join(dir, "README.md")
+	if err := os.WriteFile(readme, []byte("## Performance\n\n"+report.StartMarker+"\n\n"+report.EndMarker+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	resultsPath := filepath.Join(dir, "results.json")
+	if err := os.WriteFile(resultsPath, []byte(`[
+	  {"framework":"gin-gorm","benchmark":"crud-list","concurrency":100,"trial":1,"requests_per_second":24680,
+	   "latency_ms":{"p50":1.2,"p95":3.4,"p99":5.6}}
+	]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	miss := filepath.Join(dir, "nope.json")
+
+	var so, se bytes.Buffer
+	if code := run([]string{"-readme", readme, "-results", resultsPath, "-footprint", miss, "-metadata", miss}, &so, &se); code != 0 {
+		t.Fatalf("exit=%d stderr=%s", code, se.String())
+	}
+	got, _ := os.ReadFile(readme) //nolint:gosec // test reads a temp file it just wrote
+	if !strings.Contains(string(got), "24680") || !strings.Contains(string(got), "At **100 concurrent clients**") {
+		t.Errorf("CLI did not render the real results.json numbers:\n%s", got)
+	}
+}
+
 func TestCheckDetectsDrift(t *testing.T) {
 	readme := writeReadme(t) // still holds "stale", never regenerated
 	miss := filepath.Join(t.TempDir(), "nope.json")

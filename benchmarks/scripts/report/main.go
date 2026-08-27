@@ -58,7 +58,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	block := report.Render(results, prints, meta)
 
 	if *check {
-		ok, err := report.CheckDrift(string(readme), block)
+		ok, err := report.InSync(string(readme), block)
 		if err != nil {
 			return fail(stderr, err)
 		}

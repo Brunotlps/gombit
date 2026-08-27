@@ -2,8 +2,9 @@
 // committed benchmark outputs (results.json, footprint.json, metadata.json) and
 // replaces the content between the benchmark-results markers. Generation is
 // one-directional (issue #141 §9: Markdown is derived, never hand-authored), so
-// `make benchmark-report` writes it and a drift check (CheckDrift) fails CI if
-// the committed README no longer matches what the data produces.
+// `make benchmark-report` writes it and `make benchmark-report-check` (InSync)
+// reports drift when the committed README no longer matches the data. Wiring
+// that check into CI is Phase 8.
 //
 // The CRUD table reuses benchmarks/internal/summary for the per-(framework,
 // concurrency) median, so the headline figure here and in summary.md come from
@@ -29,6 +30,12 @@ const (
 
 	// crudBenchmark is the headline workload whose rows feed the CRUD table.
 	crudBenchmark = "crud-list"
+
+	// HeadlineConcurrency is the client count the README CRUD table publishes
+	// (issue #141 §13 B is a single headline row, not a per-concurrency dump).
+	// If a run doesn't have this level, the table falls back to the highest
+	// concurrency present; the caption always states which was used.
+	HeadlineConcurrency = 100
 )
 
 // Render returns the Markdown block (without the markers) for the given data.
@@ -41,70 +48,89 @@ func Render(results []result.Result, prints []footprint.Footprint, meta metadata
 	b.WriteString("[benchmarks/docs/methodology.md](benchmarks/docs/methodology.md) — especially its ")
 	b.WriteString("\"How not to interpret these results\" section — before citing any figure.\n\n")
 
+	writeFrameworkTaxTable(&b)
 	writeCRUDTable(&b, results)
 	writeFootprintTable(&b, prints)
 	writeMethodology(&b, meta)
 	return b.String()
 }
 
+// writeFrameworkTaxTable is the issue's first README table (§13 A): the
+// abstraction-cost ladder net/http → Gin → Huma → Gombit in ns/op / B/op /
+// allocs/op — the headline question BENCH-1 exists to answer. The numbers come
+// from `go test -bench=BenchmarkFrameworkTax` (benchmarks/micro), which does not
+// yet persist to a file, so the section is a placeholder for now; the section
+// itself is always present so the generated README never omits the question.
+func writeFrameworkTaxTable(b *strings.Builder) {
+	b.WriteString("### Framework tax — `net/http` → Gin → Huma → Gombit\n\n")
+	b.WriteString("Per-request overhead of each layer on the same machine (ns/op, B/op, allocs/op; ")
+	b.WriteString("lower is better) — the same-language, same-runtime cost of adopting Gombit.\n\n")
+	b.WriteString("_Not yet recorded — run `go test ./benchmarks/micro/... -bench=BenchmarkFrameworkTax " +
+		"-benchmem -count=10` (persisting these rows to the report is a follow-up)._\n\n")
+}
+
 func writeCRUDTable(b *strings.Builder, results []result.Result) {
-	b.WriteString("### PostgreSQL CRUD read — `GET /api/projects`\n\n")
-	b.WriteString("Median requests/sec across trials, per concurrency (higher is better).\n\n")
+	b.WriteString("### PostgreSQL CRUD read — `GET /api/projects?page=1&limit=20`\n\n")
 
 	groups := summary.Summarize(results, summary.DefaultCoVThreshold)
-	// Collect the concurrency columns and the per-framework median rps, for the
-	// crud-list benchmark only.
-	concSet := map[int]bool{}
-	byFW := map[string]map[int]float64{}
-	fwOrder := []string{}
-	for _, g := range groups {
-		if g.Benchmark != crudBenchmark {
-			continue
-		}
-		concSet[g.Concurrency] = true
-		if byFW[g.Framework] == nil {
-			byFW[g.Framework] = map[int]float64{}
-			fwOrder = append(fwOrder, g.Framework)
-		}
-		byFW[g.Framework][g.Concurrency] = g.RequestsPerSecond.Median
-	}
-	if len(fwOrder) == 0 {
+	conc := pickConcurrency(groups)
+	if conc == 0 {
 		b.WriteString("_Not yet recorded — run `make benchmark-crud-all`._\n\n")
 		return
 	}
-	concs := make([]int, 0, len(concSet))
-	for c := range concSet {
-		concs = append(concs, c)
-	}
-	sort.Ints(concs)
-	sort.Strings(fwOrder)
+	fmt.Fprintf(b, "At **%d concurrent clients**, median across trials: throughput (higher is better) "+
+		"and tail latency (lower is better). p50/p95/p99 are the median across trials of each per-trial "+
+		"percentile; ⚠ marks a group whose throughput varied by more than %.0f%% across trials — read its "+
+		"row with care.\n\n", conc, summary.DefaultCoVThreshold*100)
 
-	b.WriteString("| framework |")
-	for _, c := range concs {
-		fmt.Fprintf(b, " %d VUs |", c)
-	}
-	b.WriteString("\n| --- |")
-	for range concs {
-		b.WriteString(" ---: |")
-	}
-	b.WriteString("\n")
-	for _, fw := range fwOrder {
-		fmt.Fprintf(b, "| %s |", fw)
-		for _, c := range concs {
-			if v, ok := byFW[fw][c]; ok {
-				fmt.Fprintf(b, " %.0f |", v)
-			} else {
-				b.WriteString(" — |")
-			}
+	rows := make([]summary.Group, 0)
+	for _, g := range groups {
+		if g.Benchmark == crudBenchmark && g.Concurrency == conc {
+			rows = append(rows, g)
 		}
-		b.WriteString("\n")
+	}
+	sort.SliceStable(rows, func(i, j int) bool { return rows[i].Framework < rows[j].Framework })
+
+	b.WriteString("| framework | req/s | p50 ms | p95 ms | p99 ms |\n")
+	b.WriteString("| --- | ---: | ---: | ---: | ---: |\n")
+	for _, g := range rows {
+		flag := ""
+		if g.HighVariance {
+			flag = " ⚠"
+		}
+		fmt.Fprintf(b, "| %s | %.0f%s | %.1f | %.1f | %.1f |\n",
+			g.Framework, g.RequestsPerSecond.Median, flag,
+			g.LatencyP50.Median, g.LatencyP95.Median, g.LatencyP99.Median)
 	}
 	b.WriteString("\n")
 }
 
+// pickConcurrency returns HeadlineConcurrency if any crud-list group has it,
+// else the highest concurrency present, else 0 (no data).
+func pickConcurrency(groups []summary.Group) int {
+	present := map[int]bool{}
+	maxC := 0
+	for _, g := range groups {
+		if g.Benchmark != crudBenchmark {
+			continue
+		}
+		present[g.Concurrency] = true
+		if g.Concurrency > maxC {
+			maxC = g.Concurrency
+		}
+	}
+	if present[HeadlineConcurrency] {
+		return HeadlineConcurrency
+	}
+	return maxC
+}
+
 func writeFootprintTable(b *strings.Builder, prints []footprint.Footprint) {
 	b.WriteString("### Operational footprint\n\n")
-	b.WriteString("Container-start cold start (median), memory, and CPU under load; lower is better.\n\n")
+	b.WriteString("Container-start cold start (median) and memory — lower is better. CPU is the ")
+	b.WriteString("median percent one container drew during the closed-loop load (100 = one core); ")
+	b.WriteString("it is *not* a quality score — a faster app that does more work in the window can ")
+	b.WriteString("show higher CPU, so read it against the throughput row.\n\n")
 
 	rows := make([]footprint.Footprint, 0, len(prints))
 	for _, f := range prints {
@@ -164,10 +190,11 @@ func ReplaceBlock(readme, block string) (string, error) {
 	return out.String(), nil
 }
 
-// CheckDrift reports whether the block currently between the markers in readme
-// already equals what Render produced (trailing whitespace normalised). A
-// missing marker is drift.
-func CheckDrift(readme, block string) (bool, error) {
+// InSync reports whether the block currently between the markers in readme
+// already equals what Render produced (trailing whitespace normalised) — i.e.
+// true means no drift, so a caller reads `if !InSync { fail }`. A missing marker
+// is treated as out of sync (returns false with the marker error).
+func InSync(readme, block string) (bool, error) {
 	updated, err := ReplaceBlock(readme, block)
 	if err != nil {
 		return false, err

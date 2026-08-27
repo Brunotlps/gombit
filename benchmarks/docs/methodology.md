@@ -33,10 +33,15 @@ Two families of measurement:
 
 1. **Throughput / latency** — `GET /api/projects?page=1&limit=20` under a
    closed-loop `constant-vus` load (concurrency sweep 1/10/100/500/1000), 5
-   trials × 30 s each with a discarded warm-up. Reported as the **median**
-   requests/sec across trials, with a coefficient-of-variation flag on any
-   group whose trials disagree by more than 5 % (`summary.md`).
-   `make benchmark-crud-all`.
+   trials × 30 s each with a discarded warm-up. `summary.md` carries every
+   concurrency level; the README's headline table reports a **single
+   concurrency (100 clients)** with median requests/sec **and** median p50/p95/p99
+   latency, and a ⚠ flag on any group whose trials disagree by more than 5 %
+   (coefficient of variation). `make benchmark-crud-all`.
+   (The abstraction-cost microbenchmark — net/http → Gin → Huma → Gombit,
+   `go test -bench=BenchmarkFrameworkTax` — is the first README table; persisting
+   its rows into the generated report is a follow-up, so that section is a
+   placeholder for now.)
 2. **Operational footprint** — container-start → first `/livez` 200 cold start
    (≥20 restarts, median/p95), idle memory, memory + CPU under the same load,
    and image size. `make benchmark-footprint`.

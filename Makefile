@@ -40,7 +40,8 @@ benchmark-report:
 		-metadata "$(OUT_DIR)/metadata.json"
 
 ## benchmark-report-check: fail if the committed README's Performance block no
-## longer matches OUT_DIR (drift). Run in CI.
+## longer matches OUT_DIR (drift). Run before committing; wiring it into CI is
+## Phase 8.
 benchmark-report-check:
 	go run ./benchmarks/scripts/report -check \
 		-results "$(OUT_DIR)/results.json" -footprint "$(OUT_DIR)/footprint.json" \

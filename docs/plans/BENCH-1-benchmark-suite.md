@@ -1608,21 +1608,26 @@ two code leftovers, all fixed.
 ### Phase 7 — Reporting, README integration, drift detection
 
 **README `## Performance` generator + drift check + methodology — done.**
-`benchmarks/internal/report` renders the block (CRUD median-rps pivot from
-`results.json` via `internal/summary`; container footprint table from
-`footprint.json`; a host/commit/date/Postgres/limits note from `metadata.json`)
-and replaces the content between the `benchmark-results` markers.
-`benchmarks/scripts/report` writes it, or `-check` fails on drift.
-`make benchmark-report` regenerates the README block + `summary.md`;
-`make benchmark-report-check` is the CI drift guard. The root README has the
-markers + a `## Performance` section, and `benchmarks/docs/methodology.md`
-carries the full method and the required "How not to interpret these results"
-section. Unit-tested (CRUD pivot incl. missing-cell dashes, footprint table
-excludes the embedded variant, methodology from metadata, marker replace +
-drift + missing-marker error) and the CLI (write→check clean, drift detected,
-missing markers fail); verified end to end against crafted results/footprint/
-metadata. **Still open in Phase 7:** the framework-tax (micro) table needs the
-`go test -bench` rows persisted to a file first (not yet captured to JSON);
+`benchmarks/internal/report` renders the block and replaces the content between
+the `benchmark-results` markers: a **framework-tax** section (net/http → Gin →
+Huma → Gombit — the headline abstraction-cost question; a placeholder until the
+`go test -bench` rows are persisted); the **CRUD** table at a single headline
+concurrency (100) with median req/s **and** median p50/p95/p99 and a ⚠ flag on
+high-variance groups (from `internal/summary`, §13 B / §7); the **container
+footprint** table from `footprint.json` (CPU labelled as work done, not a
+quality score); and a host/commit/date/Postgres/limits note from
+`metadata.json`. `benchmarks/scripts/report` writes it, or `-check` (via
+`InSync`, true == matches) reports drift. `make benchmark-report` regenerates the
+README block + `summary.md`; `make benchmark-report-check` is the local drift
+guard (wiring it into CI is Phase 8 — the README says so, no false CI claim).
+The root README has the markers + a `## Performance` section, and
+`benchmarks/docs/methodology.md` carries the full method and the required "How
+not to interpret these results" section. Unit-tested (CRUD tails + CoV flag +
+headline-concurrency fallback, footprint excludes the embedded variant,
+framework-tax placeholder present, methodology from metadata, marker
+replace/InSync/missing-marker) and the CLI (renders a real decoded `results.json`,
+write→check clean, drift detected, missing markers fail). **Still open in Phase
+7:** persisting the framework-tax `go test -bench` rows so that section fills;
 running the full suite on a dedicated host and committing the canonical
 `results/latest/` snapshot (so the block holds real numbers rather than the
 honest "not yet recorded" placeholders); and wiring `benchmark-report-check`
