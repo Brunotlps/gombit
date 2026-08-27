@@ -221,8 +221,11 @@ main() {
   # nor a Go compile lands inside a measured load window (either would leave the
   # samples reading idle, not loaded).
   docker pull -q "grafana/k6:$K6_VERSION" >/dev/null
-  local bindir; bindir="$(mktemp -d)"
-  trap 'rm -rf "$bindir"' EXIT
+  # Not `local`: the EXIT trap fires in the global scope after main returns, so a
+  # function-local bindir would be unbound there and `set -u` would abort the
+  # whole run at exit (even after the footprint rows were written successfully).
+  bindir="$(mktemp -d)"
+  trap 'rm -rf "${bindir:-}"' EXIT
   K6LOAD_BIN="$bindir/k6load"
   go build -o "$K6LOAD_BIN" ./benchmarks/scripts/k6load
   for app in $APPS; do

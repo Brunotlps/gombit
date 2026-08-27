@@ -1,0 +1,6 @@
+# Raw per-run load-generator output (k6 JSON) is a CI artifact, regenerable from
+# a re-run — not committed (see results/README.md). The structured
+# results.json/results.csv/footprint.json/microbench.json/metadata.json and the
+# derived summary.md ARE committed as the canonical snapshot.
+latest/raw/
+runs/

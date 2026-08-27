@@ -1,0 +1,382 @@
+[
+  {
+    "schema_version": 1,
+    "stack": "gin",
+    "scenario": "plaintext",
+    "ns_per_op": [
+      500.1,
+      509.2,
+      508.7,
+      508.6,
+      565.4,
+      530.5,
+      513.3,
+      512.5,
+      514.3,
+      553.5
+    ],
+    "bytes_per_op": 1040,
+    "allocs_per_op": 9
+  },
+  {
+    "schema_version": 1,
+    "stack": "gin",
+    "scenario": "json",
+    "ns_per_op": [
+      908.3,
+      885,
+      1246,
+      1137,
+      1060,
+      1046,
+      1127,
+      1076,
+      1119,
+      1056
+    ],
+    "bytes_per_op": 1458,
+    "allocs_per_op": 15
+  },
+  {
+    "schema_version": 1,
+    "stack": "gin",
+    "scenario": "path-param",
+    "ns_per_op": [
+      819.9,
+      757.7,
+      696.5,
+      807,
+      1046,
+      1076,
+      1008,
+      1236,
+      1163,
+      1268
+    ],
+    "bytes_per_op": 1105,
+    "allocs_per_op": 11
+  },
+  {
+    "schema_version": 1,
+    "stack": "gin",
+    "scenario": "valid-post",
+    "ns_per_op": [
+      4479,
+      4566,
+      5538,
+      4934,
+      4380,
+      3605,
+      3210,
+      3199,
+      2810,
+      2589
+    ],
+    "bytes_per_op": 2311,
+    "allocs_per_op": 29
+  },
+  {
+    "schema_version": 1,
+    "stack": "gin",
+    "scenario": "invalid-post",
+    "ns_per_op": [
+      3494,
+      3490,
+      3495,
+      3505,
+      3629,
+      3685,
+      3467,
+      3501,
+      3560,
+      3579
+    ],
+    "bytes_per_op": 4201,
+    "allocs_per_op": 56
+  },
+  {
+    "schema_version": 1,
+    "stack": "gombit",
+    "scenario": "plaintext",
+    "ns_per_op": [
+      4150,
+      4206,
+      4177,
+      4229,
+      4156,
+      4160,
+      4185,
+      4122,
+      4203,
+      4204
+    ],
+    "bytes_per_op": 4385,
+    "allocs_per_op": 45
+  },
+  {
+    "schema_version": 1,
+    "stack": "gombit",
+    "scenario": "json",
+    "ns_per_op": [
+      5072,
+      5107,
+      5052,
+      5244,
+      5087,
+      5099,
+      5129,
+      5224,
+      5264,
+      5096
+    ],
+    "bytes_per_op": 4901,
+    "allocs_per_op": 51
+  },
+  {
+    "schema_version": 1,
+    "stack": "gombit",
+    "scenario": "path-param",
+    "ns_per_op": [
+      5081,
+      4992,
+      4935,
+      5041,
+      5041,
+      5033,
+      5016,
+      5066,
+      5022,
+      5138
+    ],
+    "bytes_per_op": 4644,
+    "allocs_per_op": 49
+  },
+  {
+    "schema_version": 1,
+    "stack": "gombit",
+    "scenario": "valid-post",
+    "ns_per_op": [
+      9551,
+      9577,
+      9640,
+      9493,
+      9485,
+      9499,
+      9542,
+      9849,
+      9437,
+      9899
+    ],
+    "bytes_per_op": 7919,
+    "allocs_per_op": 95
+  },
+  {
+    "schema_version": 1,
+    "stack": "gombit",
+    "scenario": "invalid-post",
+    "ns_per_op": [
+      11097,
+      11385,
+      10883,
+      11262,
+      10601,
+      10749,
+      10553,
+      10610,
+      10703,
+      10749
+    ],
+    "bytes_per_op": 8738,
+    "allocs_per_op": 105
+  },
+  {
+    "schema_version": 1,
+    "stack": "huma",
+    "scenario": "plaintext",
+    "ns_per_op": [
+      700.3,
+      694.9,
+      693.1,
+      771.9,
+      727.9,
+      709.3,
+      698.2,
+      717.6,
+      732.2,
+      698.4
+    ],
+    "bytes_per_op": 1129,
+    "allocs_per_op": 14
+  },
+  {
+    "schema_version": 1,
+    "stack": "huma",
+    "scenario": "json",
+    "ns_per_op": [
+      1146,
+      1122,
+      1123,
+      1122,
+      1128,
+      1091,
+      1296,
+      1409,
+      1344,
+      1368
+    ],
+    "bytes_per_op": 1467,
+    "allocs_per_op": 17
+  },
+  {
+    "schema_version": 1,
+    "stack": "huma",
+    "scenario": "path-param",
+    "ns_per_op": [
+      1755,
+      1805,
+      2032,
+      1735,
+      1709,
+      1739,
+      1445,
+      1458,
+      1434,
+      1413
+    ],
+    "bytes_per_op": 1348,
+    "allocs_per_op": 18
+  },
+  {
+    "schema_version": 1,
+    "stack": "huma",
+    "scenario": "valid-post",
+    "ns_per_op": [
+      3535,
+      3446,
+      3429,
+      3454,
+      3457,
+      3445,
+      3469,
+      3701,
+      4022,
+      3570
+    ],
+    "bytes_per_op": 2301,
+    "allocs_per_op": 37
+  },
+  {
+    "schema_version": 1,
+    "stack": "huma",
+    "scenario": "invalid-post",
+    "ns_per_op": [
+      4487,
+      4284,
+      4313,
+      4360,
+      4411,
+      4594,
+      4505,
+      4437,
+      4182,
+      4230
+    ],
+    "bytes_per_op": 2754,
+    "allocs_per_op": 42
+  },
+  {
+    "schema_version": 1,
+    "stack": "nethttp",
+    "scenario": "plaintext",
+    "ns_per_op": [
+      626.5,
+      630,
+      592.7,
+      616.5,
+      1291,
+      775.4,
+      660.7,
+      679.5,
+      659.4,
+      715.1
+    ],
+    "bytes_per_op": 1024,
+    "allocs_per_op": 10
+  },
+  {
+    "schema_version": 1,
+    "stack": "nethttp",
+    "scenario": "json",
+    "ns_per_op": [
+      1030,
+      1051,
+      1141,
+      1015,
+      1042,
+      1056,
+      1037,
+      1019,
+      828.3,
+      1001
+    ],
+    "bytes_per_op": 1425,
+    "allocs_per_op": 14
+  },
+  {
+    "schema_version": 1,
+    "stack": "nethttp",
+    "scenario": "path-param",
+    "ns_per_op": [
+      1110,
+      873.2,
+      749.4,
+      747.1,
+      767.8,
+      735.9,
+      743.8,
+      748.3,
+      750.1,
+      747.2
+    ],
+    "bytes_per_op": 1072,
+    "allocs_per_op": 11
+  },
+  {
+    "schema_version": 1,
+    "stack": "nethttp",
+    "scenario": "valid-post",
+    "ns_per_op": [
+      1545,
+      1497,
+      1561,
+      1532,
+      1560,
+      1574,
+      1543,
+      1614,
+      1851,
+      1706
+    ],
+    "bytes_per_op": 2097,
+    "allocs_per_op": 21
+  },
+  {
+    "schema_version": 1,
+    "stack": "nethttp",
+    "scenario": "invalid-post",
+    "ns_per_op": [
+      1643,
+      1672,
+      1650,
+      1637,
+      1706,
+      1590,
+      1642,
+      1805,
+      1632,
+      1657
+    ],
+    "bytes_per_op": 2449,
+    "allocs_per_op": 24
+  }
+]
