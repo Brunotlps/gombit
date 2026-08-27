@@ -39,8 +39,11 @@ const (
 	HeadlineConcurrency = 100
 
 	// headlineScenario is the microbenchmark scenario the framework-tax ladder
-	// publishes — the realistic typed-JSON handler path.
-	headlineScenario = "json"
+	// publishes: the validated typed-handler POST (issue #141 §13 A's "validated
+	// POST or equivalent representative typed-handler path" — not the Hello-World
+	// GET, which would compress the overhead). The other four scenarios live in
+	// microbench.json / the full report.
+	headlineScenario = "valid-post"
 )
 
 // stackLadder is the abstraction order (thinnest → thickest) and the display
@@ -67,16 +70,17 @@ func Render(results []result.Result, prints []footprint.Footprint, micro []micro
 }
 
 // writeFrameworkTaxTable is the issue's first README table (§13 A): the
-// abstraction-cost ladder net/http → Gin → Huma → Gombit in ns/op / B/op /
-// allocs/op — the headline question BENCH-1 exists to answer. The numbers come
-// from `go test -bench=BenchmarkFrameworkTax` (benchmarks/micro), which does not
-// yet persist to a file, so the section is a placeholder for now; the section
-// itself is always present so the generated README never omits the question.
+// abstraction-cost ladder net/http → Gin → Huma → Gombit for the validated
+// typed-handler POST, in median ns/op / B/op / allocs/op with a column relative
+// to net/http — the headline question BENCH-1 exists to answer. It publishes the
+// table only when all four rungs are present; a partial run renders an honest
+// "incomplete" line rather than a ladder with holes.
 func writeFrameworkTaxTable(b *strings.Builder, micro []microbench.Row) {
 	b.WriteString("### Framework tax — `net/http` → Gin → Huma → Gombit\n\n")
-	b.WriteString("Per-request overhead of each layer on the same machine for the typed-JSON handler ")
-	b.WriteString("scenario (ns/op, B/op, allocs/op; lower is better) — the same-language, same-runtime ")
-	b.WriteString("cost of adopting Gombit.\n\n")
+	b.WriteString("Per-request overhead of each layer on the same machine for the **validated typed POST** ")
+	b.WriteString("(median ns/op, B/op, allocs/op; lower is better; `vs net/http` is the relative cost) — ")
+	b.WriteString("the same-language, same-runtime cost of adopting Gombit. The other four scenarios ")
+	b.WriteString("(plaintext, json, path-param, invalid-post) are in `benchmarks/results/latest/microbench.json`.\n\n")
 
 	byStack := map[string]microbench.Row{}
 	for _, r := range micro {
@@ -88,14 +92,23 @@ func writeFrameworkTaxTable(b *strings.Builder, micro []microbench.Row) {
 		b.WriteString("_Not yet recorded — run `make benchmark-micro`._\n\n")
 		return
 	}
-	b.WriteString("| stack | ns/op | B/op | allocs/op |\n")
-	b.WriteString("| --- | ---: | ---: | ---: |\n")
+	// Fail closed: every rung must be present, or the ladder isn't publishable.
 	for _, s := range stackLadder {
-		r, ok := byStack[s.key]
-		if !ok {
-			continue
+		if _, ok := byStack[s.key]; !ok {
+			fmt.Fprintf(b, "_Incomplete — no `%s` row for the `%s` scenario; re-run `make benchmark-micro`._\n\n",
+				s.key, headlineScenario)
+			return
 		}
-		fmt.Fprintf(b, "| %s | %.0f | %d | %d |\n", s.name, r.NsPerOp, r.BytesPerOp, r.AllocsPerOp)
+	}
+	baseline := byStack["nethttp"].MedianNsPerOp()
+
+	b.WriteString("| stack | ns/op | B/op | allocs/op | vs net/http |\n")
+	b.WriteString("| --- | ---: | ---: | ---: | ---: |\n")
+	for _, s := range stackLadder {
+		r := byStack[s.key]
+		fmt.Fprintf(b, "| %s | %.0f | %d | %d | %s |\n",
+			s.name, r.MedianNsPerOp(), r.BytesPerOp, r.AllocsPerOp,
+			microbench.Relative(r.MedianNsPerOp(), baseline))
 	}
 	b.WriteString("\n")
 }

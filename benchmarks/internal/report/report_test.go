@@ -39,26 +39,34 @@ func TestRenderCRUDCarriesTailsAndCoVFlag(t *testing.T) {
 		PostgresVersion: "postgres:16.4-alpine", ResourceLimits: "enforced", BenchmarkTool: "grafana/k6:0.55.0",
 	}
 
+	// All four rungs at the headline (valid-post) scenario, with samples so the
+	// median is exercised; a wrong-scenario row must be excluded.
 	micro := []microbench.Row{
-		{Stack: "nethttp", Scenario: "json", NsPerOp: 900, BytesPerOp: 128, AllocsPerOp: 2},
-		{Stack: "gombit", Scenario: "json", NsPerOp: 3100, BytesPerOp: 640, AllocsPerOp: 10},
-		{Stack: "gin", Scenario: "plaintext", NsPerOp: 500, BytesPerOp: 64, AllocsPerOp: 1}, // wrong scenario -> excluded
+		{Stack: "nethttp", Scenario: "valid-post", NsPerOp: []float64{820, 800}, BytesPerOp: 1425, AllocsPerOp: 14},
+		{Stack: "gin", Scenario: "valid-post", NsPerOp: []float64{900}, BytesPerOp: 1458, AllocsPerOp: 15},
+		{Stack: "huma", Scenario: "valid-post", NsPerOp: []float64{1078}, BytesPerOp: 1467, AllocsPerOp: 17},
+		{Stack: "gombit", Scenario: "valid-post", NsPerOp: []float64{3040, 3160}, BytesPerOp: 4901, AllocsPerOp: 51},
+		{Stack: "gin", Scenario: "json", NsPerOp: []float64{500}, BytesPerOp: 64, AllocsPerOp: 1}, // wrong scenario -> excluded
 	}
 	out := Render(results, prints, micro, meta)
 
-	// Framework-tax table: json-scenario rows, in ladder order, wrong-scenario
-	// row excluded. Only nethttp + gombit have a json row here.
+	// Framework-tax table: validated-POST ladder, median ns/op, relative column.
+	// net/http median (820,800)=810 baseline; gombit median (3040,3160)=3100 -> 3.8×.
 	for _, want := range []string{
-		"### Framework tax", "| stack | ns/op | B/op | allocs/op |",
-		"| net/http | 900 | 128 | 2 |", "| Gombit | 3100 | 640 | 10 |",
+		"### Framework tax", "validated typed POST",
+		"| stack | ns/op | B/op | allocs/op | vs net/http |",
+		"| net/http | 810 | 1425 | 14 | 1.0× |",
+		"| Gombit | 3100 | 4901 | 51 | 3.8× |",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("framework-tax table missing %q\n%s", want, out)
 		}
 	}
-	// net/http (thinnest) must render before Gombit (thickest).
 	if strings.Index(out, "| net/http |") > strings.Index(out, "| Gombit |") {
 		t.Errorf("framework-tax rows not in ladder order:\n%s", out)
+	}
+	if strings.Contains(out, "| 500 |") {
+		t.Errorf("wrong-scenario (json) row leaked into the framework-tax table:\n%s", out)
 	}
 	// CRUD table: headline concurrency, req/s + tails, ⚠ on the noisy row only.
 	for _, want := range []string{
@@ -90,6 +98,23 @@ func TestRenderCRUDCarriesTailsAndCoVFlag(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("methodology missing %q\n%s", want, out)
 		}
+	}
+}
+
+func TestFrameworkTaxIncompleteLadderNotPublished(t *testing.T) {
+	// Only three of the four rungs -> must render "Incomplete", not a holey table.
+	micro := []microbench.Row{
+		{Stack: "nethttp", Scenario: "valid-post", NsPerOp: []float64{800}},
+		{Stack: "gin", Scenario: "valid-post", NsPerOp: []float64{900}},
+		{Stack: "huma", Scenario: "valid-post", NsPerOp: []float64{1000}},
+		// gombit missing
+	}
+	out := Render(nil, nil, micro, metadata.Metadata{})
+	if !strings.Contains(out, "Incomplete") {
+		t.Errorf("a missing rung should render Incomplete, not a partial ladder:\n%s", out)
+	}
+	if strings.Contains(out, "| stack | ns/op") {
+		t.Errorf("no table should be published for an incomplete ladder:\n%s", out)
 	}
 }
 

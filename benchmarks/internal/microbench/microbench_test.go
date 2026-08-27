@@ -6,97 +6,110 @@ import (
 	"testing"
 )
 
-const sampleOutput = `goos: linux
-goarch: amd64
-pkg: github.com/gombit-dev/gombit/benchmarks/micro/gin
-BenchmarkFrameworkTax/plaintext-16         	 1000000	      1050 ns/op	     128 B/op	       2 allocs/op
-BenchmarkFrameworkTax/json-16              	  500000	      2740 ns/op	     512 B/op	       8 allocs/op
-BenchmarkFrameworkTax/path-param-16        	  400000	      3100 ns/op	     640 B/op	      10 allocs/op
-PASS
-ok  	github.com/gombit-dev/gombit/benchmarks/micro/gin	3.2s
-`
+// fullOutput returns `go test -bench` text covering all five scenarios once.
+func fullOutput() string {
+	var b strings.Builder
+	b.WriteString("goos: linux\npkg: .../gin\n")
+	for _, s := range Scenarios {
+		b.WriteString("BenchmarkFrameworkTax/" + s + "-16   100   2740 ns/op   512 B/op   8 allocs/op\n")
+	}
+	b.WriteString("PASS\nok\t.../gin\t3.2s\n")
+	return b.String()
+}
 
-func TestParseBenchOutput(t *testing.T) {
-	rows, err := ParseBenchOutput("gin", strings.NewReader(sampleOutput))
+func TestParseBenchOutputAllScenarios(t *testing.T) {
+	rows, err := ParseBenchOutput("gin", strings.NewReader(fullOutput()))
 	if err != nil {
 		t.Fatalf("ParseBenchOutput: %v", err)
 	}
-	if len(rows) != 3 {
-		t.Fatalf("rows = %d, want 3 (plaintext/json/path-param)", len(rows))
+	if len(rows) != len(Scenarios) {
+		t.Fatalf("rows = %d, want %d", len(rows), len(Scenarios))
 	}
-	byScen := map[string]Row{}
 	for _, r := range rows {
-		byScen[r.Scenario] = r
-		if r.Stack != "gin" {
-			t.Errorf("row stack = %q, want gin", r.Stack)
+		if r.Stack != "gin" || r.SchemaVersion != SchemaVersion {
+			t.Errorf("bad row identity: %+v", r)
 		}
-		if r.SchemaVersion != SchemaVersion {
-			t.Errorf("row schema = %d, want %d", r.SchemaVersion, SchemaVersion)
-		}
-	}
-	json := byScen["json"]
-	if json.NsPerOp != 2740 || json.BytesPerOp != 512 || json.AllocsPerOp != 8 {
-		t.Errorf("json row = %+v, want 2740 ns / 512 B / 8 allocs", json)
 	}
 }
 
-func TestParseBenchOutputCountKeepsLast(t *testing.T) {
-	// -count=2 emits two lines per scenario; the last wins.
-	out := `BenchmarkFrameworkTax/json-16   100   3000 ns/op   500 B/op   8 allocs/op
-BenchmarkFrameworkTax/json-16   100   2800 ns/op   500 B/op   8 allocs/op
-`
-	rows, err := ParseBenchOutput("huma", strings.NewReader(out))
+func TestParseBenchOutputKeepsEverySample(t *testing.T) {
+	// One scenario with three ns/op samples + the other four once each.
+	var b strings.Builder
+	for _, ns := range []string{"3000", "2600", "2800"} {
+		b.WriteString("BenchmarkFrameworkTax/valid-post-16   100   " + ns + " ns/op   500 B/op   8 allocs/op\n")
+	}
+	for _, s := range []string{"plaintext", "json", "path-param", "invalid-post"} {
+		b.WriteString("BenchmarkFrameworkTax/" + s + "-16   100   1000 ns/op   100 B/op   2 allocs/op\n")
+	}
+	rows, err := ParseBenchOutput("huma", strings.NewReader(b.String()))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(rows) != 1 || rows[0].NsPerOp != 2800 {
-		t.Errorf("rows = %+v, want a single json row at 2800 ns/op", rows)
+	var vp Row
+	for _, r := range rows {
+		if r.Scenario == "valid-post" {
+			vp = r
+		}
+	}
+	if len(vp.NsPerOp) != 3 {
+		t.Fatalf("valid-post kept %d samples, want 3 (nothing thrown away)", len(vp.NsPerOp))
+	}
+	if vp.MedianNsPerOp() != 2800 { // median of 2600,2800,3000
+		t.Errorf("median = %v, want 2800", vp.MedianNsPerOp())
+	}
+}
+
+func TestParseBenchOutputRejectsIncompleteRun(t *testing.T) {
+	// A panic after the GET scenarios leaves valid-post/invalid-post missing.
+	partial := "BenchmarkFrameworkTax/plaintext-16   1   1000 ns/op   1 B/op   1 allocs/op\n" +
+		"BenchmarkFrameworkTax/json-16   1   2000 ns/op   2 B/op   2 allocs/op\npanic: boom\n"
+	if _, err := ParseBenchOutput("gin", strings.NewReader(partial)); err == nil {
+		t.Error("an incomplete run (missing scenarios) must be rejected, not published partial")
 	}
 }
 
 func TestParseBenchOutputRejectsEmptyStack(t *testing.T) {
-	if _, err := ParseBenchOutput("", strings.NewReader(sampleOutput)); err == nil {
+	if _, err := ParseBenchOutput("", strings.NewReader(fullOutput())); err == nil {
 		t.Error("empty stack should error")
 	}
 }
 
-func TestParseBenchOutputIgnoresNoise(t *testing.T) {
-	rows, err := ParseBenchOutput("nethttp", strings.NewReader("no benchmarks here\n--- FAIL: something\n"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(rows) != 0 {
-		t.Errorf("rows = %d, want 0 for non-benchmark output", len(rows))
-	}
-}
-
-func TestMergeReplacesByStackScenario(t *testing.T) {
+func TestMergeReplacesWholeStack(t *testing.T) {
 	existing := []Row{
-		{Stack: "gin", Scenario: "json", NsPerOp: 2740},
-		{Stack: "huma", Scenario: "json", NsPerOp: 5000},
+		{Stack: "gin", Scenario: "valid-post", NsPerOp: []float64{2740}},
+		{Stack: "gin", Scenario: "json", NsPerOp: []float64{900}}, // stale scenario from an old run
+		{Stack: "huma", Scenario: "valid-post", NsPerOp: []float64{5000}},
 	}
-	incoming := []Row{{Stack: "gin", Scenario: "json", NsPerOp: 9999}}
+	// A fresh gin run reports only valid-post this time; the stale gin/json must go.
+	incoming := []Row{{Stack: "gin", Scenario: "valid-post", NsPerOp: []float64{9999}}}
 	merged := Merge(existing, incoming)
-	if len(merged) != 2 {
-		t.Fatalf("len = %d, want 2", len(merged))
-	}
-	got := map[string]float64{}
+
+	stacks := map[string]int{}
 	for _, r := range merged {
-		got[r.Key()] = r.NsPerOp
+		stacks[r.Stack]++
 	}
-	if got["gin\x00json"] != 9999 {
-		t.Errorf("gin/json not replaced: %v", got["gin\x00json"])
+	if stacks["gin"] != 1 {
+		t.Errorf("gin should be replaced wholesale (1 row), got %d", stacks["gin"])
 	}
-	if got["huma\x00json"] != 5000 {
-		t.Errorf("huma/json should be kept: %v", got["huma\x00json"])
+	if stacks["huma"] != 1 {
+		t.Errorf("huma should be kept, got %d", stacks["huma"])
 	}
 }
 
-func TestJSONRoundTripDeterministicOrder(t *testing.T) {
+func TestRelative(t *testing.T) {
+	if got := Relative(5217, 804); got != "6.5×" {
+		t.Errorf("Relative(5217,804) = %q, want 6.5×", got)
+	}
+	if got := Relative(804, 804); got != "1.0×" {
+		t.Errorf("baseline should be 1.0×, got %q", got)
+	}
+}
+
+func TestJSONRoundTrip(t *testing.T) {
 	rows := []Row{
-		{Stack: "huma", Scenario: "json", NsPerOp: 5000},
-		{Stack: "gin", Scenario: "plaintext", NsPerOp: 1050},
-		{Stack: "gin", Scenario: "json", NsPerOp: 2740},
+		{Stack: "huma", Scenario: "valid-post", NsPerOp: []float64{5000, 5100}},
+		{Stack: "gin", Scenario: "plaintext", NsPerOp: []float64{1050}},
+		{Stack: "gin", Scenario: "valid-post", NsPerOp: []float64{2740}},
 	}
 	var buf bytes.Buffer
 	if err := WriteJSON(&buf, rows); err != nil {
@@ -106,13 +119,11 @@ func TestJSONRoundTripDeterministicOrder(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{"gin\x00json", "gin\x00plaintext", "huma\x00json"}
-	if len(got) != 3 {
-		t.Fatalf("len = %d, want 3", len(got))
+	// Sorted by (stack, scenario-in-Scenarios-order): gin/plaintext, gin/valid-post, huma/valid-post.
+	if len(got) != 3 || got[0].Stack != "gin" || got[0].Scenario != "plaintext" {
+		t.Fatalf("unexpected order: %+v", got)
 	}
-	for i, k := range want {
-		if got[i].Key() != k {
-			t.Errorf("row %d = %q, want %q", i, got[i].Key(), k)
-		}
+	if len(got[2].NsPerOp) != 2 {
+		t.Errorf("samples not preserved through round-trip: %+v", got[2])
 	}
 }

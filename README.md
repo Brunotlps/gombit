@@ -210,7 +210,7 @@ Numbers are a same-host, closed-loop snapshot under fixed resource limits; read 
 
 ### Framework tax — `net/http` → Gin → Huma → Gombit
 
-Per-request overhead of each layer on the same machine for the typed-JSON handler scenario (ns/op, B/op, allocs/op; lower is better) — the same-language, same-runtime cost of adopting Gombit.
+Per-request overhead of each layer on the same machine for the **validated typed POST** (median ns/op, B/op, allocs/op; lower is better; `vs net/http` is the relative cost) — the same-language, same-runtime cost of adopting Gombit. The other four scenarios (plaintext, json, path-param, invalid-post) are in `benchmarks/results/latest/microbench.json`.
 
 _Not yet recorded — run `make benchmark-micro`._
 

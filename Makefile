@@ -37,9 +37,13 @@ MICRO_COUNT ?= 10
 ## for the report. Each stack is its own `go test` process (a framework.App
 ## constructor mutates a process global), piped through the microbench parser.
 benchmark-micro:
+	@mkdir -p "$(OUT_DIR)"
+	@rm -f "$(OUT_DIR)/microbench.json"
 	bash -c 'set -euo pipefail; for s in nethttp gin huma gombit; do \
-		go test ./benchmarks/micro/$$s -bench=BenchmarkFrameworkTax -benchmem -run="^$$" -count=$(MICRO_COUNT) \
-			| go run ./benchmarks/scripts/microbench -stack $$s -out "$(OUT_DIR)/microbench.json"; \
+		echo "benchmark-micro: $$s"; \
+		out="$$(go test ./benchmarks/micro/$$s -bench=BenchmarkFrameworkTax -benchmem -run="^$$" -count=$(MICRO_COUNT))" \
+			|| { echo "$$out" >&2; echo "benchmark-micro: $$s failed" >&2; exit 1; }; \
+		printf "%s\n" "$$out" | go run ./benchmarks/scripts/microbench -stack $$s -out "$(OUT_DIR)/microbench.json"; \
 	done'
 
 ## benchmark-report: regenerate the derived Markdown from OUT_DIR — the root

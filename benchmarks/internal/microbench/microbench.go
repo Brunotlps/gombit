@@ -6,8 +6,11 @@
 //
 // Each stack is a separate `go test` process (constructing framework.App
 // mutates a process-global; see benchmarks/micro/gombit), so the parser tags
-// rows with the stack the orchestrator ran, and rows merge by (stack,
-// scenario). Keeping the parse + schema here (not in the shell) lets it be
+// rows with the stack the orchestrator ran, and rows merge by stack (a stack is
+// replaced whole, so a partial re-run can't leave stale scenarios behind).
+// Every `-count` ns/op sample is kept, not just the last, so a statistical
+// summary (median/CoV, benchstat) is a non-breaking addition rather than lost
+// data. Keeping the parse + schema here (not in the shell) lets it be
 // unit-tested against captured `go test -bench` output.
 package microbench
 
@@ -16,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"sort"
 	"strconv"
 	"strings"
@@ -27,30 +31,47 @@ const SchemaVersion = 1
 // benchPrefix is the sub-benchmark name the scenarios live under.
 const benchPrefix = "BenchmarkFrameworkTax/"
 
-// Row is one (stack, scenario) measurement.
+// Scenarios is the full set every stack must report; a run missing any of these
+// is incomplete and rejected rather than published as a partial row set.
+var Scenarios = []string{"plaintext", "json", "path-param", "valid-post", "invalid-post"}
+
+// Row is one (stack, scenario) measurement. NsPerOp holds every `-count` sample
+// (so median/variance is derivable and nothing is thrown away); B/op and
+// allocs/op are deterministic for these benchmarks and stored as scalars.
 type Row struct {
-	SchemaVersion int     `json:"schema_version"`
-	Stack         string  `json:"stack"`
-	Scenario      string  `json:"scenario"`
-	NsPerOp       float64 `json:"ns_per_op"`
-	BytesPerOp    int64   `json:"bytes_per_op"`
-	AllocsPerOp   int64   `json:"allocs_per_op"`
+	SchemaVersion int       `json:"schema_version"`
+	Stack         string    `json:"stack"`
+	Scenario      string    `json:"scenario"`
+	NsPerOp       []float64 `json:"ns_per_op"`
+	BytesPerOp    int64     `json:"bytes_per_op"`
+	AllocsPerOp   int64     `json:"allocs_per_op"`
 }
 
-// Key identifies a row for merge/replace.
-func (r Row) Key() string { return r.Stack + "\x00" + r.Scenario }
+// MedianNsPerOp is the median of the ns/op samples (0 if none) — the headline
+// statistic, matching the CRUD table's use of the median.
+func (r Row) MedianNsPerOp() float64 {
+	n := len(r.NsPerOp)
+	if n == 0 {
+		return 0
+	}
+	s := append([]float64(nil), r.NsPerOp...)
+	sort.Float64s(s)
+	if n%2 == 1 {
+		return s[n/2]
+	}
+	return (s[n/2-1] + s[n/2]) / 2
+}
 
 // ParseBenchOutput reads `go test -bench` text output for one stack and returns
-// a row per BenchmarkFrameworkTax/<scenario> line. A run with -count>1 emits a
-// line per iteration; the last one for each scenario wins (deterministic, and
-// enough for a headline table — variance is not part of this microbenchmark's
-// contract). Lines that are not benchmark result lines are ignored.
+// a row per BenchmarkFrameworkTax/<scenario>, accumulating every iteration's
+// ns/op into NsPerOp. Non-benchmark lines are ignored. It errors unless every
+// scenario in Scenarios is present (a panic mid-run yields fewer scenarios,
+// which must fail rather than publish a partial stack).
 func ParseBenchOutput(stack string, r io.Reader) ([]Row, error) {
 	if stack == "" {
 		return nil, fmt.Errorf("stack is required")
 	}
-	byScenario := map[string]Row{}
-	order := []string{}
+	byScenario := map[string]*Row{}
 	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 0, 64*1024), 1<<20)
 	for sc.Scan() {
@@ -59,63 +80,71 @@ func ParseBenchOutput(stack string, r io.Reader) ([]Row, error) {
 			continue
 		}
 		scenario := strings.TrimPrefix(fields[0], benchPrefix)
-		// Drop the trailing -<GOMAXPROCS> Go appends to a benchmark name.
 		if i := strings.LastIndex(scenario, "-"); i >= 0 {
-			scenario = scenario[:i]
+			scenario = scenario[:i] // drop the trailing -<GOMAXPROCS>
 		}
-		row := Row{SchemaVersion: SchemaVersion, Stack: stack, Scenario: scenario}
-		if !parseMetrics(fields, &row) {
-			continue // a benchmark line with no ns/op (e.g. a "--- FAIL" isn't one)
+		ns, bytesPer, allocs, ok := parseMetrics(fields)
+		if !ok {
+			continue
 		}
-		if _, seen := byScenario[scenario]; !seen {
-			order = append(order, scenario)
+		row := byScenario[scenario]
+		if row == nil {
+			row = &Row{SchemaVersion: SchemaVersion, Stack: stack, Scenario: scenario}
+			byScenario[scenario] = row
 		}
-		byScenario[scenario] = row
+		row.NsPerOp = append(row.NsPerOp, ns)
+		row.BytesPerOp = bytesPer // deterministic across iterations; last wins
+		row.AllocsPerOp = allocs
 	}
 	if err := sc.Err(); err != nil {
 		return nil, fmt.Errorf("read bench output: %w", err)
 	}
-	rows := make([]Row, 0, len(order))
-	for _, s := range order {
-		rows = append(rows, byScenario[s])
+	for _, want := range Scenarios {
+		if byScenario[want] == nil {
+			return nil, fmt.Errorf("stack %q is missing the %q scenario (incomplete run — %d of %d scenarios present)",
+				stack, want, len(byScenario), len(Scenarios))
+		}
+	}
+	rows := make([]Row, 0, len(byScenario))
+	for _, s := range Scenarios {
+		rows = append(rows, *byScenario[s])
 	}
 	return rows, nil
 }
 
-// parseMetrics fills ns/op, B/op, allocs/op from the "<value> <unit>" pairs in a
-// benchmark line. Returns false if ns/op is absent.
-func parseMetrics(fields []string, row *Row) bool {
-	gotNs := false
+// parseMetrics returns (ns/op, B/op, allocs/op, ok) from the "<value> <unit>"
+// pairs in a benchmark line; ok is false if ns/op is absent.
+func parseMetrics(fields []string) (ns float64, bytesPer, allocs int64, ok bool) {
 	for i := 1; i < len(fields); i++ {
 		switch fields[i] {
 		case "ns/op":
 			if v, err := strconv.ParseFloat(fields[i-1], 64); err == nil {
-				row.NsPerOp = v
-				gotNs = true
+				ns, ok = v, true
 			}
 		case "B/op":
 			if v, err := strconv.ParseInt(fields[i-1], 10, 64); err == nil {
-				row.BytesPerOp = v
+				bytesPer = v
 			}
 		case "allocs/op":
 			if v, err := strconv.ParseInt(fields[i-1], 10, 64); err == nil {
-				row.AllocsPerOp = v
+				allocs = v
 			}
 		}
 	}
-	return gotNs
+	return ns, bytesPer, allocs, ok
 }
 
-// Merge returns existing with the given (stack, scenario) rows replaced by
-// incoming, keeping other rows, sorted deterministically.
+// Merge returns existing with every row for the incoming stacks removed and the
+// incoming rows appended — a stack is replaced as a whole, so a re-run can't
+// leave a stale scenario from a previous run. Deterministically sorted.
 func Merge(existing, incoming []Row) []Row {
-	replaced := make(map[string]bool, len(incoming))
+	replacedStack := map[string]bool{}
 	for _, r := range incoming {
-		replaced[r.Key()] = true
+		replacedStack[r.Stack] = true
 	}
 	out := make([]Row, 0, len(existing)+len(incoming))
 	for _, r := range existing {
-		if !replaced[r.Key()] {
+		if !replacedStack[r.Stack] {
 			out = append(out, r)
 		}
 	}
@@ -125,11 +154,15 @@ func Merge(existing, incoming []Row) []Row {
 }
 
 func sortRows(rows []Row) {
+	scenIdx := map[string]int{}
+	for i, s := range Scenarios {
+		scenIdx[s] = i
+	}
 	sort.SliceStable(rows, func(i, j int) bool {
 		if rows[i].Stack != rows[j].Stack {
 			return rows[i].Stack < rows[j].Stack
 		}
-		return rows[i].Scenario < rows[j].Scenario
+		return scenIdx[rows[i].Scenario] < scenIdx[rows[j].Scenario]
 	})
 }
 
@@ -148,4 +181,12 @@ func ReadJSON(r io.Reader) ([]Row, error) {
 		return nil, fmt.Errorf("decode microbench json: %w", err)
 	}
 	return rows, nil
+}
+
+// Relative renders x/base as a "N.Nx" string (base itself is "1.0x").
+func Relative(x, base float64) string {
+	if base <= 0 {
+		return "—"
+	}
+	return strconv.FormatFloat(math.Round(x/base*10)/10, 'f', 1, 64) + "×"
 }

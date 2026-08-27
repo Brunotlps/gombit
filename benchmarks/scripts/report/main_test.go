@@ -72,6 +72,35 @@ func TestWriteRendersRealResults(t *testing.T) {
 	}
 }
 
+// The CLI must decode -micro and render the real ladder, not ignore the flag.
+func TestWriteRendersRealMicro(t *testing.T) {
+	dir := t.TempDir()
+	readme := filepath.Join(dir, "README.md")
+	if err := os.WriteFile(readme, []byte("## Performance\n\n"+report.StartMarker+"\n\n"+report.EndMarker+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	microPath := filepath.Join(dir, "microbench.json")
+	// All four rungs at valid-post so the ladder publishes.
+	if err := os.WriteFile(microPath, []byte(`[
+	  {"stack":"nethttp","scenario":"valid-post","ns_per_op":[810],"bytes_per_op":1425,"allocs_per_op":14},
+	  {"stack":"gin","scenario":"valid-post","ns_per_op":[900],"bytes_per_op":1458,"allocs_per_op":15},
+	  {"stack":"huma","scenario":"valid-post","ns_per_op":[1078],"bytes_per_op":1467,"allocs_per_op":17},
+	  {"stack":"gombit","scenario":"valid-post","ns_per_op":[3100],"bytes_per_op":4901,"allocs_per_op":51}
+	]`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	miss := filepath.Join(dir, "nope.json")
+
+	var so, se bytes.Buffer
+	if code := run([]string{"-readme", readme, "-results", miss, "-footprint", miss, "-micro", microPath, "-metadata", miss}, &so, &se); code != 0 {
+		t.Fatalf("exit=%d stderr=%s", code, se.String())
+	}
+	got, _ := os.ReadFile(readme) //nolint:gosec // test reads a temp file it just wrote
+	if !strings.Contains(string(got), "| Gombit | 3100") || !strings.Contains(string(got), "vs net/http") {
+		t.Errorf("CLI did not render the real microbench.json ladder:\n%s", got)
+	}
+}
+
 func TestCheckDetectsDrift(t *testing.T) {
 	readme := writeReadme(t) // still holds "stale", never regenerated
 	miss := filepath.Join(t.TempDir(), "nope.json")
