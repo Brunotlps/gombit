@@ -19,6 +19,35 @@ go run ./benchmarks/apps/gin-gorm -seed
 go run ./benchmarks/apps/gin-gorm
 ```
 
+### Under compose (containerized, with the §7 resource budget)
+
+The app is also containerized (`Dockerfile`, built from the **repo root** since
+it imports `benchmarks/apps/shared`) and wired into `benchmarks/compose.yml`
+with the issue #141 §7 app ceiling (2 vCPU / 1 GiB). Because a compose budget
+is only an *intention* — whether `deploy.resources.limits` is honored is
+engine/version-dependent — the running container is verified rather than
+trusted:
+
+```sh
+# build + start postgres and the app (Compose v2 enforces the limits on `up`)
+docker compose --env-file benchmarks/config/versions.env \
+  -f benchmarks/compose.yml up -d postgres gin-gorm
+
+# seed once (truncate + insert), then the served container keeps running
+docker compose --env-file benchmarks/config/versions.env \
+  -f benchmarks/compose.yml run --rm gin-gorm seed
+
+# confirm the ceiling actually landed on the live container
+go run ./benchmarks/scripts/inspect-limits \
+  -container "$(docker compose -f benchmarks/compose.yml ps -q gin-gorm)" \
+  -cpus 2 -memory 1g
+```
+
+The entrypoint takes two verbs, `seed` and `serve` (default), matching the two
+modes below. The full "bring all six apps up and run `run-crud` over each" loop
+is a later Phase 6 slice; this is the containerization + honest limit-detection
+spine it builds on.
+
 Env vars (all optional, defaults match `benchmarks/compose.yml`):
 
 | Var | Default | |
@@ -74,7 +103,10 @@ and the cross-implementation fairness check comparing them are all done
 (tracked in [docs/plans/BENCH-1-benchmark-suite.md](../../../docs/plans/BENCH-1-benchmark-suite.md)
 Phase 3). See [../gombit/README.md](../gombit/README.md) for the Gombit-side
 details, including one discovered framework gap and two bugs the fairness
-comparison caught. Still open: wiring the fairness check into automated CI
-(it needs both databases at the full canonical 1,000/100,000 scale, deferred
-to Phase 8's lighter-seed CI work) and `benchmarks/compose.yml` app services
-for both apps — currently only the `postgres` service runs.
+comparison caught. This app is now containerized with a `benchmarks/compose.yml`
+`gin-gorm` service carrying the §7 budget (see [Run](#run) above). Still open:
+wiring the fairness check into automated CI (it needs both databases at the full
+canonical 1,000/100,000 scale, deferred to Phase 8's lighter-seed CI work); the
+`gombit` app's compose service and the six-app bring-up loop (later Phase 6
+slices); and consuming the `inspect-limits` verdict into a run's recorded
+`metadata.resource_limits` (today it is printed, not yet recorded).

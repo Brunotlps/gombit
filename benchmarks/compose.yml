@@ -1,7 +1,6 @@
-# PostgreSQL service shared by every benchmarks/apps/ implementation.
-# App services are added as each implementation lands (Phase 3+); this file
-# currently only stands up the database so `benchmarks/apps/*` can be
-# developed and fairness-tested against it locally.
+# PostgreSQL + the benchmark app services under test. App services are added
+# as each is containerized (Phase 6 compose loop); `gin-gorm` is the first —
+# the reference Go control the others are compared against.
 #
 # Version pin: issue #141 requires major.minor (or digest), not a
 # major-only floating tag. The pin lives once in
@@ -9,10 +8,27 @@
 # ${POSTGRES_IMAGE}. Run compose with that env file so the two can't drift:
 #
 #   docker compose --env-file benchmarks/config/versions.env \
-#     -f benchmarks/compose.yml up -d postgres
+#     -f benchmarks/compose.yml up -d postgres gin-gorm
 #
-# The `:-postgres:16.4-alpine` default keeps a bare `docker compose up` (no
-# env file) working with the same pinned image.
+#   # seed the deterministic dataset once (truncate + insert), then it serves:
+#   docker compose --env-file benchmarks/config/versions.env \
+#     -f benchmarks/compose.yml run --rm gin-gorm seed
+#
+#   # confirm the §7 ceiling actually landed — do NOT trust the file, trust the
+#   # running container (benchmarks/scripts/inspect-limits):
+#   go run ./benchmarks/scripts/inspect-limits \
+#     -container "$(docker compose -f benchmarks/compose.yml ps -q gin-gorm)" \
+#     -cpus "$APP_CPUS" -memory "$APP_MEMORY"
+#
+# On the deploy.resources.limits below: Docker Compose v2 enforces them on a
+# plain `up` (verified locally against Compose v5.x — the container comes up
+# with NanoCpus/Memory set). Older Compose (v1, and early v2 that needed
+# `--compatibility`), Swarm-mode stacks, or a host without the cgroup
+# controllers can silently leave them off, which is exactly why the intended
+# budget is verified against the live container rather than assumed from here.
+#
+# The `:-...` defaults keep a bare `docker compose up` (no env file) working
+# with the same pinned image and limits.
 services:
   postgres:
     image: ${POSTGRES_IMAGE:-postgres:16.4-alpine}
@@ -28,14 +44,51 @@ services:
       timeout: 2s
       retries: 30
     # Issue #141 resource-limits requirement: 2 vCPU / 2 GiB for PostgreSQL.
-    # Docker Compose only enforces these under Swarm (`deploy.resources`) or
-    # when the CLI is invoked with `--compatibility`; plain `docker compose
-    # up` on a non-Swarm host silently ignores them. benchmarks/scripts (not
-    # yet written) must detect and report this rather than claim limits were
-    # applied when they weren't (issue: "detect/report that fact rather than
-    # silently pretending limits were applied").
+    # Compose v2 enforces deploy.resources.limits on a plain `up`, but whether
+    # they land is engine/version/host-dependent (older Compose, Swarm, or a
+    # host missing cgroup controllers can drop them), so the suite verifies the
+    # running container rather than trusting these keys — benchmarks/scripts/
+    # inspect-limits detects and reports the truth (issue: "detect/report that
+    # fact rather than silently pretending limits were applied").
     deploy:
       resources:
         limits:
-          cpus: "2"
-          memory: 2g
+          cpus: "${POSTGRES_CPUS:-2}"
+          memory: ${POSTGRES_MEMORY:-2g}
+
+  # The gin-gorm control app (issue #141 §7 app budget: 2 vCPU / 1 GiB). Built
+  # from the repo root (the Go module root) because it imports
+  # benchmarks/apps/shared; the Dockerfile-scoped .dockerignore keeps the
+  # context small. Whether the deploy.resources.limits below are honored is
+  # engine/version-dependent — inspect-limits reports whether they actually were.
+  gin-gorm:
+    build:
+      context: ..
+      dockerfile: benchmarks/apps/gin-gorm/Dockerfile
+    image: bench-gin-gorm:local
+    command: ["serve"]
+    environment:
+      DATABASE_URL: postgres://gombit:gombit@postgres:5432/gombit_bench?sslmode=disable
+      PORT: "8081"
+      POOL_MAX_OPEN: "${POOL_MAX_OPEN:-20}"
+      POOL_MAX_IDLE: "${POOL_MAX_IDLE:-20}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8081:8081"
+    # Probe /livez (registered by newRouter, no DB touch — the same readiness
+    # route the fairness harness and the other apps standardize on), never the
+    # measured /api/projects route: the check ticks forever, so a data-plane
+    # probe would add COUNT+page+preload traffic to the SUT (under its §7
+    # ceiling) on every interval. The next apps' services copy this one.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null 'http://127.0.0.1:8081/livez' || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    deploy:
+      resources:
+        limits:
+          cpus: "${APP_CPUS:-2}"
+          memory: ${APP_MEMORY:-1g}

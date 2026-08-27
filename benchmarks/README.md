@@ -7,7 +7,7 @@ Full plan: [docs/plans/BENCH-1-benchmark-suite.md](../docs/plans/BENCH-1-benchma
 
 ```text
 benchmarks/
-├── compose.yml          PostgreSQL only so far (see docs/schema.md)
+├── compose.yml          PostgreSQL + the gin-gorm app service (§7 limits); more apps land with the Phase 6 loop
 ├── config/
 │   └── versions.env     pinned load generator (k6), Postgres image, resource limits, workload defaults
 ├── docs/
@@ -16,13 +16,15 @@ benchmarks/
 │   ├── result/           results.json/results.csv schema + encoders (issue §9)
 │   ├── metadata/         reproducibility metadata struct + host/toolchain collector
 │   ├── k6/               parses a crud-list.js summary into result rows (+ Validate)
-│   └── summary/          aggregates trials into per-group stats + renders summary.md (CoV flag)
+│   ├── summary/          aggregates trials into per-group stats + renders summary.md (CoV flag)
+│   └── reslimits/        classifies a container's Docker-recorded limits (HostConfig) vs the §7 budget (honest detection)
 ├── workloads/
 │   └── crud-list.js      the headline GET /api/projects read workload (k6)
 ├── scripts/
 │   ├── collect-host-info/ CLI over internal/metadata: writes metadata.json for a run
 │   ├── run-crud/          runs crud-list.js (via the pinned k6 image) against one app → results snapshot
-│   └── summarize/         results.json -> summary.md (make benchmark-summary)
+│   ├── summarize/         results.json -> summary.md (make benchmark-summary)
+│   └── inspect-limits/    reports whether a live container got the §7 ceiling (uses internal/reslimits)
 ├── micro/                Go abstraction-overhead microbenchmarks (Phase 2)
 │   ├── scenario/          shared resource types, Huma route registration, correctness assertions
 │   ├── nethttp/           net/http row (no router, no framework)
@@ -43,11 +45,36 @@ benchmarks/
 
 All six canonical CRUD implementations exist, the result schema / metadata
 collector / run-config pins are in place, and the headline CRUD-read workload
-runs end to end against one implementation (`make benchmark-crud`). Still
-scoped to later phases: `docs/methodology.md`, per-app `compose.yml` services
-and the loop that brings all six up and runs `run-crud` over each, per-app
+runs end to end against one implementation (`make benchmark-crud`). The Phase 6
+compose loop has started: `gin-gorm` is containerized and its `compose.yml`
+service carries the §7 resource budget, with `internal/reslimits` +
+`scripts/inspect-limits` verifying the ceiling actually landed on the live
+container (issue #141's "detect/report rather than silently pretend"). Still
+scoped to later phases: `docs/methodology.md`, containerizing the other five
+apps and the loop that brings all six up and runs `run-crud` over each, per-app
 resource/RSS capture (Phase 6 footprint), the other `make benchmark-*`
 workloads, and extending `fairness_test.go` to all six.
+
+## Resource limits (§7): intention vs. reality
+
+Issue #141 §7 pins each app to 2 vCPU / 1 GiB and PostgreSQL to 2 vCPU / 2 GiB.
+Those live in `benchmarks/config/versions.env` and are requested via
+`deploy.resources.limits` in `compose.yml` — but a value in a compose file is
+an *intention*, not proof the kernel enforced it (older Compose, Swarm mode, or
+a host without the needed cgroup controllers can silently drop it; Compose v2
+does enforce it on a plain `up`). So the suite never trusts the file: after
+bringing a container up, `scripts/inspect-limits` reads the limits Docker
+recorded for the container (`docker inspect`'s `HostConfig.NanoCpus`/`Memory` —
+which the daemon zeroes or rejects when it can't apply them, an honest signal of
+a dropped ceiling) via `internal/reslimits` and classifies them against the
+intended budget — `enforced`, `partial`, or `not applied`.
+
+Today the command **prints** that verdict; nothing yet consumes it. Wiring it
+into what a run records as `metadata.resource_limits` — automatically in the
+six-app compose loop, or by hand via
+`run-crud -resource-limits "$(inspect-limits …)"` — is a later slice. Until
+then `benchmark-crud` records `run-crud`'s own honest default: it starts and
+constrains nothing, so it says "not applied" unless you pass the flag.
 
 ## Result schema and run metadata
 

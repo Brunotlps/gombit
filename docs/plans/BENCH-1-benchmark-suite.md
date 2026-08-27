@@ -1354,6 +1354,92 @@ its own, not only in the correction below it.
 
 ### Phase 6 — Operational footprint
 
+**Compose-loop foundation — started (containerization + honest §7 limit
+detection).** The first slice of the "bring the apps up under compose" loop is
+in:
+
+- `benchmarks/apps/gin-gorm/Dockerfile` (multi-stage, built from the **repo
+  root** so it can import `benchmarks/apps/shared`; a Dockerfile-scoped
+  `.dockerignore` keeps node_modules/vendor/.git out of the context) +
+  `docker-entrypoint.sh` with `seed`/`serve` verbs, and a `gin-gorm` service in
+  `benchmarks/compose.yml` carrying the §7 app budget (2 vCPU / 1 GiB) and a
+  health check. gin-gorm is the reference app; the other five are the next
+  slices.
+- `benchmarks/internal/reslimits` + `benchmarks/scripts/inspect-limits`: the
+  issue's "detect and report rather than silently pretend limits were applied"
+  requirement. A compose budget is only an *intention*; the tool reads the
+  limits Docker recorded for the container (`docker inspect`'s
+  HostConfig.NanoCpus/Memory — the daemon's post-adapt create config, which it
+  zeroes/rejects when it can't apply a ceiling, so an honest dropped-limit
+  signal rather than a `/sys/fs/cgroup` read) and classifies them against the
+  intended budget (`enforced` / `partial` / `not applied`), **printing** the
+  honest string. Unit-tested: `reslimits` classification (incl.
+  wrong-value-is-not-enforced), the inspect parser, compose-style byte parsing;
+  and the CLI's `-strict` fail-closed exit + output formats via the
+  `-inspect-file` seam. Verified end to end against a live container (enforced
+  `NanoCpus=2e9`/`Memory=1GiB`; a genuinely unlimited `docker run` reads `not
+  applied`). **Not yet wired:** nothing consumes the string — `run-crud` still
+  records its own honest "not applied" default. Recording the verdict into
+  `metadata.resource_limits` (the six-app loop, or `run-crud -resource-limits`)
+  is a later slice.
+- **Empirical correction to the plan's own assumption:** the `compose.yml`
+  comment (and this plan's earlier framing) claimed a plain `docker compose up`
+  "silently ignores" `deploy.resources.limits` and that `--compatibility` or
+  Swarm is required. Verified false on Docker Compose v2 (tested v5.x): a plain
+  `up` **does** enforce the limits. That is exactly why detection reads the
+  running container instead of prescribing a flag — the enforcement path is
+  version/host-dependent, so only the container is authoritative.
+
+**Post-landing correction (review on PR #186,
+github.com/gombit-dev/gombit/pull/186#pullrequestreview-5035969128):** the
+classifier was sound but the public prose oversold the plumbing; three MAJOR
+findings, all reproduced, all fixed.
+
+- **"A run records" the honest string — nothing recorded it (MAJOR).** The
+  README and the `inspect-limits` doc claimed, in present tense, that the
+  verdict is what a run records in `metadata.resource_limits`. Nothing consumed
+  `Report.String()` but `fmt.Println`; `run-crud` still writes its own
+  hardcoded "not applied" sentence. Reworded every present-tense claim to the
+  truth: the command *prints* the verdict, and wiring it into a recorded run is
+  a later slice. Also stopped calling `HostConfig.NanoCpus`/`Memory` "applied
+  cgroup limits" — they are Docker's post-adapt create config (an honest
+  discard signal), not a `/sys/fs/cgroup` read.
+- **The `--compatibility` correction skipped the pin file (MAJOR).** This note
+  claimed "no code claims `--compatibility` is required," but
+  `benchmarks/config/versions.env` — not in the original diff — still said
+  Compose "only enforces these under Swarm/`--compatibility`." Corrected it to
+  the version-dependent reality. Same class of leftover in
+  `benchmarks/apps/gin-gorm/README.md`: its Status section still said "only the
+  `postgres` service runs" while the new section above it documents the
+  `gin-gorm` service; reconciled.
+- **The CLI's only fail-closed contract had no test (MAJOR).** `inspect-limits`
+  was `[no test files]`; an always-`exit(0)` `main` would have passed. Refactored
+  `main` into a testable `run(args, stdout, stderr) int` and added `main_test.go`
+  exercising the `-strict` non-zero exit on an unenforced budget, the zero exit
+  without `-strict`, JSON/string output, and usage errors — all via the
+  `-inspect-file` seam, no Docker needed.
+
+**Post-landing correction, round 2 (review on PR #186,
+github.com/gombit-dev/gombit/pull/186#pullrequestreview-5036093722):** the
+first-look items were confirmed closed; one MAJOR on the compose service plus
+two code leftovers, all fixed.
+
+- **Compose healthcheck probed the measured route, not `/livez` (MAJOR).** The
+  `gin-gorm` service's health test hit `GET /api/projects?page=1&limit=1` — a
+  COUNT + page + owner-preload query — on every 3s tick, forever, against the
+  Postgres this PR just put under the §7 ceiling. `newRouter` already serves
+  `GET /livez` (200, no DB touch), which the fairness harness (`waitForHealth`)
+  and the other apps standardize on; Rails even silences that path. Since this
+  is the first containerized service and the next five clone it, pointed the
+  probe at `/livez` before the pattern spreads. Verified live: the container
+  reaches `healthy` in ~3s and `/livez` returns 200.
+- **Leftovers.** `POOL_MAX_IDLE` interpolated `${POOL_MAX_OPEN}` (right value,
+  wrong variable) — added `POOL_MAX_IDLE=20` to `versions.env` (issue §18 pins
+  max idle to 20 too) and referenced the correctly-named var. Collapsed the
+  identical `usage`/`fail` CLI helpers into one. (The PR *body*'s stale "renders
+  the honest string a run records" line is a GitHub-side description, not part
+  of the tree; the tree and scope notes already say the wiring is deferred.)
+
 - Cold-start (≥20 runs, median/p95), idle RSS, loaded RSS, CPU-under-load for
   all 6 implementations.
 - Gombit-specific: build via `gombit build --embed`, verify the embedded
