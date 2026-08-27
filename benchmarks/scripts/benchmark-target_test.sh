@@ -1,0 +1,91 @@
+#!/usr/bin/env bash
+# Tests for the all-in-one `make benchmark` target (issue #141 §10). The four
+# stages are composed as sequential recursive `$(MAKE)` lines in ONE recipe — not
+# a prerequisite list — precisely so they stay ordered under `make -j` (four
+# compose-sharing stages must never run at once) and so a failed stage aborts the
+# chain. None of that is exercised by the per-stage tests, and the obvious
+# "cleanup" refactor to `benchmark: benchmark-crud-all benchmark-footprint ...`
+# looks identical without `-j`. This locks the contract WITHOUT Docker by
+# overriding the special `MAKE` variable so every `$(MAKE) benchmark-<stage>`
+# line runs a recording stub instead of the real (hours-long) stage.
+#
+#   bash benchmarks/scripts/benchmark-target_test.sh
+set -euo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+cd "$ROOT"
+
+fail=0
+note() { echo "FAIL: $*" >&2; fail=1; }
+
+# ---- 1. a bare `make` must not be the full suite ----
+# The default goal must be an explicit, cheap target (help) — never `benchmark`,
+# which would make a bare `make` at repo root a multi-hour run that rewrites the
+# committed README. Reading it off `make -p` is the same check the review used.
+goal="$(make -p -n 2>/dev/null | grep -E '^\.DEFAULT_GOAL' | head -1 | sed -E 's/.*:= *//')"
+[ "$goal" = "help" ] || note "default goal is '$goal', want 'help' (a bare make must not run the suite)"
+
+# ---- 2. `benchmark` is composed as recipe lines, not prerequisites ----
+# A prerequisite list (`benchmark: benchmark-crud-all ...`) would let `make -j`
+# run the four stages concurrently. The rule's own line must carry no
+# prerequisites; the ordering lives in the recipe body.
+prereqs="$(sed -nE 's/^benchmark:[[:space:]]*(.*)$/\1/p' Makefile)"
+[ -z "$prereqs" ] || note "benchmark: has prerequisites '$prereqs' — -j would parallelize the stages; use recipe lines"
+
+# The make-driven cases below intercept the stages by overriding the special
+# MAKE variable, which only reaches recursive `$(MAKE)` lines — NOT a
+# prerequisite list, whose stages the parent make would build for real (Docker).
+# So if the composition regressed to prerequisites, fail fast here instead of
+# launching the real six-app suite.
+if [ "$fail" -ne 0 ]; then
+  echo "benchmark-target_test: FAILED (structural checks; skipping make-driven cases to avoid running the real suite)" >&2
+  exit 1
+fi
+
+# ---- stub over the recursive $(MAKE) so no real stage runs ----
+stubdir="$(mktemp -d)"
+trap 'rm -rf "${stubdir:-}"' EXIT
+REC="$stubdir/log"
+cat > "$stubdir/recmake" <<'EOF'
+#!/usr/bin/env bash
+# Records the stage (its make target arg) and the pins it inherited, then fails
+# if asked to — standing in for one recursive `$(MAKE) benchmark-<stage>` call.
+echo "$1 CONCURRENCY=${CONCURRENCY:-unset} OUT_DIR=${OUT_DIR:-unset} APPS=${APPS:-unset}" >> "$REC"
+[ "${FAIL_ON:-}" = "$1" ] && exit 1
+exit 0
+EOF
+chmod +x "$stubdir/recmake"
+run_benchmark() { REC="$REC" make benchmark MAKE="$stubdir/recmake" "$@"; }
+
+# ---- 3. stages run in the fixed order, even under -j ----
+: > "$REC"
+run_benchmark -j4 CONCURRENCY=1,10 OUT_DIR=/tmp/bench-x APPS=gin-gorm >/dev/null 2>&1 || note "benchmark chain failed on a clean stub run"
+got="$(cut -d' ' -f1 < "$REC" | paste -sd, -)"
+want="benchmark-crud-all,benchmark-footprint,benchmark-micro,benchmark-report"
+[ "$got" = "$want" ] || note "stage order under -j = '$got', want '$want'"
+
+# ---- 4. command-line pins reach every stage's environment ----
+while read -r line; do
+  case "$line" in
+    *"CONCURRENCY=1,10 OUT_DIR=/tmp/bench-x APPS=gin-gorm"*) : ;;
+    *) note "a stage did not inherit the CLI pins: $line" ;;
+  esac
+done < "$REC"
+
+# ---- 5. a failed stage aborts the chain (no later stage runs) ----
+: > "$REC"
+rc=0
+FAIL_ON=benchmark-footprint run_benchmark >/dev/null 2>&1 || rc=$?
+[ "$rc" -ne 0 ] || note "benchmark should fail when a stage fails"
+ran="$(cut -d' ' -f1 < "$REC" | paste -sd, -)"
+[ "$ran" = "benchmark-crud-all,benchmark-footprint" ] \
+  || note "fail-closed broken: stages that ran = '$ran', want the chain to stop after benchmark-footprint"
+if grep -qE '^(benchmark-micro|benchmark-report)' "$REC"; then
+  note "a stage ran after the failed one (chain did not abort)"
+fi
+
+if [ "$fail" -ne 0 ]; then
+  echo "benchmark-target_test: FAILED" >&2
+  exit 1
+fi
+echo "benchmark-target_test: default-goal, no-prereq composition, ordered stages, pin propagation, and fail-closed all pass"

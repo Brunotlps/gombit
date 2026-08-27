@@ -114,6 +114,34 @@ Markdown report is always generated from that, never the other way around.
 Pinned versions and limits are in
 [`benchmarks/config/versions.env`](config/versions.env).
 
+## Running the whole suite
+
+One command runs everything into `benchmarks/results/latest/` and regenerates
+the README `## Performance` block — the dedicated-host snapshot run:
+
+```sh
+# fresh Postgres for clean per-app databases:
+docker compose --env-file benchmarks/config/versions.env -f benchmarks/compose.yml down -v
+docker compose --env-file benchmarks/config/versions.env -f benchmarks/compose.yml up -d postgres
+
+make benchmark                       # crud-all -> footprint -> micro -> report
+# CRUD pins from versions.env by default (1/10/100/500/1000 × 5 × 30s, 10s
+# warm-up); cold starts default to footprint-all.sh's COLD_START_RUNS (20).
+# Narrow any on the command line for a reduced run:
+make benchmark CONCURRENCY=1,10,100  # e.g. if 500/1000 VUs are unsustained
+```
+
+`make benchmark` is an explicit command, never the default goal — a bare `make`
+prints the target list (`make help`) so it can never accidentally kick off the
+multi-hour six-app run and rewrite the committed README. The stages compose as
+sequential recursive `$(MAKE)` lines (not prerequisites), so they stay ordered
+even under `make -j` and a failed stage halts the chain;
+`benchmarks/scripts/benchmark-target_test.sh` locks that (order, pin
+propagation, fail-closed) without Docker by stubbing the recursive make.
+
+The individual `make benchmark-crud-all`, `-footprint`, `-micro`, and `-report`
+targets below run each stage on its own.
+
 ## Running the CRUD-read workload
 
 The headline workload is `GET /api/projects?page=1&limit=20`
