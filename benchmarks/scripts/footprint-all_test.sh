@@ -45,6 +45,18 @@ got="$(aggregate_load_samples "$f")"
 [ "$got" = "25 2.5" ] || note "aggregate_load_samples(3 samples) = '$got', want '25 2.5'"
 rm -f "$f"
 
+# ---- static: image size is inspected by TAG (.Config.Image), never the
+#      resolved image ID (.Image). measure_container rebuilds the image, which
+#      retags to a new ID and can leave the old ID a reused container pins
+#      dangling; `docker image inspect <old-id>` then fails "No such image" and
+#      aborts the whole run after a clean load (seen on a real canonical run).
+#      The runtime docker is stubbed below, so this source check is what locks it.
+if grep -qE "docker inspect [^|]*'\{\{\.Image\}\}'" benchmarks/scripts/footprint-all.sh; then
+  note "image-size inspects the resolved .Image ID (dangles after rebuild); use .Config.Image (the tag)"
+fi
+grep -qF '{{.Config.Image}}' benchmarks/scripts/footprint-all.sh \
+  || note "image-size no longer inspects the app image by tag (.Config.Image)"
+
 # ---- fakes for the measure_container control-flow tests ----
 CALLS=()
 fake_compose() { if [ "$1" = ps ]; then echo "cid-$3"; return 0; fi; CALLS+=("compose $*"); }

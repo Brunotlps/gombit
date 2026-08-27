@@ -183,7 +183,14 @@ do_measure() {
   loaded="${loaded_cpu% *}"
   cpu="${loaded_cpu#* }"
 
-  image="$(docker image inspect "$(docker inspect "$cid" --format '{{.Image}}')" --format '{{.Size}}')" || return 1
+  # Inspect the app image by the TAG the container was created with
+  # (.Config.Image, e.g. bench-gin-gorm:local), not the resolved image ID
+  # (.Image). measure_container rebuilds the image just above; a rebuild retags
+  # to a new ID and can leave the old ID (which a reused container still pins via
+  # .Image) dangling/removed, so `docker image inspect <old-id>` fails with "No
+  # such image". The tag always resolves to the current app image, which is what
+  # the footprint's image-size measures anyway.
+  image="$(docker image inspect "$(docker inspect "$cid" --format '{{.Config.Image}}')" --format '{{.Size}}')" || return 1
 
   record_footprint \
     -framework "$app" -framework-version "$FRAMEWORK_VERSION" \
