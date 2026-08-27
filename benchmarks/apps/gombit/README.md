@@ -88,8 +88,9 @@ go run ./benchmarks/scripts/inspect-limits \
   -cpus 2 -memory 1g
 ```
 
-The full six-app bring-up/`run-crud` loop is a later Phase 6 slice; this
-containerizes the second of the two Go apps on the same pattern as `gin-gorm`.
+`make benchmark-crud-all` brings all six apps up and runs `run-crud` over each;
+this containerizes the second of the two Go apps on the same pattern as
+`gin-gorm`.
 
 ## Test
 

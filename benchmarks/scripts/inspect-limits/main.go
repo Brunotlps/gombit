@@ -9,12 +9,12 @@
 //	go run ./benchmarks/scripts/inspect-limits \
 //	  -container benchmarks-gin-gorm-1 -cpus 2 -memory 1g
 //
-// This command only *prints* the verdict. Wiring the string into what a run
-// records as metadata.resource_limits — automatically in the six-app compose
-// loop, or by hand via `run-crud -resource-limits "$(inspect-limits …)"` — is a
-// later slice. With -strict it exits non-zero unless the budget was fully
-// enforced, so a bring-up script can refuse to record numbers gathered under
-// the wrong limits.
+// This command prints the verdict; `make benchmark-crud-all` consumes it,
+// passing the string to `run-crud -resource-limits` so a run records the
+// applied limit (standalone, you can do the same by hand via
+// `run-crud -resource-limits "$(inspect-limits …)"`). With -strict it exits
+// non-zero unless the budget was fully enforced, so a caller that wants to
+// refuse rather than record can fail closed.
 package main
 
 import (

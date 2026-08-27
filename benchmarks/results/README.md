@@ -21,9 +21,10 @@ results/
 [`benchmarks/internal/metadata`](../internal/metadata) shape, collected by
 [`benchmarks/scripts/collect-host-info`](../scripts/collect-host-info).
 
-`latest/` is committed once the run pipeline exists (Phase 7 of
-[docs/plans/BENCH-1-benchmark-suite.md](../../docs/plans/BENCH-1-benchmark-suite.md)),
+`latest/` is committed once the full suite is run on a dedicated machine (Phase 7
+of [docs/plans/BENCH-1-benchmark-suite.md](../../docs/plans/BENCH-1-benchmark-suite.md)),
 so the published README performance tables are always regenerable from a
-committed snapshot. It does not exist yet — the schema, collector, and config
-pins land first (Phase 1 completion); the orchestration that fills `latest/`
-is the next slice.
+committed snapshot. The orchestration that fills `latest/` exists —
+`make benchmark-crud-all` runs the CRUD-read workload across all six apps and
+`make benchmark-summary` renders `summary.md`; committing a canonical snapshot is
+the Phase 7 reporting step.

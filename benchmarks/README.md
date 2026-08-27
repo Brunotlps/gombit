@@ -23,6 +23,7 @@ benchmarks/
 ├── scripts/
 │   ├── collect-host-info/ CLI over internal/metadata: writes metadata.json for a run
 │   ├── run-crud/          runs crud-list.js (via the pinned k6 image) against one app → results snapshot
+│   ├── run-crud-all.sh    orchestrates run-crud over all six containerized apps (make benchmark-crud-all)
 │   ├── summarize/         results.json -> summary.md (make benchmark-summary)
 │   └── inspect-limits/    reports whether a live container got the §7 ceiling (uses internal/reslimits)
 ├── micro/                Go abstraction-overhead microbenchmarks (Phase 2)
@@ -43,21 +44,18 @@ benchmarks/
 └── results/             generated output (issue §9); results/README.md documents the layout
 ```
 
-All six canonical CRUD implementations exist, the result schema / metadata
-collector / run-config pins are in place, and the headline CRUD-read workload
-runs end to end against one implementation (`make benchmark-crud`). The Phase 6
-compose loop is now well underway: **all six** implementations (`gin-gorm`,
-`gombit`, `django`, `rails`, `laravel`, `nestjs`) are containerized with
-`compose.yml` services carrying the §7 resource budget — `gombit` also applies
-its real Atlas migrations in-container (pinned `atlas` image), and every
-migration-bearing app creates its own database idempotently on every bring-up
-(no fresh-volume init scripts) — and `internal/reslimits` +
-`scripts/inspect-limits` verify the ceiling actually landed on the live
-container (issue #141's "detect/report rather than silently pretend"). Still
-scoped to later phases: `docs/methodology.md`, the loop that brings all six up
-and runs `run-crud` over each, per-app resource/RSS capture (Phase 6 footprint),
-the other `make benchmark-*`
-workloads, and extending `fairness_test.go` to all six.
+All six canonical CRUD implementations run end to end under one command: **all
+six** (`gin-gorm`, `gombit`, `django`, `rails`, `laravel`, `nestjs`) are
+containerized with `compose.yml` services carrying the §7 resource budget —
+`gombit` also applies its real Atlas migrations in-container (pinned `atlas`
+image), and every migration-bearing app creates its own database idempotently on
+every bring-up (no fresh-volume init scripts) — and `make benchmark-crud-all`
+brings each up, seeds it, classifies the applied §7 ceiling on the live
+container and records it (`internal/reslimits` + `scripts/inspect-limits`, issue
+#141's "detect/report rather than silently pretend"), runs the workload, and
+merges all six into one `results.json`. Still scoped to later phases:
+`docs/methodology.md`, per-app resource/RSS capture (Phase 6 footprint), the
+other `make benchmark-*` workloads, and extending `fairness_test.go` to all six.
 
 ## Resource limits (§7): intention vs. reality
 
@@ -73,12 +71,16 @@ which the daemon zeroes or rejects when it can't apply them, an honest signal of
 a dropped ceiling) via `internal/reslimits` and classifies them against the
 intended budget — `enforced`, `partial`, or `not applied`.
 
-Today the command **prints** that verdict; nothing yet consumes it. Wiring it
-into what a run records as `metadata.resource_limits` — automatically in the
-six-app compose loop, or by hand via
-`run-crud -resource-limits "$(inspect-limits …)"` — is a later slice. Until
-then `benchmark-crud` records `run-crud`'s own honest default: it starts and
-constrains nothing, so it says "not applied" unless you pass the flag.
+`make benchmark-crud-all` records that classification as
+`metadata.resource_limits`: for each app it classifies the live container and
+passes the result to `run-crud -resource-limits`, so the recorded value is
+whichever of `enforced` / `partial` / `not applied` the container actually
+shows — a record of what was applied, not an assumption that the ceiling held.
+(If `inspect-limits` cannot classify the container at all — a tool failure — that
+app's row is not published rather than recorded blank.) The standalone
+`make benchmark-crud` starts and constrains nothing, so it records `run-crud`'s
+honest "not applied" default unless you pass
+`-resource-limits "$(inspect-limits …)"` yourself.
 
 ## Result schema and run metadata
 
@@ -109,11 +111,29 @@ network on the **same machine** as the app (the issue's "another container on
 the same host"), so at high concurrency k6 contends for CPU with the app —
 this is the recorded topology, not a separate load-generation host.
 
-Against **one already-running, already-seeded** implementation:
+**All six under compose (the usual way):**
+
+```sh
+make benchmark-crud-all      # then: make benchmark-summary
+```
+
+This brings each containerized app up under compose with the §7 limits, applies
+its migrations and seed (each app creates its own database idempotently), waits
+for `/livez` to report healthy, reads the *actually applied* limit off the live
+container (`inspect-limits`, recorded as `metadata.resource_limits`), runs the
+workload against it, then **stops** it before the next — the load generator
+shares the host, so only the app under test runs while it is measured. Each
+app's framework/runtime versions are derived from its own source-of-truth
+(manifest file, Dockerfile base image), never hand-copied. Override the set with
+`APPS="gin-gorm gombit"`. `benchmarks/scripts/run-crud-all.sh` is the
+orchestrator; `run-crud-all_test.sh` checks every app's identity resolves.
+
+**Or against one already-running, already-seeded implementation** (what the loop
+calls per app):
 
 ```sh
 # start + seed the app per its own README, e.g. benchmarks/apps/gin-gorm, then:
-make benchmark-crud FRAMEWORK=gin-gorm FRAMEWORK_VERSION=v1.11.0 \
+make benchmark-crud FRAMEWORK=gin-gorm FRAMEWORK_VERSION=v1.12.0 \
   RUNTIME=go RUNTIME_VERSION=go1.25.7 \
   TARGET_URL='http://127.0.0.1:8081/api/projects?page=1&limit=20'
 ```
@@ -127,9 +147,13 @@ six. A trial that sends no traffic, has any HTTP error, or fails a content
 check (a 200 with the wrong page shape) fails the command loudly **with
 nothing written** rather than recording a bogus row — the read workload
 against a healthy app must be error-free (`benchmarks/internal/k6`'s
-`Summary.Validate`). `run-crud` does not start or resource-constrain the app,
-so `metadata.resource_limits` says so honestly; the compose loop that enforces
-the §7 limits and captures `cpu_percent`/`rss_bytes` (Phase 6) is the next
+`Summary.Validate`). Standalone, `run-crud` does not start or resource-constrain
+the app, so its default `metadata.resource_limits` says so honestly; under
+`benchmark-crud-all` the app runs in its §7-limited container and the loop passes
+the live `inspect-limits` verdict, so the recorded value is that container's
+classification (`enforced` / `partial` / `not applied`), not an assumption that
+the ceiling held.
+Per-app `cpu_percent`/`rss_bytes` footprint capture is still a later Phase 6
 slice.
 
 Once `results.json` exists, `make benchmark-summary` regenerates `summary.md`

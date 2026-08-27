@@ -1,8 +1,8 @@
 # PostgreSQL + the benchmark app services under test. App services are added
 # as each is containerized (Phase 6 compose loop): the two Go apps `gin-gorm`
 # (the reference control) and `gombit` (same API on the Gombit runtime) plus all
-# four ecosystem apps (`django`, `rails`, `laravel`, `nestjs`) — all six are in.
-# Next is the loop that brings them up and runs run-crud over each.
+# four ecosystem apps (`django`, `rails`, `laravel`, `nestjs`) — all six are in,
+# and `make benchmark-crud-all` brings each up and runs run-crud over it.
 #
 # Version pin: issue #141 requires major.minor (or digest), not a
 # major-only floating tag. The pin lives once in

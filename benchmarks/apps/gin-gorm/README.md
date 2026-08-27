@@ -43,10 +43,11 @@ go run ./benchmarks/scripts/inspect-limits \
   -cpus 2 -memory 1g
 ```
 
-The entrypoint takes two verbs, `seed` and `serve` (default), matching the two
-modes below. The full "bring all six apps up and run `run-crud` over each" loop
-is a later Phase 6 slice; this is the containerization + honest limit-detection
-spine it builds on.
+The entrypoint takes three verbs, `migrate`, `seed`, and `serve` (default), so
+the orchestrator drives every app the same way; here `migrate` is a no-op (GORM
+AutoMigrate runs on seed/serve, and the database is the postgres service's
+`POSTGRES_DB`). `make benchmark-crud-all` brings all six apps up and runs
+`run-crud` over each; this app is one leg of it.
 
 Env vars (all optional, defaults match `benchmarks/compose.yml`):
 
@@ -103,12 +104,10 @@ and the cross-implementation fairness check comparing them are all done
 (tracked in [docs/plans/BENCH-1-benchmark-suite.md](../../../docs/plans/BENCH-1-benchmark-suite.md)
 Phase 3). See [../gombit/README.md](../gombit/README.md) for the Gombit-side
 details, including one discovered framework gap and two bugs the fairness
-comparison caught. This app is now containerized with a `benchmarks/compose.yml`
-`gin-gorm` service carrying the §7 budget (see [Run](#run) above); the `gombit`
-app has its own service too. Still open: wiring the fairness check into automated
-CI (it needs both databases at the full canonical 1,000/100,000 scale, deferred
-to Phase 8's lighter-seed CI work); the last ecosystem app's compose service
-(`nestjs`; django/rails/laravel are in) and the six-app bring-up loop (later
-Phase 6 slices); and consuming the
-`inspect-limits` verdict into a run's recorded `metadata.resource_limits` (today
-it is printed, not yet recorded).
+comparison caught. All six apps are now containerized with `benchmarks/compose.yml`
+services carrying the §7 budget (see [Run](#run) above), and
+`make benchmark-crud-all` brings each up, records the live `inspect-limits`
+verdict as `metadata.resource_limits`, and runs `run-crud` over each. Still open:
+wiring the fairness check into automated CI (it needs both databases at the full
+canonical 1,000/100,000 scale, deferred to Phase 8's lighter-seed CI work) and
+the per-app operational-footprint capture (Phase 6).
