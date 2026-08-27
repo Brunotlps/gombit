@@ -26,7 +26,26 @@ OUT_DIR ?= benchmarks/results/latest
 # applied verdict per app (via inspect-limits).
 INTENDED_LIMITS ?= intended (applied only under benchmark-crud-all): app $(APP_CPUS)cpu/$(APP_MEMORY); postgres $(POSTGRES_CPUS)cpu/$(POSTGRES_MEMORY)
 
-.PHONY: benchmark-crud benchmark-crud-all benchmark-footprint benchmark-summary benchmark-metadata
+.PHONY: benchmark-crud benchmark-crud-all benchmark-footprint benchmark-summary benchmark-metadata benchmark-report benchmark-report-check
+
+## benchmark-report: regenerate the derived Markdown from OUT_DIR — the root
+## README's `## Performance` block and summary.md. Markdown is generated, never
+## hand-edited (issue #141 §9); benchmark-report-check fails on drift (for CI).
+benchmark-report:
+	@if [ -f "$(OUT_DIR)/results.json" ]; then \
+		go run ./benchmarks/scripts/summarize -results "$(OUT_DIR)/results.json" -out "$(OUT_DIR)/summary.md"; \
+	else echo "benchmark-report: no $(OUT_DIR)/results.json yet; skipping summary.md"; fi
+	go run ./benchmarks/scripts/report \
+		-results "$(OUT_DIR)/results.json" -footprint "$(OUT_DIR)/footprint.json" \
+		-metadata "$(OUT_DIR)/metadata.json"
+
+## benchmark-report-check: fail if the committed README's Performance block no
+## longer matches OUT_DIR (drift). Run before committing; wiring it into CI is
+## Phase 8.
+benchmark-report-check:
+	go run ./benchmarks/scripts/report -check \
+		-results "$(OUT_DIR)/results.json" -footprint "$(OUT_DIR)/footprint.json" \
+		-metadata "$(OUT_DIR)/metadata.json"
 
 ## benchmark-footprint: measure the operational footprint (container-start cold
 ## start median/p95, idle memory, memory + CPU under load) of all six
