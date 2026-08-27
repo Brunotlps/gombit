@@ -171,17 +171,26 @@ seed, throwaway `OUT_DIR`) without Docker by stubbing the recursive make and
 
 For an on-demand full or selected run, dispatch the **Benchmarks (manual)**
 workflow (`.github/workflows/benchmarks.yml`, `workflow_dispatch` only). Pick a
-`suite` — `full` (crud → footprint → micro → report), `crud`, `footprint`, or
-`micro` — and optionally override `concurrency` / `trials` / `duration_seconds` /
-`warmup_seconds` (blank = the `versions.env` pins). It writes to
-`benchmarks/results/dispatch/` (never `results/latest`) and uploads
-`results.{json,csv}`, `summary.md`, `metadata.json`, `footprint.{json,csv}`,
-`microbench.json`, and the raw per-trial summaries as a run artifact. It **never
-commits**: updating the committed snapshot and the README `## Performance` block
-stays the reviewed, manual local step (`make benchmark`, then commit). Locally
-the same mapping is `benchmarks/scripts/run-suite.sh` (`SUITE=crud CONCURRENCY=1,10
-bash benchmarks/scripts/run-suite.sh`), covered by `run-suite_test.sh`. Numbers
-from GitHub-hosted runners are noisy — for a citable canonical run, use a
+`suite` — `full` (crud → footprint → micro → **summary**), `crud`, `footprint`,
+or `micro` — and optionally override `concurrency` / `trials` /
+`duration_seconds` / `warmup_seconds` (blank = a **reduced, runner-survivable**
+default of `1,10,100 × 3 × 10s`, *not* the `versions.env` canonical
+1/10/100/500/1000 × 5 × 30s sweep — set the pins explicitly for a wider run on a
+dedicated runner). It writes to `benchmarks/results/dispatch/` (never
+`results/latest`) and uploads `results.{json,csv}`, `summary.md`,
+`metadata.json`, `footprint.{json,csv}`, `microbench.json`, and the raw
+per-trial summaries as a run artifact.
+
+It **cannot** touch the published README or the committed snapshot by
+construction: `full` runs the three measurement targets plus `summary` — never
+`make benchmark`, whose last stage (`benchmark-report`) rewrites the repo-root
+README `## Performance` block from `OUT_DIR` — and every suite writes to the
+dispatch dir. Regenerating the committed block stays the reviewed, manual local
+step (`make benchmark`, then commit). Locally the same mapping is
+`benchmarks/scripts/run-suite.sh` (`SUITE=crud CONCURRENCY=1,10 bash
+benchmarks/scripts/run-suite.sh`), covered by `run-suite_test.sh` (which runs in
+CI — the `benchmark-scripts` job — alongside the other benchmark script tests).
+Numbers from GitHub-hosted runners are noisy — for a citable canonical run, use a
 dedicated host.
 
 ## Running the CRUD-read workload

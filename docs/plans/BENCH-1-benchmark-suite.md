@@ -1781,24 +1781,48 @@ checked).
 **Manual `benchmarks.yml` workflow — done. Phase 8 complete.**
 `.github/workflows/benchmarks.yml` is `workflow_dispatch`-only (never push/PR)
 with a `suite` choice (`full | crud | footprint | micro`) plus optional
-`concurrency` / `trials` / `duration_seconds` / `warmup_seconds` overrides (blank
-= the `versions.env` pins). The dispatch mapping is a tested script
-(`benchmarks/scripts/run-suite.sh` + `run-suite_test.sh`), not inline YAML, so
-the suite → make-target mapping, forward-only-set-pins behavior, and
-injection-safety (a pin value is one inert make token, never a shell command)
-are locked without a real run. It writes to `benchmarks/results/dispatch/` — NOT
-`results/latest` (gitignored, so a local dispatch is never committed) — and
-uploads `results.{json,csv}`, `summary.md`, `metadata.json`,
-`footprint.{json,csv}`, `microbench.json`, and the raw per-trial summaries as an
-artifact (`if-no-files-found: ignore`, since a selected suite writes only some).
-It **never commits**, so `main`'s committed snapshot and README `## Performance`
-block are never overwritten automatically — updating those stays the reviewed,
-manual local `make benchmark` + commit. The `auth` / `techempower` suites are
-intentionally NOT offered yet: those workloads don't exist (Phase 5), and a
-choice that maps to a missing target would be a broken caption — they're added
-with their Phase 5 slices. Verified: `actionlint` clean on the workflow; the
+`concurrency` / `trials` / `duration_seconds` / `warmup_seconds` overrides. The
+dispatch mapping is a tested script (`benchmarks/scripts/run-suite.sh` +
+`run-suite_test.sh`), not inline YAML.
+
+Two things the review of the first cut got right and this fixes:
+
+- **`full` measures, it does not publish.** It runs the three measurement targets
+  plus `benchmark-summary` — deliberately NOT `make benchmark`, whose last stage
+  (`benchmark-report`) rewrites the repo-root `README.md` `## Performance` block
+  from `OUT_DIR`. Redirecting `OUT_DIR` to `dispatch/` protects `results/latest`
+  but NOT the README; *dropping the report writer* is the actual lock. (The first
+  cut mapped `full` → `make benchmark` and leaned on "the workflow never commits"
+  — true on Actions, but a local `run-suite.sh SUITE=full` would then rewrite
+  README and break `benchmark-report-drift`.) So the dispatch cannot touch the
+  published README by construction, not just by not-committing.
+- **Reduced, runner-survivable pin defaults.** Blank pins default to
+  `1,10,100 × 3 × 10s` (the protocol the committed snapshot already used on a
+  stronger host), NOT the `versions.env` canonical 1/10/100/500/1000 × 5 × 30s
+  sweep this repo could not sustain on a single host and which `run-crud`
+  fail-closes on. Aiming the dedicated-host recipe at a noisy 4-vCPU runner was
+  the other half of the first cut's problem. Override the pins explicitly for a
+  wider run on a dedicated runner.
+
+It writes to `benchmarks/results/dispatch/` — NOT `results/latest` (gitignored,
+so a local dispatch is never committed) — and uploads `results.{json,csv}`,
+`summary.md`, `metadata.json`, `footprint.{json,csv}`, `microbench.json`, and the
+raw per-trial summaries (`if-no-files-found: ignore`, since a selected suite
+writes only some). The `auth` / `techempower` suites are intentionally NOT
+offered: those workloads don't exist yet (Phase 5), and a choice mapping to a
+missing target would be a broken caption.
+
+**The benchmark script tests now run in merge CI.** A new `benchmark-scripts` job
+(needs: `build`) runs `run-suite_test.sh`, `benchmark-target_test.sh`,
+`run-crud-all_test.sh`, and `footprint-all_test.sh` — all Docker-free stub suites
+that were previously not on any `pull_request` path, so a broken mapping could
+merge green. `run-suite_test.sh` asserts `full` never invokes `benchmark-report`
+/ bare `benchmark`, that the reduced pins default in (500/1000 never appear
+unless set), and injection-safety at the shell env→argv layer (an explicit note
+that this is not a claim about GNU make's own `$(shell …)` expansion, which the
+exposed inputs don't reach). Verified: `actionlint` clean on both workflows; the
 `micro` suite driven through `run-suite.sh` end to end wrote `microbench.json` to
-the dispatch dir and left `results/latest` untouched.
+the dispatch dir and left `results/latest` and README untouched.
 
 - ~~`ci.yml`: add a `benchmark-smoke` job (needs: `test`) running
   `make benchmark-smoke` — small deterministic seed, 1 short trial, low
