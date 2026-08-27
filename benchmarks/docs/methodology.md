@@ -57,7 +57,7 @@ Two families of measurement:
 The sweep above is the **canonical protocol**: the parameters a run must use to
 be published as *the* benchmark. Any individual run may narrow it — a laptop
 smoke, a reduced development snapshot — by overriding the pins on the command
-line (e.g. `make benchmark CONCURRENCY=1,10,100 TRIALS=3 DURATION_SECONDS=10`).
+line (e.g. `make benchmark-crud-all CONCURRENCY=1,10,100 TRIALS=3 DURATION_SECONDS=10`).
 
 A run therefore records *its own* parameters, not the canonical ones, in
 `metadata.json` (`concurrency`, `trials`, `duration_seconds`, `warmup_seconds`),

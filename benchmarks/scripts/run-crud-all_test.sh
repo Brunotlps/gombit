@@ -102,12 +102,21 @@ case "$RUN_CRUD_ARGS" in
   *) note "run_crud did not receive the postgres verdict as -postgres-resource-limits: $RUN_CRUD_ARGS" ;;
 esac
 
-# A missing postgres container leaves the verdict empty (honest unknown), never aborts.
+# A missing postgres container CLEARS the verdict to empty (honest unknown) —
+# not just "does not abort": a stale value from a prior call must not leak
+# through as this snapshot's postgres limit. Seed a sentinel and assert it's gone.
 fake_compose_nopg() { if [ "$1" = ps ]; then echo ""; return 0; fi; }
 COMPOSE=(fake_compose_nopg)
 POSTGRES_LIMITS="sentinel"
 verify_postgres_limits || note "verify_postgres_limits aborted when postgres container was absent"
+[ -z "$POSTGRES_LIMITS" ] || note "missing postgres container left a stale verdict '$POSTGRES_LIMITS', want empty (unknown)"
+
+# An inspect-tool failure likewise clears any prior verdict to empty.
 COMPOSE=(fake_compose)
+POSTGRES_LIMITS="sentinel"
+inspect_limits() { echo "inspect-limits: boom" >&2; return 3; }
+verify_postgres_limits || note "verify_postgres_limits aborted on postgres inspect failure"
+[ -z "$POSTGRES_LIMITS" ] || note "postgres inspect failure left a stale verdict '$POSTGRES_LIMITS', want empty (unknown)"
 
 # ---- 3. inspect TOOL failure must NOT publish a row, but still stop the SUT ----
 CALLS=()

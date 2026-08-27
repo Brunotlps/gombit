@@ -109,17 +109,24 @@ func writeStatusBanner(b *strings.Builder, meta metadata.Metadata) {
 		b.WriteString("> ## ⚠️ UNPUBLISHABLE DEVELOPMENT RUN\n>\n")
 		b.WriteString("> Generated from a **dirty working tree** (uncommitted changes), so these ")
 		b.WriteString("numbers are **not reproducible** and must not be cited. Commit the tree and ")
-		b.WriteString("re-run `make benchmark` before publishing.\n\n")
+		b.WriteString("re-run the suite (`" + rerunChain + "`) before publishing.\n\n")
 	}
 	if reduced, diffs := reducedFrom(meta); reduced {
 		b.WriteString("> ### Reduced development snapshot\n>\n")
 		b.WriteString("> This run used a **narrower protocol than the canonical dedicated-host run** ")
-		b.WriteString("(the full sweep is described under \"How these were measured\" below): it is a ")
+		b.WriteString("(pinned in `benchmarks/config/versions.env`; see ")
+		b.WriteString("[benchmarks/docs/methodology.md](benchmarks/docs/methodology.md)): it is a ")
 		b.WriteString("development sample, not the published benchmark. Differs in ")
 		b.WriteString(strings.Join(diffs, "; "))
 		b.WriteString(".\n\n")
 	}
 }
+
+// rerunChain is the ordered target list that regenerates a full snapshot on
+// this branch. It is deliberately NOT `make benchmark` (the all-in-one target
+// lands in a separate slice / PR #204); the banner must only name targets that
+// exist in the tree it ships in, or its remediation command 404s.
+const rerunChain = "make benchmark-crud-all benchmark-footprint benchmark-micro benchmark-report"
 
 // reducedFrom reports whether meta's protocol is narrower than (differs from)
 // CanonicalProtocol, and a human-readable list of the differing dimensions. A
@@ -325,27 +332,32 @@ func writeMethodology(b *strings.Builder, meta metadata.Metadata) {
 
 // writeResourceLimits renders the applied cgroup budgets. The authoritative
 // field is ResourceLimitsByFramework (the per-app verified verdict preserved
-// across the merge); when every app got the same verdict — the common case
-// under the shared §7 pins — it collapses to one line, else it lists each app,
-// so a partial/not-applied on one app can never hide behind another's enforced.
+// across the merge). When every measured app got the same verdict it collapses
+// to one line — but the label names *which* frameworks it covers, never "all
+// apps": run-crud always records a per-framework entry, so a standalone or
+// APPS="gin-gorm gombit" subset run also produces a uniform map, and claiming
+// whole-suite coverage there would be a lie (uniformValue answers "these values
+// are equal", not "we measured the whole suite"). A non-uniform map lists each
+// app so a partial/not-applied on one can never hide behind another's enforced.
 // The Postgres container's own verdict prints separately. Only when the map is
-// empty (the standalone/host-only path) does it fall back to the scalar.
+// empty (the metadata-only path, e.g. collect-host-info) does it fall back to
+// the scalar.
 func writeResourceLimits(b *strings.Builder, meta metadata.Metadata) {
 	if len(meta.ResourceLimitsByFramework) == 0 {
 		fmt.Fprintf(b, "- **Resource limits:** %s\n", orDash(meta.ResourceLimits))
 		return
 	}
+	keys := make([]string, 0, len(meta.ResourceLimitsByFramework))
+	for k := range meta.ResourceLimitsByFramework {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
 	// The verdict string already classifies enforced/partial/not-applied, so the
 	// label deliberately does NOT assert "applied" (that would read "applied ...
 	// not applied" on the standalone path's sentinel).
 	if v, uniform := uniformValue(meta.ResourceLimitsByFramework); uniform {
-		fmt.Fprintf(b, "- **Resource limits (all apps):** %s\n", v)
+		fmt.Fprintf(b, "- **Resource limits (%s):** %s\n", strings.Join(keys, ", "), v)
 	} else {
-		keys := make([]string, 0, len(meta.ResourceLimitsByFramework))
-		for k := range meta.ResourceLimitsByFramework {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
 		parts := make([]string, len(keys))
 		for i, k := range keys {
 			parts[i] = fmt.Sprintf("%s — %s", k, meta.ResourceLimitsByFramework[k])

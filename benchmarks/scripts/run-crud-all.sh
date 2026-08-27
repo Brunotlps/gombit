@@ -166,6 +166,11 @@ measure() {
 # context, not a per-app SUT.
 verify_postgres_limits() {
   local cid
+  # Clear first so "unknown" is the honest result of EVERY non-classifying path
+  # (missing container as well as tool failure), not a stale verdict left over
+  # from a prior call — the comment promises empty-on-unknown, so implement it
+  # unconditionally rather than relying on main() starting from empty.
+  POSTGRES_LIMITS=""
   cid="$("${COMPOSE[@]}" ps -q postgres)"
   if [ -z "$cid" ]; then
     echo "run-crud-all: postgres container not found; postgres limit unknown" >&2

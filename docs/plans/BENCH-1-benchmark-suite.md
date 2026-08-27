@@ -1685,6 +1685,28 @@ dev snapshot were fixed so a snapshot can never quietly overclaim:
 These are report/metadata-only; the committed snapshot is unchanged and now
 honestly wears both banners until the canonical clean-tree run replaces it.
 
+A second review pass caught four "the caption describes a state the tree does
+not produce" defects, all fixed in the same PR:
+
+1. **The banners named `make benchmark`, which does not exist on this branch**
+   (the all-in-one target is PR #204). A remediation command that 404s is a
+   broken caption — the dirty banner now names the real chain that ships here
+   (`make benchmark-crud-all benchmark-footprint benchmark-micro benchmark-report`),
+   and methodology.md's reduced-run example uses `make benchmark-crud-all …`.
+2. **The reduced banner sent the reader to "How these were measured" for the
+   canonical sweep** — but that block, by design, prints *this* run's parameters.
+   It now cites the canonical source (`versions.env` / methodology.md) instead.
+3. **"all apps" over-claimed coverage.** run-crud always writes a per-framework
+   entry, so a standalone or `APPS="gin-gorm gombit"` subset run yields a uniform
+   map too; `uniformValue` means "these values are equal", not "the whole suite
+   was measured". The collapsed line now *names the frameworks* it covers
+   (`Resource limits (gin-gorm, gombit): …`), never "all apps"; a 1-entry-map
+   test guards it.
+4. **`verify_postgres_limits` cleared the verdict on tool failure but not on a
+   missing container** — the comment promised empty-on-unknown, the code left a
+   stale value. It now clears `POSTGRES_LIMITS` unconditionally at entry; the
+   shell test asserts emptiness on both non-classifying paths (not just no-abort).
+
 - `benchmarks/internal` summarizer: `results.json` → `results.csv` →
   `summary.md`, plus the README marker-block generator (§4).
 - Add the `## Performance` section to root `README.md` (framework-tax table,

@@ -199,6 +199,15 @@ func TestDirtyTreeStampsUnpublishable(t *testing.T) {
 	if !strings.Contains(out, "not reproducible") {
 		t.Errorf("the dirty banner must say the numbers aren't reproducible:\n%s", out)
 	}
+	// The remediation command must be targets that exist in this tree, not the
+	// all-in-one `make benchmark` (a separate slice). A banner whose fix-it
+	// command 404s is a broken caption.
+	if !strings.Contains(out, "make benchmark-crud-all benchmark-footprint benchmark-micro benchmark-report") {
+		t.Errorf("dirty banner must name the real rerun chain:\n%s", out)
+	}
+	if strings.Contains(out, "make benchmark`") { // bare all-in-one target, closed immediately
+		t.Errorf("dirty banner references `make benchmark`, which is not a target on this branch:\n%s", out)
+	}
 }
 
 func TestCanonicalCleanRunHasNoBanner(t *testing.T) {
@@ -225,6 +234,14 @@ func TestReducedProtocolIsLabelled(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("reduced banner missing diff detail %q:\n%s", want, out)
 		}
+	}
+	// It must point at the canonical protocol's real source, NOT the metadata
+	// block below (which by design prints THIS reduced run's parameters).
+	if !strings.Contains(out, "methodology.md") && !strings.Contains(out, "versions.env") {
+		t.Errorf("reduced banner must cite the canonical protocol's source:\n%s", out)
+	}
+	if strings.Contains(out, "described under \"How these were measured\"") {
+		t.Errorf("reduced banner must not send the reader to the block that prints the reduced params:\n%s", out)
 	}
 }
 
@@ -264,16 +281,36 @@ func TestResourceLimitsPerFrameworkRendered(t *testing.T) {
 	}
 }
 
-func TestResourceLimitsUniformCollapses(t *testing.T) {
+func TestResourceLimitsUniformNamesTheApps(t *testing.T) {
 	meta := canonicalMeta()
 	v := "enforced: cpu 2.00 vCPU, memory 1 GiB"
-	meta.ResourceLimitsByFramework = map[string]string{"gin-gorm": v, "gombit": v}
+	meta.ResourceLimitsByFramework = map[string]string{"gombit": v, "gin-gorm": v}
 	out := Render(nil, nil, nil, meta)
-	if !strings.Contains(out, "(all apps):** "+v) {
-		t.Errorf("identical per-app verdicts should collapse to one line:\n%s", out)
+	// Collapse to one line, but name WHICH frameworks (sorted), never "all apps"
+	// — a uniform map is not proof the whole suite was measured.
+	if !strings.Contains(out, "(gin-gorm, gombit):** "+v) {
+		t.Errorf("identical verdicts should collapse to one line naming the apps:\n%s", out)
+	}
+	if strings.Contains(out, "all apps") {
+		t.Errorf("a uniform (possibly-subset) map must not claim whole-suite coverage:\n%s", out)
 	}
 	if strings.Contains(out, "per app") {
 		t.Errorf("uniform verdicts should not render the per-app list form:\n%s", out)
+	}
+}
+
+// The regression this PR could introduce: run-crud always writes a per-framework
+// entry, so a standalone / APPS=<subset> run yields a 1-entry (uniform) map. It
+// must name that one framework, never say "all apps".
+func TestResourceLimitsSingleAppDoesNotClaimAllApps(t *testing.T) {
+	meta := canonicalMeta()
+	meta.ResourceLimitsByFramework = map[string]string{"gin-gorm": "not applied (standalone)"}
+	out := Render(nil, nil, nil, meta)
+	if !strings.Contains(out, "(gin-gorm):** not applied (standalone)") {
+		t.Errorf("a single-app map should name that app:\n%s", out)
+	}
+	if strings.Contains(out, "all apps") {
+		t.Errorf("a single-app run must not claim whole-suite coverage:\n%s", out)
 	}
 }
 
