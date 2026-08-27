@@ -24,13 +24,17 @@ results/
 [`benchmarks/internal/metadata`](../internal/metadata) shape, collected by
 [`benchmarks/scripts/collect-host-info`](../scripts/collect-host-info).
 
-`latest/` is committed once the full suite is run on a dedicated machine (Phase 7
-of [docs/plans/BENCH-1-benchmark-suite.md](../../docs/plans/BENCH-1-benchmark-suite.md)),
-so the published README performance tables are always regenerable from a
-committed snapshot. The orchestration that fills `latest/` exists —
+`latest/` **is committed** (including `raw/`, the per-trial k6 summaries, so a
+later parser fix can reconstruct the numbers), so the published README
+performance tables are always regenerable from a committed snapshot. The current
+committed snapshot is a **reduced run on a single developer host** (a contended
+WSL2 laptop, not dedicated benchmark hardware) — `metadata.json` records the exact
+host, kernel, and the protocol that ran (concurrency levels, trials, duration),
+and the generated README block prints them so the numbers can't be mistaken for
+the canonical sweep. Re-running the full sweep on quiet, dedicated hardware and
+committing that snapshot remains open. The orchestration that fills `latest/`:
 `make benchmark-crud-all` (CRUD throughput across all six apps),
 `make benchmark-footprint` (cold-start/RSS/CPU → `footprint.json`),
 `make benchmark-micro` (framework tax → `microbench.json`), and
 `make benchmark-summary`/`make benchmark-report` render `summary.md` and the
-README block; committing a canonical snapshot is
-the Phase 7 reporting step.
+README block.

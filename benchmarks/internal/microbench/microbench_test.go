@@ -137,6 +137,21 @@ func TestMergeReplacesWholeStack(t *testing.T) {
 	}
 }
 
+func TestCoVNsPerOp(t *testing.T) {
+	// A tight series is low-CoV; a wide (non-stationary) one is high.
+	tight := Row{NsPerOp: []float64{1000, 1010, 990, 1005}}
+	if cv := tight.CoVNsPerOp(); cv > 0.05 {
+		t.Errorf("tight series CoV = %.3f, want < 0.05", cv)
+	}
+	wide := Row{NsPerOp: []float64{5538, 2589, 4479, 3210}}
+	if cv := wide.CoVNsPerOp(); cv < 0.05 {
+		t.Errorf("wide series CoV = %.3f, want > 0.05 (noise must be detectable)", cv)
+	}
+	if cv := (Row{NsPerOp: []float64{1000}}).CoVNsPerOp(); cv != 0 {
+		t.Errorf("single-sample CoV = %v, want 0", cv)
+	}
+}
+
 func TestRelative(t *testing.T) {
 	if got := Relative(5217, 804); got != "6.5×" {
 		t.Errorf("Relative(5217,804) = %q, want 6.5×", got)

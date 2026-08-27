@@ -214,10 +214,12 @@ Per-request overhead of each layer on the same machine for the **validated typed
 
 | stack | ns/op | B/op | allocs/op | vs net/http |
 | --- | ---: | ---: | ---: | ---: |
-| net/http | 1560 | 2097 | 21 | 1.0× |
-| Gin | 3992 | 2311 | 29 | 2.6× |
-| Huma + Gin | 3463 | 2301 | 37 | 2.2× |
+| net/http | 1560 ⚠ | 2097 | 21 | 1.0× |
+| Gin | 3992 ⚠ | 2311 | 29 | 2.6× |
+| Huma + Gin | 3463 ⚠ | 2301 | 37 | 2.2× |
 | Gombit | 9546 | 7919 | 95 | 6.1× |
+
+⚠ marks a rung whose ns/op varied by more than 5% across samples — a noisy series (e.g. on a contended host); its median, and any ordering against a neighbouring rung, should be distrusted.
 
 ### PostgreSQL CRUD read — `GET /api/projects?page=1&limit=20`
 
@@ -247,9 +249,10 @@ Container-start cold start (median) and memory — lower is better. CPU is the m
 
 ### How these were measured
 
-- **Host:** 12th Gen Intel(R) Core(TM) i7-12650H, 16 logical CPUs, 7.6 GiB RAM (linux/amd64)
+- **Host:** 12th Gen Intel(R) Core(TM) i7-12650H, 16 logical CPUs, 7.6 GiB RAM (linux/amd64, kernel 5.15.167.4-microsoft-standard-WSL2)
 - **Commit / date:** `c6051f20fb3f` (dirty), 2026-08-27T09:41:50Z
 - **PostgreSQL:** postgres:16.4-alpine. **Resource limits:** enforced: cpu 2.00 vCPU (intended 2.00 vCPU), memory 1 GiB (intended 1 GiB)
+- **Protocol:** concurrency 1/10/100 VUs, 3 trials × 10s each (warm-up 3s)
 - **Load generator:** grafana/k6:0.55.0. Full method: [benchmarks/docs/methodology.md](benchmarks/docs/methodology.md).
 <!-- benchmark-results:end -->
 

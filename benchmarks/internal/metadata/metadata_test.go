@@ -3,6 +3,7 @@ package metadata
 import (
 	"context"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 )
@@ -90,6 +91,30 @@ func TestCollectCleanTreeAndMissingToolsDegrade(t *testing.T) {
 	// Missing docker must leave the field empty, not fail collection.
 	if m.DockerVersion != "" || m.DockerComposeVersion != "" {
 		t.Errorf("docker versions should be empty when unavailable: %q/%q", m.DockerVersion, m.DockerComposeVersion)
+	}
+}
+
+// git_dirty must reflect the SOURCE tree, excluding benchmarks/results/ — a
+// suite writes result files for earlier apps before Collect runs for a later
+// one, and that must not flag an otherwise-clean tree dirty.
+func TestCollectExcludesResultsFromDirty(t *testing.T) {
+	var statusArgs []string
+	run := func(_ context.Context, name string, args ...string) (string, error) {
+		if name == "git" && len(args) > 0 && args[0] == "status" {
+			statusArgs = args
+			// A runner honoring the exclude pathspec would report clean here;
+			// simulate that (only benchmarks/results changed).
+			return "", nil
+		}
+		return "", nil
+	}
+	m := Collect(context.Background(), Options{Run: run, Now: time.Now})
+	if m.GitDirty == nil || *m.GitDirty {
+		t.Errorf("GitDirty = %v, want non-nil false (results-only changes are not source dirt)", m.GitDirty)
+	}
+	joined := strings.Join(statusArgs, " ")
+	if !strings.Contains(joined, "benchmarks/results") || !strings.Contains(joined, "exclude") {
+		t.Errorf("git status must exclude benchmarks/results, got args: %v", statusArgs)
 	}
 }
 
