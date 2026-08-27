@@ -27,6 +27,25 @@ APPS="${APPS:-gin-gorm gombit django rails laravel nestjs}"
 COLD_START_RUNS="${COLD_START_RUNS:-20}"
 LOAD_VUS="${LOAD_VUS:-100}"
 LOAD_SECONDS="${LOAD_SECONDS:-10}"
+IDLE_SETTLE="${IDLE_SETTLE:-10}" # issue #141's suggested settle before idle RSS
+
+# Seams over the Go tools so the orchestration can be driven with fakes in the
+# test. run_load drives *validated* load (k6load keeps + validates the summary
+# and exits non-zero on dirty/absent traffic — the load generator is the
+# authority for whether load happened); record_footprint writes the row.
+# run_load uses a PRE-BUILT k6load binary (K6LOAD_BIN, built once in main) rather
+# than `go run` so the ~1-2s Go compile does not delay k6's start and leave the
+# early samples reading an idle app. Falls back to `go run` if unset (tests
+# override this seam anyway).
+run_load() {
+  if [ -n "${K6LOAD_BIN:-}" ]; then "$K6LOAD_BIN" "$@"; else go run ./benchmarks/scripts/k6load "$@"; fi
+}
+record_footprint() { go run ./benchmarks/scripts/footprint "$@"; }
+
+# median_int / median_float read numbers on stdin and echo the median (integer
+# floored for byte counts). Empty input -> 0.
+median_int() { sort -n | awk '{a[NR]=$1} END{ if(NR==0){print 0;exit} if(NR%2){printf "%d", a[(NR+1)/2]} else {printf "%d", (a[NR/2]+a[NR/2+1])/2} }'; }
+median_float() { sort -n | awk '{a[NR]=$1} END{ if(NR==0){print 0;exit} if(NR%2){print a[(NR+1)/2]} else {print (a[NR/2]+a[NR/2+1])/2} }'; }
 
 # to_bytes converts a `docker stats` size token (45.2MiB, 1.1GiB, 900B, …) to an
 # integer byte count on stdin.
@@ -66,13 +85,43 @@ wait_ready_ms() {
   return 1
 }
 
-# generate_load TARGET_URL — drive the crud-list workload for LOAD_SECONDS at
-# LOAD_VUS (same env contract as run-crud), output discarded.
-generate_load() {
-  docker run --rm --network host \
-    -e TARGET_URL="$1" -e VUS="$LOAD_VUS" -e DURATION="${LOAD_SECONDS}s" \
-    -v "$ROOT/benchmarks/workloads/crud-list.js:/workload/crud-list.js:ro" \
-    "grafana/k6:$K6_VERSION" run --quiet /workload/crud-list.js >/dev/null 2>&1 || true
+# sample_stats CONTAINER FILE STOPFILE — until STOPFILE exists, append
+# "<mem_bytes> <cpu_pct>" once per second. Runs concurrently with the load so
+# the samples are provably taken while k6 is driving the app.
+sample_stats() {
+  while [ ! -f "$3" ]; do
+    printf '%s %s\n' "$(mem_bytes "$1")" "$(cpu_pct "$1")" >> "$2"
+    sleep 1
+  done
+}
+
+# measure_under_load CONTAINER TARGET_URL — echo "<loaded_rss_bytes> <cpu_pct>"
+# from steady-state samples taken *while validated load runs*, or fail (non-zero)
+# if the load was not a clean measurement — so a failed/absent k6 never yields a
+# loaded/CPU number. The load generator is the authority (k6load validates).
+measure_under_load() {
+  local cid="$1" turl="$2" sf stop spid load_ok=0
+  sf="$(mktemp)"; stop="$sf.stop"; rm -f "$stop"
+  sample_stats "$cid" "$sf" "$stop" &
+  spid=$!
+  # run_load's own output must not pollute this function's stdout (the caller
+  # captures it for "<loaded> <cpu>"); send it to stderr.
+  if run_load -target-url "$turl" -vus "$LOAD_VUS" -duration "${LOAD_SECONDS}s" \
+      -k6-image "grafana/k6:$K6_VERSION" -workload "$ROOT/benchmarks/workloads/crud-list.js" >&2; then
+    load_ok=1
+  fi
+  touch "$stop"; wait "$spid" 2>/dev/null || true
+
+  if [ "$load_ok" -ne 1 ]; then
+    rm -f "$sf" "$stop"
+    return 1
+  fi
+  # Drop the first sample (ramp) and report the steady-state median, not a peak.
+  local loaded cpu
+  loaded="$(tail -n +2 "$sf" | awk '{print $1}' | median_int)"
+  cpu="$(tail -n +2 "$sf" | awk '{print $2}' | median_float)"
+  rm -f "$sf" "$stop"
+  printf '%s %s' "$loaded" "$cpu"
 }
 
 # cold_start_samples APP LIVEZ_URL — echo COLD_START_RUNS comma-separated
@@ -88,43 +137,31 @@ cold_start_samples() {
   printf '%s' "$samples"
 }
 
-# measure_container APP — full container footprint for one app.
-measure_container() {
-  local app="$1" cid livez turl samples idle loaded cpu m c image
-  app_identity "$app"
+# do_measure APP CID — the measured half (cold-start, idle, load, record).
+# Called as `do_measure ... || rc`, so set -e is disabled inside it; every
+# failure a bad row could hide behind is checked explicitly, and a failed load
+# never publishes loaded/CPU (measure_under_load fails closed).
+do_measure() {
+  local app="$1" cid="$2" livez turl samples idle image loaded_cpu loaded cpu
   livez="http://127.0.0.1:${PORT}/livez"
   turl="http://127.0.0.1:${PORT}/api/projects?page=1&limit=20"
-  echo "=== footprint: $app ($FRAMEWORK_VERSION on $RUNTIME $RUNTIME_VERSION) ==="
 
-  "${COMPOSE[@]}" build "$app" >/dev/null
-  "${COMPOSE[@]}" run --rm "$app" migrate
-  "${COMPOSE[@]}" run --rm "$app" seed
-  "${COMPOSE[@]}" up -d "$app" >/dev/null
-  cid="$("${COMPOSE[@]}" ps -q "$app")"
-  wait_healthy "$cid"
+  wait_healthy "$cid" || return 1
+  samples="$(cold_start_samples "$app" "$livez")" || return 1
 
-  samples="$(cold_start_samples "$app" "$livez")"
+  sleep "$IDLE_SETTLE" # settle before reading idle memory
+  idle="$(mem_bytes "$cid")" || return 1
 
-  sleep 3 # settle before reading idle memory
-  idle="$(mem_bytes "$cid")"
+  loaded_cpu="$(measure_under_load "$cid" "$turl")" || {
+    echo "footprint: $app load was not a clean measurement; not publishing a row" >&2
+    return 1
+  }
+  loaded="${loaded_cpu% *}"
+  cpu="${loaded_cpu#* }"
 
-  # Under load: sample memory (peak) and CPU (peak) while k6 runs.
-  loaded=0
-  cpu=0
-  generate_load "$turl" &
-  local loadpid=$!
-  sleep 2
-  for _ in 1 2 3 4; do
-    m="$(mem_bytes "$cid")"; c="$(cpu_pct "$cid")"
-    [ "$m" -gt "$loaded" ] && loaded="$m"
-    cpu="$(awk -v a="$cpu" -v b="$c" 'BEGIN { print (b > a) ? b : a }')"
-    sleep 1
-  done
-  wait "$loadpid" 2>/dev/null || true
+  image="$(docker image inspect "$(docker inspect "$cid" --format '{{.Image}}')" --format '{{.Size}}')" || return 1
 
-  image="$(docker image inspect "$(docker inspect "$cid" --format '{{.Image}}')" --format '{{.Size}}')"
-
-  go run ./benchmarks/scripts/footprint \
+  record_footprint \
     -framework "$app" -framework-version "$FRAMEWORK_VERSION" \
     -runtime "$RUNTIME" -runtime-version "$RUNTIME_VERSION" \
     -variant container \
@@ -132,13 +169,38 @@ measure_container() {
     -idle-rss-bytes "$idle" -loaded-rss-bytes "$loaded" -cpu-percent "$cpu" \
     -image-size-bytes "$image" \
     -out "$OUT"
+}
 
+# measure_container APP — bring the app up, measure it, and ALWAYS stop it
+# before returning (even when do_measure fails under set -e), so the SUT never
+# shares the host with the next app's load. Mirrors run-crud-all.sh's run_one.
+measure_container() {
+  local app="$1" cid rc=0
+  app_identity "$app"
+  echo "=== footprint: $app ($FRAMEWORK_VERSION on $RUNTIME $RUNTIME_VERSION) ==="
+
+  "${COMPOSE[@]}" build "$app" >/dev/null
+  "${COMPOSE[@]}" run --rm "$app" migrate
+  "${COMPOSE[@]}" run --rm "$app" seed
+  "${COMPOSE[@]}" up -d "$app" >/dev/null
+  cid="$("${COMPOSE[@]}" ps -q "$app")"
+
+  do_measure "$app" "$cid" || rc=$?
   "${COMPOSE[@]}" stop "$app" >/dev/null
+  return "$rc"
 }
 
 main() {
   echo "footprint: ensuring postgres is up"
   "${COMPOSE[@]}" up -d postgres >/dev/null
+  # Pre-pull the load generator and pre-build k6load so neither an image pull
+  # nor a Go compile lands inside a measured load window (either would leave the
+  # samples reading idle, not loaded).
+  docker pull -q "grafana/k6:$K6_VERSION" >/dev/null
+  local bindir; bindir="$(mktemp -d)"
+  trap 'rm -rf "$bindir"' EXIT
+  K6LOAD_BIN="$bindir/k6load"
+  go build -o "$K6LOAD_BIN" ./benchmarks/scripts/k6load
   for app in $APPS; do
     measure_container "$app"
   done

@@ -1197,8 +1197,8 @@ real MAJOR findings, all confirmed and fixed.
 
 **Headline CRUD-read workload + `make benchmark-crud` — the per-implementation
 measurement engine — done; the all-six compose loop (`make benchmark-crud-all`)
-is done too (see the Phase 6 bullets), and footprint capture is the remaining
-slice.**
+and the container footprint (`make benchmark-footprint`) are done too (see the
+Phase 6 bullets); the embedded-Gombit footprint variant is the remaining slice.**
 
 - `benchmarks/workloads/crud-list.js`: the headline `GET /api/projects?page=1&limit=20`
   workload (issue §"Required headline workload"), run by the pinned k6 image
@@ -1561,11 +1561,28 @@ two code leftovers, all fixed.
   `benchmarks/scripts/footprint`): a dedicated `footprint.{json,csv}` schema
   (separate from throughput; cold-start has no home in a rps row), cold-start =
   container-start → first 200 on `/livez` over `COLD_START_RUNS` restarts
-  (median/p95), idle/loaded memory from `docker stats` cgroup working set, peak
-  CPU while the crud-list workload drives it, and image size. The
-  median/p95/merge/encoding are unit-tested in Go; the shell `to_bytes` parser
-  has its own test; verified live against `gin-gorm` (cold-start ~117ms median,
-  idle ~8 MB, image ~22 MB).
+  (median/p95); idle memory from `docker stats` cgroup working set after an
+  `IDLE_SETTLE` (default 10s) settle; loaded memory + CPU as the **steady-state
+  median** sampled once/second *while validated load runs* — the load goes
+  through `benchmarks/scripts/k6load`, which keeps and validates the k6 summary
+  (`internal/k6` `Summary.Validate`) so a k6 run that sent no traffic, errored,
+  or failed a check publishes **no** loaded/CPU row (the same fail-closed rule as
+  `run-crud`; the k6 image is pre-pulled so no pull falls inside the window); and
+  image size. `measure_container` always stops the SUT before returning, even on
+  a mid-measure failure. Unit-tested: the Go median/p95/merge/encoding; the shell
+  `to_bytes` parser; and — via fake compose/load/record seams — that a clean load
+  records a row, a failed load publishes none, and the SUT is stopped on failure.
+  Verified live against `gin-gorm` (cold-start ~117ms median, idle ~8 MB, image
+  ~22 MB).
+
+  **Post-landing correction (review on PR #193,
+  github.com/gombit-dev/gombit/pull/193#pullrequestreview-5038071646):** the
+  first cut backgrounded k6 with its summary discarded and `|| true`, sampled a
+  peak-of-four wall-clock guess, always wrote loaded/CPU, and only stopped the
+  SUT on the happy path — the exact `|| true` / no-trap pattern PR #192 had just
+  removed. Fixed as above (validated `k6load`, concurrent steady-state sampling,
+  fail-closed no-row-on-dirty-load, always-stop) and the leftover "footprint is a
+  later slice" sentences in the touched files were swept.
 - Gombit-specific: build via `gombit build --embed`, verify the embedded
   binary serves API + admin + frontend assets, measure its binary size,
   container image size, cold start, and idle RSS as the headline

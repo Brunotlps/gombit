@@ -27,6 +27,7 @@ benchmarks/
 │   ├── run-crud-all.sh    orchestrates run-crud over all six containerized apps (make benchmark-crud-all)
 │   ├── footprint/         records one footprint row into footprint.{json,csv} (merge by framework,variant)
 │   ├── footprint-all.sh   measures cold-start/RSS/CPU for all six containers (make benchmark-footprint)
+│   ├── k6load/            drives validated crud-list load for the footprint loaded/CPU sampling (fail-closed)
 │   ├── summarize/         results.json -> summary.md (make benchmark-summary)
 │   └── inspect-limits/    reports whether a live container got the §7 ceiling (uses internal/reslimits)
 ├── micro/                Go abstraction-overhead microbenchmarks (Phase 2)
@@ -157,9 +158,8 @@ the app, so its default `metadata.resource_limits` says so honestly; under
 `benchmark-crud-all` the app runs in its §7-limited container and the loop passes
 the live `inspect-limits` verdict, so the recorded value is that container's
 classification (`enforced` / `partial` / `not applied`), not an assumption that
-the ceiling held.
-Per-app `cpu_percent`/`rss_bytes` footprint capture is still a later Phase 6
-slice.
+the ceiling held. Per-app memory/CPU footprint is captured separately by
+`make benchmark-footprint` (below).
 
 Once `results.json` exists, `make benchmark-summary` regenerates `summary.md`
 from it — one table per benchmark, one row per (framework, concurrency). The
@@ -184,14 +184,21 @@ budget, seeds it, and records into `benchmarks/results/latest/footprint.{json,cs
 - **cold-start** — container-start → first `200` on `/livez`, repeated
   `COLD_START_RUNS` times (default 20, the issue's "≥20 runs"), reported as
   median and p95;
-- **idle memory** — the container's cgroup working set (`docker stats`) after it
-  settles, recorded as `idle_rss_bytes`;
-- **loaded memory + CPU** — peak working set and peak CPU while the crud-list
-  workload drives it;
+- **idle memory** — the container's cgroup working set (`docker stats`) after an
+  `IDLE_SETTLE`-second settle (default 10, the issue's suggestion), recorded as
+  `idle_rss_bytes`;
+- **loaded memory + CPU** — the **steady-state median** working set and CPU
+  sampled once per second *while the crud-list workload drives the app*. The
+  load is run through `benchmarks/scripts/k6load`, which keeps and validates the
+  k6 summary (`benchmarks/internal/k6`'s `Summary.Validate`): if k6 sends no
+  traffic, errors, or fails a content check, the load is rejected and **no
+  loaded/CPU row is published** — the same fail-closed rule as `run-crud`, so an
+  idle sample can never masquerade as a loaded one. The k6 image is pre-pulled
+  so no pull lands inside the measured window;
 - **image size** — the container image's on-disk size.
 
-Reduce the cost for a smoke with `COLD_START_RUNS=3 LOAD_SECONDS=3`, and narrow
-the set with `APPS="gin-gorm gombit"`. The **embedded-Gombit** single-binary
+Reduce the cost for a smoke with `COLD_START_RUNS=3 LOAD_SECONDS=4 IDLE_SETTLE=1`,
+and narrow the set with `APPS="gin-gorm gombit"`. The **embedded-Gombit** single-binary
 variant (`gombit build --embed`: binary + image size, cold start, idle memory)
 is a follow-up slice — the footprint schema and CLI already carry it (`variant`
 `embedded`, `binary_size_bytes`); only the frontend-embedding build is not wired
