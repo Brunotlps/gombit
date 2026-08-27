@@ -7,14 +7,14 @@
     "runtime_version": "3.12",
     "variant": "container",
     "cold_start_ms": {
-      "median_ms": 845.5,
-      "p95_ms": 1140.0500000000002,
+      "median_ms": 1460,
+      "p95_ms": 1664.0000000000007,
       "runs": 20
     },
-    "idle_rss_bytes": 173119897,
-    "loaded_rss_bytes": 214119219,
-    "cpu_percent_under_load": 194.97,
-    "image_size_bytes": 59253124
+    "idle_rss_bytes": 172176179,
+    "loaded_rss_bytes": 207932620,
+    "cpu_percent_under_load": 183.08,
+    "image_size_bytes": 59237650
   },
   {
     "schema_version": 1,
@@ -24,31 +24,31 @@
     "runtime_version": "go1.25.7",
     "variant": "container",
     "cold_start_ms": {
-      "median_ms": 117,
-      "p95_ms": 119,
+      "median_ms": 140,
+      "p95_ms": 140,
       "runs": 20
     },
-    "idle_rss_bytes": 5537529,
-    "loaded_rss_bytes": 25218252,
-    "cpu_percent_under_load": 28.34,
-    "image_size_bytes": 22138987
+    "idle_rss_bytes": 5218762,
+    "loaded_rss_bytes": 20258488,
+    "cpu_percent_under_load": 14.65,
+    "image_size_bytes": 22139654
   },
   {
     "schema_version": 1,
     "framework": "gombit",
-    "framework_version": "v0.1.3-77-gc6051f2",
+    "framework_version": "v0.1.3-99-g3fb7264-dirty",
     "runtime": "go",
     "runtime_version": "go1.25.7",
     "variant": "container",
     "cold_start_ms": {
-      "median_ms": 62,
-      "p95_ms": 67.1,
+      "median_ms": 11,
+      "p95_ms": 20,
       "runs": 20
     },
-    "idle_rss_bytes": 6672089,
-    "loaded_rss_bytes": 31876710,
-    "cpu_percent_under_load": 30.21,
-    "image_size_bytes": 91906917
+    "idle_rss_bytes": 5193596,
+    "loaded_rss_bytes": 21716008,
+    "cpu_percent_under_load": 14.12,
+    "image_size_bytes": 91908315
   },
   {
     "schema_version": 1,
@@ -58,14 +58,14 @@
     "runtime_version": "8.3",
     "variant": "container",
     "cold_start_ms": {
-      "median_ms": 229,
-      "p95_ms": 270.25000000000006,
+      "median_ms": 280,
+      "p95_ms": 281,
       "runs": 20
     },
-    "idle_rss_bytes": 56539217,
-    "loaded_rss_bytes": 100789125,
-    "cpu_percent_under_load": 193.28,
-    "image_size_bytes": 192174426
+    "idle_rss_bytes": 50971279,
+    "loaded_rss_bytes": 103924367,
+    "cpu_percent_under_load": 198.81,
+    "image_size_bytes": 192169963
   },
   {
     "schema_version": 1,
@@ -75,14 +75,14 @@
     "runtime_version": "24",
     "variant": "container",
     "cold_start_ms": {
-      "median_ms": 457,
-      "p95_ms": 783.2,
+      "median_ms": 690,
+      "p95_ms": 700,
       "runs": 20
     },
-    "idle_rss_bytes": 62904074,
-    "loaded_rss_bytes": 107374182,
-    "cpu_percent_under_load": 56.55,
-    "image_size_bytes": 172236086
+    "idle_rss_bytes": 62390272,
+    "loaded_rss_bytes": 106220748,
+    "cpu_percent_under_load": 33.2,
+    "image_size_bytes": 172506598
   },
   {
     "schema_version": 1,
@@ -92,13 +92,13 @@
     "runtime_version": "3.3.12",
     "variant": "container",
     "cold_start_ms": {
-      "median_ms": 1018,
-      "p95_ms": 1818,
+      "median_ms": 1730,
+      "p95_ms": 2092.95,
       "runs": 20
     },
-    "idle_rss_bytes": 99614720,
-    "loaded_rss_bytes": 223766118,
-    "cpu_percent_under_load": 128.27,
-    "image_size_bytes": 111852486
+    "idle_rss_bytes": 90680852,
+    "loaded_rss_bytes": 221878681,
+    "cpu_percent_under_load": 56.84,
+    "image_size_bytes": 111853305
   }
 ]

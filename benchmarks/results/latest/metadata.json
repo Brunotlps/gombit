@@ -1,22 +1,22 @@
 {
   "schema_version": 1,
-  "timestamp": "2026-08-27T09:41:50Z",
-  "git_commit": "c6051f20fb3f51337a38b9577b176b7f538faf4d",
-  "git_dirty": true,
+  "timestamp": "2026-08-27T21:57:34Z",
+  "git_commit": "88442ae706f4e7f7f0bac7584ff5cba6c795a0d0",
+  "git_dirty": false,
   "os": "linux",
-  "kernel": "5.15.167.4-microsoft-standard-WSL2",
+  "kernel": "7.0.0-30-generic",
   "arch": "amd64",
-  "cpu_model": "12th Gen Intel(R) Core(TM) i7-12650H",
-  "logical_cpus": 16,
-  "ram_bytes": 8198111232,
-  "go_version": "go1.25.7",
-  "docker_version": "29.6.1",
-  "docker_compose_version": "5.3.1",
+  "cpu_model": "Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz",
+  "logical_cpus": 8,
+  "ram_bytes": 7690293248,
+  "go_version": "go1.27.0",
+  "docker_version": "29.7.2",
+  "docker_compose_version": "5.5.0",
   "postgres_version": "postgres:16.4-alpine",
   "framework_versions": {
     "django": "5.2.17",
     "gin-gorm": "v1.12.0",
-    "gombit": "v0.1.3-77-gc6051f2",
+    "gombit": "v0.1.3-96-g88442ae-dirty",
     "laravel": "13.29.0",
     "nestjs": "11.2.3",
     "rails": "8.1.3.1"
@@ -30,12 +30,23 @@
   },
   "benchmark_tool": "grafana/k6:0.55.0",
   "resource_limits": "enforced: cpu 2.00 vCPU (intended 2.00 vCPU), memory 1 GiB (intended 1 GiB)",
-  "duration_seconds": 10,
-  "warmup_seconds": 3,
+  "resource_limits_by_framework": {
+    "django": "enforced: cpu 2.00 vCPU (intended 2.00 vCPU), memory 1 GiB (intended 1 GiB)",
+    "gin-gorm": "enforced: cpu 2.00 vCPU (intended 2.00 vCPU), memory 1 GiB (intended 1 GiB)",
+    "gombit": "enforced: cpu 2.00 vCPU (intended 2.00 vCPU), memory 1 GiB (intended 1 GiB)",
+    "laravel": "enforced: cpu 2.00 vCPU (intended 2.00 vCPU), memory 1 GiB (intended 1 GiB)",
+    "nestjs": "enforced: cpu 2.00 vCPU (intended 2.00 vCPU), memory 1 GiB (intended 1 GiB)",
+    "rails": "enforced: cpu 2.00 vCPU (intended 2.00 vCPU), memory 1 GiB (intended 1 GiB)"
+  },
+  "postgres_resource_limits": "enforced: cpu 2.00 vCPU (intended 2.00 vCPU), memory 2 GiB (intended 2 GiB)",
+  "duration_seconds": 30,
+  "warmup_seconds": 10,
   "concurrency": [
     1,
     10,
-    100
+    100,
+    500,
+    1000
   ],
-  "trials": 3
+  "trials": 5
 }
