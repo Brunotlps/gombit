@@ -6,6 +6,13 @@
 # source of truth for the pinned k6 version, resource limits, and workload
 # defaults); any variable can be overridden on the command line.
 
+# A bare `make` at repo root must NOT run the multi-hour six-app suite and
+# rewrite the committed README — it prints the target list instead. `benchmark`
+# is an explicit command (issue #141 §10), never the accidental default goal, so
+# the default is pinned to `help` here rather than left to fall through to
+# whichever target happens to appear first in the file.
+.DEFAULT_GOAL := help
+
 BENCH_CONFIG ?= benchmarks/config/versions.env
 include $(BENCH_CONFIG)
 
@@ -26,13 +33,21 @@ OUT_DIR ?= benchmarks/results/latest
 # applied verdict per app (via inspect-limits).
 INTENDED_LIMITS ?= intended (applied only under benchmark-crud-all): app $(APP_CPUS)cpu/$(APP_MEMORY); postgres $(POSTGRES_CPUS)cpu/$(POSTGRES_MEMORY)
 
-.PHONY: benchmark benchmark-crud benchmark-crud-all benchmark-micro benchmark-footprint benchmark-summary benchmark-metadata benchmark-report benchmark-report-check
+.PHONY: help benchmark benchmark-crud benchmark-crud-all benchmark-micro benchmark-footprint benchmark-summary benchmark-metadata benchmark-report benchmark-report-check
+
+## help: list the benchmark targets (the default goal — a bare `make` prints
+## this, never a multi-hour run). Full docs: benchmarks/README.md.
+help:
+	@echo "Gombit benchmark targets (make <target>; see benchmarks/README.md):"
+	@echo ""
+	@grep -hE '^## [a-z][a-z0-9-]*:' $(MAKEFILE_LIST) | sed -E 's/^## /  make /'
 
 ## benchmark: run the whole suite end to end into OUT_DIR and regenerate the
 ## README ## Performance block + summary.md — the one-command dedicated-host
-## run. Uses the canonical pins from versions.env by default (concurrency
-## 1/10/100/500/1000, 5 trials x 30s, 10s warm-up, 20 cold starts); narrow any
-## on the command line for a reduced run, e.g.
+## run. The CRUD pins come from versions.env (concurrency 1/10/100/500/1000,
+## 5 trials x 30s, 10s warm-up); the cold-start count is footprint-all.sh's
+## COLD_START_RUNS default (20). Narrow any on the command line for a reduced
+## run, e.g.
 ##
 ##   make benchmark                          # canonical
 ##   make benchmark CONCURRENCY=1,10,100      # reduced sweep (unsustained 1000)

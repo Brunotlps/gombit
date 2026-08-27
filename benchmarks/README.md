@@ -125,9 +125,19 @@ docker compose --env-file benchmarks/config/versions.env -f benchmarks/compose.y
 docker compose --env-file benchmarks/config/versions.env -f benchmarks/compose.yml up -d postgres
 
 make benchmark                       # crud-all -> footprint -> micro -> report
-# canonical pins by default (1/10/100/500/1000 × 5 × 30s); narrow for a reduced run:
+# CRUD pins from versions.env by default (1/10/100/500/1000 × 5 × 30s, 10s
+# warm-up); cold starts default to footprint-all.sh's COLD_START_RUNS (20).
+# Narrow any on the command line for a reduced run:
 make benchmark CONCURRENCY=1,10,100  # e.g. if 500/1000 VUs are unsustained
 ```
+
+`make benchmark` is an explicit command, never the default goal — a bare `make`
+prints the target list (`make help`) so it can never accidentally kick off the
+multi-hour six-app run and rewrite the committed README. The stages compose as
+sequential recursive `$(MAKE)` lines (not prerequisites), so they stay ordered
+even under `make -j` and a failed stage halts the chain;
+`benchmarks/scripts/benchmark-target_test.sh` locks that (order, pin
+propagation, fail-closed) without Docker by stubbing the recursive make.
 
 The individual `make benchmark-crud-all`, `-footprint`, `-micro`, and `-report`
 targets below run each stage on its own.
