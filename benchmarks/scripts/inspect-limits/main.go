@@ -50,17 +50,17 @@ func run(args []string, stdout, stderr io.Writer) int {
 	}
 
 	if *container == "" {
-		return usage(stderr, "set -container=<name|id>")
+		return fail(stderr, "set -container=<name|id>")
 	}
 	if *cpus <= 0 || *memory == "" {
-		return usage(stderr, "set the intended budget: -cpus and -memory")
+		return fail(stderr, "set the intended budget: -cpus and -memory")
 	}
 	memBytes, err := reslimits.ParseBytes(*memory)
 	if err != nil {
-		return usage(stderr, fmt.Sprintf("-memory: %v", err))
+		return fail(stderr, fmt.Sprintf("-memory: %v", err))
 	}
 	if *format != "string" && *format != "json" {
-		return usage(stderr, fmt.Sprintf("-format must be string or json, got %q", *format))
+		return fail(stderr, fmt.Sprintf("-format must be string or json, got %q", *format))
 	}
 
 	raw, err := inspect(*container, *inspectFile)
@@ -103,11 +103,7 @@ func inspect(container, file string) ([]byte, error) {
 	return out, nil
 }
 
-func usage(w io.Writer, msg string) int {
-	_, _ = fmt.Fprintf(w, "inspect-limits: %s\n", msg)
-	return 2
-}
-
+// fail writes a diagnostic and returns exit code 2 (usage or runtime error).
 func fail(w io.Writer, msg string) int {
 	_, _ = fmt.Fprintf(w, "inspect-limits: %s\n", msg)
 	return 2

@@ -1419,6 +1419,27 @@ findings, all reproduced, all fixed.
   without `-strict`, JSON/string output, and usage errors — all via the
   `-inspect-file` seam, no Docker needed.
 
+**Post-landing correction, round 2 (review on PR #186,
+github.com/gombit-dev/gombit/pull/186#pullrequestreview-5036093722):** the
+first-look items were confirmed closed; one MAJOR on the compose service plus
+two code leftovers, all fixed.
+
+- **Compose healthcheck probed the measured route, not `/livez` (MAJOR).** The
+  `gin-gorm` service's health test hit `GET /api/projects?page=1&limit=1` — a
+  COUNT + page + owner-preload query — on every 3s tick, forever, against the
+  Postgres this PR just put under the §7 ceiling. `newRouter` already serves
+  `GET /livez` (200, no DB touch), which the fairness harness (`waitForHealth`)
+  and the other apps standardize on; Rails even silences that path. Since this
+  is the first containerized service and the next five clone it, pointed the
+  probe at `/livez` before the pattern spreads. Verified live: the container
+  reaches `healthy` in ~3s and `/livez` returns 200.
+- **Leftovers.** `POOL_MAX_IDLE` interpolated `${POOL_MAX_OPEN}` (right value,
+  wrong variable) — added `POOL_MAX_IDLE=20` to `versions.env` (issue §18 pins
+  max idle to 20 too) and referenced the correctly-named var. Collapsed the
+  identical `usage`/`fail` CLI helpers into one. (The PR *body*'s stale "renders
+  the honest string a run records" line is a GitHub-side description, not part
+  of the tree; the tree and scope notes already say the wiring is deferred.)
+
 - Cold-start (≥20 runs, median/p95), idle RSS, loaded RSS, CPU-under-load for
   all 6 implementations.
 - Gombit-specific: build via `gombit build --embed`, verify the embedded

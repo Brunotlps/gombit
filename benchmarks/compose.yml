@@ -71,14 +71,19 @@ services:
       DATABASE_URL: postgres://gombit:gombit@postgres:5432/gombit_bench?sslmode=disable
       PORT: "8081"
       POOL_MAX_OPEN: "${POOL_MAX_OPEN:-20}"
-      POOL_MAX_IDLE: "${POOL_MAX_OPEN:-20}"
+      POOL_MAX_IDLE: "${POOL_MAX_IDLE:-20}"
     depends_on:
       postgres:
         condition: service_healthy
     ports:
       - "127.0.0.1:8081:8081"
+    # Probe /livez (registered by newRouter, no DB touch — the same readiness
+    # route the fairness harness and the other apps standardize on), never the
+    # measured /api/projects route: the check ticks forever, so a data-plane
+    # probe would add COUNT+page+preload traffic to the SUT (under its §7
+    # ceiling) on every interval. The next apps' services copy this one.
     healthcheck:
-      test: ["CMD-SHELL", "wget -q -O /dev/null 'http://127.0.0.1:8081/api/projects?page=1&limit=1' || exit 1"]
+      test: ["CMD-SHELL", "wget -q -O /dev/null 'http://127.0.0.1:8081/livez' || exit 1"]
       interval: 3s
       timeout: 3s
       retries: 20
