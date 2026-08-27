@@ -114,6 +114,24 @@ Markdown report is always generated from that, never the other way around.
 Pinned versions and limits are in
 [`benchmarks/config/versions.env`](config/versions.env).
 
+## Running the whole suite
+
+One command runs everything into `benchmarks/results/latest/` and regenerates
+the README `## Performance` block — the dedicated-host snapshot run:
+
+```sh
+# fresh Postgres for clean per-app databases:
+docker compose --env-file benchmarks/config/versions.env -f benchmarks/compose.yml down -v
+docker compose --env-file benchmarks/config/versions.env -f benchmarks/compose.yml up -d postgres
+
+make benchmark                       # crud-all -> footprint -> micro -> report
+# canonical pins by default (1/10/100/500/1000 × 5 × 30s); narrow for a reduced run:
+make benchmark CONCURRENCY=1,10,100  # e.g. if 500/1000 VUs are unsustained
+```
+
+The individual `make benchmark-crud-all`, `-footprint`, `-micro`, and `-report`
+targets below run each stage on its own.
+
 ## Running the CRUD-read workload
 
 The headline workload is `GET /api/projects?page=1&limit=20`

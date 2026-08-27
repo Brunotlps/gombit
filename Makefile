@@ -1,6 +1,6 @@
-# Benchmark developer UX (issue #141 §10). The crud/crud-all/micro/footprint/
-# summary/report/metadata targets are here; -auth, -techempower, and the
-# all-in-one benchmark land with their phases.
+# Benchmark developer UX (issue #141 §10). The all-in-one `benchmark` plus the
+# crud/crud-all/micro/footprint/summary/report/metadata targets are here;
+# -auth and -techempower land with their phases.
 #
 # Run configuration is sourced from benchmarks/config/versions.env (the single
 # source of truth for the pinned k6 version, resource limits, and workload
@@ -26,7 +26,27 @@ OUT_DIR ?= benchmarks/results/latest
 # applied verdict per app (via inspect-limits).
 INTENDED_LIMITS ?= intended (applied only under benchmark-crud-all): app $(APP_CPUS)cpu/$(APP_MEMORY); postgres $(POSTGRES_CPUS)cpu/$(POSTGRES_MEMORY)
 
-.PHONY: benchmark-crud benchmark-crud-all benchmark-micro benchmark-footprint benchmark-summary benchmark-metadata benchmark-report benchmark-report-check
+.PHONY: benchmark benchmark-crud benchmark-crud-all benchmark-micro benchmark-footprint benchmark-summary benchmark-metadata benchmark-report benchmark-report-check
+
+## benchmark: run the whole suite end to end into OUT_DIR and regenerate the
+## README ## Performance block + summary.md — the one-command dedicated-host
+## run. Uses the canonical pins from versions.env by default (concurrency
+## 1/10/100/500/1000, 5 trials x 30s, 10s warm-up, 20 cold starts); narrow any
+## on the command line for a reduced run, e.g.
+##
+##   make benchmark                          # canonical
+##   make benchmark CONCURRENCY=1,10,100      # reduced sweep (unsustained 1000)
+##
+## Each step is invoked via $(MAKE) so they run strictly in order (they share the
+## compose stack and OUT_DIR) even under `make -j`. Bring a fresh Postgres up
+## first for clean app databases:
+##   docker compose --env-file $(BENCH_CONFIG) -f benchmarks/compose.yml down -v && \
+##     docker compose --env-file $(BENCH_CONFIG) -f benchmarks/compose.yml up -d postgres
+benchmark:
+	$(MAKE) benchmark-crud-all
+	$(MAKE) benchmark-footprint
+	$(MAKE) benchmark-micro
+	$(MAKE) benchmark-report
 
 # Framework-tax microbenchmark sample count (-count). Every ns/op sample is
 # persisted to microbench.json and the report publishes the median, so this is
