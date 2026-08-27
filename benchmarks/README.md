@@ -17,13 +17,17 @@ benchmarks/
 │   ├── metadata/         reproducibility metadata struct + host/toolchain collector
 │   ├── k6/               parses a crud-list.js summary into result rows (+ Validate)
 │   ├── summary/          aggregates trials into per-group stats + renders summary.md (CoV flag)
-│   └── reslimits/        classifies a container's Docker-recorded limits (HostConfig) vs the §7 budget (honest detection)
+│   ├── reslimits/        classifies a container's Docker-recorded limits (HostConfig) vs the §7 budget (honest detection)
+│   └── footprint/        operational-footprint schema (cold-start/RSS/CPU) + encoders
 ├── workloads/
 │   └── crud-list.js      the headline GET /api/projects read workload (k6)
 ├── scripts/
 │   ├── collect-host-info/ CLI over internal/metadata: writes metadata.json for a run
 │   ├── run-crud/          runs crud-list.js (via the pinned k6 image) against one app → results snapshot
 │   ├── run-crud-all.sh    orchestrates run-crud over all six containerized apps (make benchmark-crud-all)
+│   ├── footprint/         records one footprint row into footprint.{json,csv} (merge by framework,variant)
+│   ├── footprint-all.sh   measures cold-start/RSS/CPU for all six containers (make benchmark-footprint)
+│   ├── k6load/            drives validated crud-list load for the footprint loaded/CPU sampling (fail-closed)
 │   ├── summarize/         results.json -> summary.md (make benchmark-summary)
 │   └── inspect-limits/    reports whether a live container got the §7 ceiling (uses internal/reslimits)
 ├── micro/                Go abstraction-overhead microbenchmarks (Phase 2)
@@ -53,8 +57,10 @@ every bring-up (no fresh-volume init scripts) — and `make benchmark-crud-all`
 brings each up, seeds it, classifies the applied §7 ceiling on the live
 container and records it (`internal/reslimits` + `scripts/inspect-limits`, issue
 #141's "detect/report rather than silently pretend"), runs the workload, and
-merges all six into one `results.json`. Still scoped to later phases:
-`docs/methodology.md`, per-app resource/RSS capture (Phase 6 footprint), the
+merges all six into one `results.json`. `make benchmark-footprint` captures the
+operational footprint (cold-start, idle/loaded memory, CPU-under-load) of the
+same six containers into `footprint.json`. Still scoped to later phases:
+`docs/methodology.md`, the embedded-Gombit single-binary footprint variant, the
 other `make benchmark-*` workloads, and extending `fairness_test.go` to all six.
 
 ## Resource limits (§7): intention vs. reality
@@ -152,9 +158,8 @@ the app, so its default `metadata.resource_limits` says so honestly; under
 `benchmark-crud-all` the app runs in its §7-limited container and the loop passes
 the live `inspect-limits` verdict, so the recorded value is that container's
 classification (`enforced` / `partial` / `not applied`), not an assumption that
-the ceiling held.
-Per-app `cpu_percent`/`rss_bytes` footprint capture is still a later Phase 6
-slice.
+the ceiling held. Per-app memory/CPU footprint is captured separately by
+`make benchmark-footprint` (below).
 
 Once `results.json` exists, `make benchmark-summary` regenerates `summary.md`
 from it — one table per benchmark, one row per (framework, concurrency). The
@@ -165,6 +170,42 @@ on any group whose trials vary by more than 5% (issue §7). The Markdown is
 generated from the structured rows, never hand-edited, and leads with the
 coordinated-omission / same-host caveats so a copied table can't be read as
 more than it is.
+
+## Running the operational footprint
+
+```sh
+make benchmark-footprint      # all six; writes footprint.json/.csv
+```
+
+For each of the six containerized apps this brings the service up under its §7
+budget, seeds it, and records into `benchmarks/results/latest/footprint.{json,csv}`
+(a schema separate from throughput — `benchmarks/internal/footprint`):
+
+- **cold-start** — container-start → first `200` on `/livez`, repeated
+  `COLD_START_RUNS` times (default 20, the issue's "≥20 runs"), reported as
+  median and p95;
+- **idle memory** — the container's cgroup working set (`docker stats`) after an
+  `IDLE_SETTLE`-second settle (default 10, the issue's suggestion), recorded as
+  `idle_rss_bytes`;
+- **loaded memory + CPU** — the **steady-state median** working set and CPU,
+  sampled once per `docker stats` tick (~1s) *while the crud-list workload drives
+  the app*, dropping the first (ramp) sample. Fail-closed on two fronts: the load
+  is run through `benchmarks/scripts/k6load`, which keeps and validates the k6
+  summary (`benchmarks/internal/k6`'s `Summary.Validate`) — no traffic, any HTTP
+  error, or a failed content check rejects the load; and the aggregator refuses
+  to publish unless at least two in-load samples remain, so a missing/one-sample
+  series can never become a `0`-byte "loaded" reading. Either failure means **no
+  loaded/CPU row is published** — the same rule as `run-crud`. The k6 image is
+  pre-pulled and `k6load` pre-built so neither a pull nor a Go compile lands
+  inside the measured window;
+- **image size** — the container image's on-disk size.
+
+Reduce the cost for a smoke with `COLD_START_RUNS=3 LOAD_SECONDS=4 IDLE_SETTLE=1`,
+and narrow the set with `APPS="gin-gorm gombit"`. The **embedded-Gombit** single-binary
+variant (`gombit build --embed`: binary + image size, cold start, idle memory)
+is a follow-up slice — the footprint schema and CLI already carry it (`variant`
+`embedded`, `binary_size_bytes`); only the frontend-embedding build is not wired
+into the orchestrator yet.
 
 ## Running the framework-tax matrix
 

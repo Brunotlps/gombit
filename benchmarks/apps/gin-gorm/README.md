@@ -107,7 +107,8 @@ details, including one discovered framework gap and two bugs the fairness
 comparison caught. All six apps are now containerized with `benchmarks/compose.yml`
 services carrying the §7 budget (see [Run](#run) above), and
 `make benchmark-crud-all` brings each up, records the live `inspect-limits`
-verdict as `metadata.resource_limits`, and runs `run-crud` over each. Still open:
-wiring the fairness check into automated CI (it needs both databases at the full
-canonical 1,000/100,000 scale, deferred to Phase 8's lighter-seed CI work) and
-the per-app operational-footprint capture (Phase 6).
+verdict as `metadata.resource_limits`, and runs `run-crud` over each;
+`make benchmark-footprint` captures the container footprint (cold-start,
+memory, CPU). Still open: wiring the fairness check into automated CI (it needs
+both databases at the full canonical 1,000/100,000 scale, deferred to Phase 8's
+lighter-seed CI work) and the embedded-Gombit single-binary footprint variant.

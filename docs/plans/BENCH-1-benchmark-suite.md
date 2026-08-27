@@ -1197,8 +1197,8 @@ real MAJOR findings, all confirmed and fixed.
 
 **Headline CRUD-read workload + `make benchmark-crud` — the per-implementation
 measurement engine — done; the all-six compose loop (`make benchmark-crud-all`)
-is done too (see the Phase 6 bullets), and footprint capture is the remaining
-slice.**
+and the container footprint (`make benchmark-footprint`) are done too (see the
+Phase 6 bullets); the embedded-Gombit footprint variant is the remaining slice.**
 
 - `benchmarks/workloads/crud-list.js`: the headline `GET /api/projects?page=1&limit=20`
   workload (issue §"Required headline workload"), run by the pinned k6 image
@@ -1473,7 +1473,8 @@ in:
   Verified end to end too: a reduced-parameter run against `gin-gorm`
   builds/migrates/seeds/serves, reaches healthy, records
   `enforced: cpu 2.00 / memory 1 GiB`, runs k6 (errors=0), and merges the rows.
-  The remaining Phase 6 work is the per-app footprint capture below.
+  The per-app footprint capture below is done for the container variant
+  (`make benchmark-footprint`); the embedded-Gombit variant is the remaining bit.
   Two follow-up review rounds on PR #192 fixed the framework key (`gin-gorm`, not
   `gin`), the `|| true` blank-limit / no-trap bug, the Make override, weak tests,
   and — across the whole benchmarks tree, not just the named paragraphs — every
@@ -1555,13 +1556,54 @@ two code leftovers, all fixed.
   of the tree; the tree and scope notes already say the wiring is deferred.)
 
 - Cold-start (≥20 runs, median/p95), idle RSS, loaded RSS, CPU-under-load for
-  all 6 implementations.
+  all 6 implementations. **Container variant — done** (`make benchmark-footprint`,
+  `benchmarks/scripts/footprint-all.sh` + `benchmarks/internal/footprint` +
+  `benchmarks/scripts/footprint`): a dedicated `footprint.{json,csv}` schema
+  (separate from throughput; cold-start has no home in a rps row), cold-start =
+  container-start → first 200 on `/livez` over `COLD_START_RUNS` restarts
+  (median/p95); idle memory from `docker stats` cgroup working set after an
+  `IDLE_SETTLE` (default 10s) settle; loaded memory + CPU as the **steady-state
+  median** sampled once/second *while validated load runs* — the load goes
+  through `benchmarks/scripts/k6load`, which keeps and validates the k6 summary
+  (`internal/k6` `Summary.Validate`) so a k6 run that sent no traffic, errored,
+  or failed a check publishes **no** loaded/CPU row (the same fail-closed rule as
+  `run-crud`; the k6 image is pre-pulled so no pull falls inside the window); and
+  image size. `measure_container` always stops the SUT before returning, even on
+  a mid-measure failure. Unit-tested: the Go median/p95/merge/encoding; the shell
+  `to_bytes` parser; and — via fake compose/load/record seams — that a clean load
+  records a row, a failed load publishes none, and the SUT is stopped on failure.
+  Verified live against `gin-gorm` (cold-start ~117ms median, idle ~8 MB, image
+  ~22 MB).
+
+  **Post-landing correction (review on PR #193,
+  github.com/gombit-dev/gombit/pull/193#pullrequestreview-5038071646):** the
+  first cut backgrounded k6 with its summary discarded and `|| true`, sampled a
+  peak-of-four wall-clock guess, always wrote loaded/CPU, and only stopped the
+  SUT on the happy path — the exact `|| true` / no-trap pattern PR #192 had just
+  removed. Fixed as above (validated `k6load`, concurrent steady-state sampling,
+  fail-closed no-row-on-dirty-load, always-stop) and the leftover "footprint is a
+  later slice" sentences in the touched files were swept. A second round closed
+  two more: (1) the sample aggregator still fail-*open*ed — `median_*` printed a
+  `0` sentinel on empty input, so a dropped-ramp/one-sample series wrote
+  `loaded=0`/`cpu=0`; now `median_*` fail on empty and `aggregate_load_samples`
+  refuses unless ≥2 in-load samples remain (and `stats_sample` reads mem+cpu in
+  one `docker stats` call, a true 1s tick, no extra sleep). (2) `k6load` had no
+  tests despite being the load authority; added `k6load/main_test.go` driving its
+  `-docker` seam with the real k6 goldens — clean → exit 0, all-failed → non-zero
+  (deleting `Validate` fails it), no summary → non-zero. The shell test now
+  asserts the real 8 MB / 150% values and the aggregator's fail-closed.
 - Gombit-specific: build via `gombit build --embed`, verify the embedded
   binary serves API + admin + frontend assets, measure its binary size,
   container image size, cold start, and idle RSS as the headline
-  single-binary-deployment number.
+  single-binary-deployment number. **Follow-up slice.** The footprint schema and
+  CLI already carry it (`variant: embedded`, `binary_size_bytes`); the blocker is
+  only the `gombit build --embed` frontend build, which failed to run in the dev
+  environment used here (pnpm 11 refuses esbuild's build script,
+  `ERR_PNPM_IGNORED_BUILDS`; the npm fallback hit WSL/Windows interop). That is a
+  `gombit build --embed` / toolchain issue outside this suite, so the variant is
+  deferred rather than faked or shipped untested.
 - **AC:** `make benchmark-footprint` produces footprint rows for all 6 apps
-  plus the embedded-Gombit variant.
+  (container variant); the embedded-Gombit variant lands with the follow-up.
 
 ### Phase 7 — Reporting, README integration, drift detection
 
