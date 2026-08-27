@@ -1443,9 +1443,24 @@ in:
   envelope (`total: 100000`), inspect-limits `enforced`. **All six
   implementations are now containerized** — two Go apps + four ecosystem apps,
   each a `compose.yml` service under the §7 budget with a `/livez` health check
-  and idempotent per-app database provisioning. The remaining Phase 6 work is
-  the orchestration loop that brings them up and runs `run-crud` over each into
-  one `results.json`, plus the footprint capture below.
+  and idempotent per-app database provisioning.
+- **Orchestration loop (`benchmarks/scripts/run-crud-all.sh` +
+  `make benchmark-crud-all`) — done.** Brings each app up under compose,
+  applies its migrate/seed verbs, waits for `/livez` healthy, reads the applied
+  limit off the live container (`inspect-limits`) and records it as
+  `metadata.resource_limits` — closing the #186 "verdict not yet consumed" gap —
+  runs `run-crud` against it, then stops it so only the app under test shares the
+  host with k6. `run-crud` merges by framework, so the six iterations accumulate
+  into one `results.json` for `make benchmark-summary`. Every app's
+  framework/runtime version is **derived** from its own source-of-truth (manifest
+  file, Dockerfile base image), fail-closed on empty, so nothing is hand-copied;
+  `gin-gorm` gained a no-op `migrate` verb so the uniform migrate/seed/serve
+  drive works (it AutoMigrates). The script guards its main loop so it is
+  sourceable, and `run-crud-all_test.sh` asserts all six identities resolve to
+  version-shaped strings. Verified end to end: a reduced-parameter `run_one
+  gin-gorm` builds/migrates/seeds/serves, reaches healthy, records
+  `enforced: cpu 2.00 / memory 1 GiB`, runs k6 (errors=0), and merges the rows.
+  The remaining Phase 6 work is the per-app footprint capture below.
 - `benchmarks/internal/reslimits` + `benchmarks/scripts/inspect-limits`: the
   issue's "detect and report rather than silently pretend limits were applied"
   requirement. A compose budget is only an *intention*; the tool reads the

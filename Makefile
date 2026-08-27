@@ -25,12 +25,23 @@ OUT_DIR ?= benchmarks/results/latest
 # compose loop (next slice) is what will actually enforce and record them.
 INTENDED_LIMITS ?= intended (not yet enforced): app $(APP_CPUS)cpu/$(APP_MEMORY); postgres $(POSTGRES_CPUS)cpu/$(POSTGRES_MEMORY)
 
-.PHONY: benchmark-crud benchmark-summary benchmark-metadata
+.PHONY: benchmark-crud benchmark-crud-all benchmark-summary benchmark-metadata
+
+## benchmark-crud-all: bring every containerized implementation up under compose
+## (with the §7 limits), migrate + seed it, verify the applied limit, run the
+## CRUD-read workload against it, and merge all six into OUT_DIR/results.json.
+## Each app is measured alone (stopped before the next) since the load generator
+## shares the host. Run `make benchmark-summary` afterwards. Override the set
+## with APPS="gin-gorm gombit".
+##
+##   make benchmark-crud-all
+benchmark-crud-all:
+	OUT_DIR="$(OUT_DIR)" bash benchmarks/scripts/run-crud-all.sh
 
 ## benchmark-crud: run the headline CRUD-read workload against one running,
 ## seeded implementation and write results.json/results.csv/metadata.json.
 ## Requires the app to be up and seeded (see benchmarks/apps/<name>/README.md);
-## the full "bring up all six under compose" loop is a later slice.
+## `benchmark-crud-all` orchestrates all six under compose instead.
 ##
 ##   make benchmark-crud FRAMEWORK=gin-gorm FRAMEWORK_VERSION=v1.11.0 \
 ##     RUNTIME=go RUNTIME_VERSION=go1.25.7 \
