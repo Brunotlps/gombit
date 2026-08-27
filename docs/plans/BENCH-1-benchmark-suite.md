@@ -1816,7 +1816,12 @@ missing target would be a broken caption.
 (needs: `build`) runs `run-suite_test.sh`, `benchmark-target_test.sh`,
 `run-crud-all_test.sh`, and `footprint-all_test.sh` — all Docker-free stub suites
 that were previously not on any `pull_request` path, so a broken mapping could
-merge green. `run-suite_test.sh` asserts `full` never invokes `benchmark-report`
+merge green. The job checks out with `fetch-depth: 0`: `run-crud-all_test.sh`
+exercises the real `app_identity`, which derives gombit's version from
+`git describe --tags`, and the default depth-1 tagless clone would make describe
+fall back to a bare SHA that fails the version-shaped assertion (the dispatch
+workflow fetches full history for the same reason — so a run's recorded gombit
+version is the tag-relative string the committed snapshot uses). `run-suite_test.sh` asserts `full` never invokes `benchmark-report`
 / bare `benchmark`, that the reduced pins default in (500/1000 never appear
 unless set), and injection-safety at the shell env→argv layer (an explicit note
 that this is not a claim about GNU make's own `$(shell …)` expansion, which the

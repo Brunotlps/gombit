@@ -173,6 +173,12 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          # run-crud-all_test.sh derives gombit's version via `git describe
+          # --tags` and asserts it is version-shaped. The default depth-1,
+          # tagless clone would make describe fall back to a bare SHA and fail
+          # that assertion, so fetch full history + tags.
+          fetch-depth: 0
 
       - name: Setup Go
         uses: actions/setup-go@v7
