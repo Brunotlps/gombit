@@ -102,6 +102,9 @@ func TestRunWritesAndAccumulatesAcrossFrameworks(t *testing.T) {
 			targetURL: "http://unused", framework: fw, frameworkVersion: "v" + fw,
 			concurrency: []int{10}, duration: "1s", warmup: "1s", trials: 1,
 			outDir: dir, k6Image: "grafana/k6:0.55.0",
+			// Distinct per-app verdicts to prove the merge preserves both,
+			// plus a shared postgres verdict.
+			resourceLimits: "limit-" + fw, postgresResourceLimits: "pg-enforced",
 		}
 		if err := run(cfg, k6run); err != nil {
 			t.Fatalf("run(%s) = %v", fw, err)
@@ -137,5 +140,16 @@ func TestRunWritesAndAccumulatesAcrossFrameworks(t *testing.T) {
 	}
 	if !strings.Contains(s, `"gin-gorm": "vgin-gorm"`) || !strings.Contains(s, `"gombit": "vgombit"`) {
 		t.Errorf("metadata framework_versions did not accumulate both runs:\n%s", s)
+	}
+
+	// The bug this guards: resource_limits_by_framework must preserve EVERY
+	// app's applied-limit verdict across the merge, not just the last writer's.
+	// The scalar resource_limits is allowed to be last-write, but the per-app
+	// map is authoritative and must carry both.
+	if !strings.Contains(s, `"gin-gorm": "limit-gin-gorm"`) || !strings.Contains(s, `"gombit": "limit-gombit"`) {
+		t.Errorf("resource_limits_by_framework did not preserve both apps' verdicts:\n%s", s)
+	}
+	if !strings.Contains(s, `"postgres_resource_limits": "pg-enforced"`) {
+		t.Errorf("postgres_resource_limits was not recorded/preserved:\n%s", s)
 	}
 }

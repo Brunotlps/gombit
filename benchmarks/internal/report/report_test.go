@@ -1,6 +1,9 @@
 package report
 
 import (
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -171,6 +174,109 @@ func TestRenderEmptyDataIsHonest(t *testing.T) {
 	}
 }
 
+// canonicalMeta is a metadata value whose protocol equals CanonicalProtocol and
+// whose tree is clean — the shape a publishable run has. Individual tests mutate
+// a copy to trip one banner condition at a time.
+func canonicalMeta() metadata.Metadata {
+	clean := false
+	return metadata.Metadata{
+		GitCommit: "abcdef1234567890", GitDirty: &clean, CPUModel: "Test CPU",
+		Concurrency:     append([]int(nil), CanonicalProtocol.Concurrency...),
+		Trials:          CanonicalProtocol.Trials,
+		DurationSeconds: CanonicalProtocol.DurationSeconds,
+		WarmupSeconds:   CanonicalProtocol.WarmupSeconds,
+	}
+}
+
+func TestDirtyTreeStampsUnpublishable(t *testing.T) {
+	meta := canonicalMeta()
+	dirty := true
+	meta.GitDirty = &dirty
+	out := Render(nil, nil, nil, meta)
+	if !strings.Contains(out, "UNPUBLISHABLE DEVELOPMENT RUN") {
+		t.Errorf("a dirty-tree run must be stamped unpublishable:\n%s", out)
+	}
+	if !strings.Contains(out, "not reproducible") {
+		t.Errorf("the dirty banner must say the numbers aren't reproducible:\n%s", out)
+	}
+}
+
+func TestCanonicalCleanRunHasNoBanner(t *testing.T) {
+	out := Render(nil, nil, nil, canonicalMeta())
+	for _, unwanted := range []string{"UNPUBLISHABLE", "Reduced development snapshot"} {
+		if strings.Contains(out, unwanted) {
+			t.Errorf("a clean canonical run must carry no %q banner:\n%s", unwanted, out)
+		}
+	}
+}
+
+func TestReducedProtocolIsLabelled(t *testing.T) {
+	meta := canonicalMeta()
+	meta.Concurrency = []int{1, 10, 100}
+	meta.Trials = 3
+	meta.DurationSeconds = 10
+	meta.WarmupSeconds = 3
+	out := Render(nil, nil, nil, meta)
+	if !strings.Contains(out, "Reduced development snapshot") {
+		t.Errorf("a narrower-than-canonical run must be labelled reduced:\n%s", out)
+	}
+	// The banner must name what differs (both endpoints), not just say "reduced".
+	for _, want := range []string{"concurrency 1/10/100", "canonical 1/10/100/500/1000", "3 trials", "10s per trial", "3s warm-up"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("reduced banner missing diff detail %q:\n%s", want, out)
+		}
+	}
+}
+
+// The pre-run placeholder (no protocol recorded) must NOT be mislabelled as a
+// reduced snapshot — there is nothing to compare against canonical yet.
+func TestEmptyProtocolIsNotReduced(t *testing.T) {
+	if reduced, _ := reducedFrom(metadata.Metadata{}); reduced {
+		t.Error("empty metadata should not be classified as a reduced snapshot")
+	}
+	out := Render(nil, nil, nil, metadata.Metadata{})
+	if strings.Contains(out, "Reduced development snapshot") {
+		t.Errorf("empty render must not carry the reduced banner:\n%s", out)
+	}
+}
+
+func TestResourceLimitsPerFrameworkRendered(t *testing.T) {
+	meta := canonicalMeta()
+	// A partial verdict on one app must survive next to another app's enforced —
+	// the merge-preservation bug this whole field exists to fix.
+	meta.ResourceLimitsByFramework = map[string]string{
+		"gin-gorm": "enforced: cpu 2.00 vCPU",
+		"rails":    "partial: memory unset",
+	}
+	meta.PostgresResourceLimits = "enforced: cpu 2.00 vCPU, memory 2 GiB"
+	meta.ResourceLimits = "should-not-be-shown-when-map-present"
+	out := Render(nil, nil, nil, meta)
+	for _, want := range []string{
+		"per app", "gin-gorm — enforced: cpu 2.00 vCPU", "rails — partial: memory unset",
+		"Postgres container limits:** enforced: cpu 2.00 vCPU, memory 2 GiB",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("resource-limits rendering missing %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "should-not-be-shown") {
+		t.Errorf("scalar resource_limits leaked when the per-app map was present:\n%s", out)
+	}
+}
+
+func TestResourceLimitsUniformCollapses(t *testing.T) {
+	meta := canonicalMeta()
+	v := "enforced: cpu 2.00 vCPU, memory 1 GiB"
+	meta.ResourceLimitsByFramework = map[string]string{"gin-gorm": v, "gombit": v}
+	out := Render(nil, nil, nil, meta)
+	if !strings.Contains(out, "(all apps):** "+v) {
+		t.Errorf("identical per-app verdicts should collapse to one line:\n%s", out)
+	}
+	if strings.Contains(out, "per app") {
+		t.Errorf("uniform verdicts should not render the per-app list form:\n%s", out)
+	}
+}
+
 func TestReplaceBlockAndInSync(t *testing.T) {
 	readme := "# App\n\n## Performance\n\n" + StartMarker + "\nOLD CONTENT\n" + EndMarker + "\n\n## Next\n"
 	block := "NEW CONTENT\n"
@@ -202,6 +308,79 @@ func TestReplaceBlockMissingMarkers(t *testing.T) {
 	if _, err := ReplaceBlock("no markers here", "x"); err == nil {
 		t.Error("missing markers should error")
 	}
+}
+
+// CanonicalProtocol drives the "reduced snapshot" label, so it must equal the
+// real source of truth (benchmarks/config/versions.env). This test parses the
+// env file and fails if the two drift apart — so tightening the canonical sweep
+// in versions.env forces the constant (and the label logic) to be updated with
+// it, rather than silently comparing every future run against a stale target.
+func TestCanonicalProtocolMatchesVersionsEnv(t *testing.T) {
+	env := parseEnvFile(t, filepath.Join("..", "..", "config", "versions.env"))
+
+	conc, err := parseIntCSV(env["CONCURRENCY"])
+	if err != nil {
+		t.Fatalf("CONCURRENCY %q: %v", env["CONCURRENCY"], err)
+	}
+	if !equalInts(conc, CanonicalProtocol.Concurrency) {
+		t.Errorf("CanonicalProtocol.Concurrency %v != versions.env CONCURRENCY %v", CanonicalProtocol.Concurrency, conc)
+	}
+	assertIntPin(t, "TRIALS", env["TRIALS"], CanonicalProtocol.Trials)
+	assertFloatPin(t, "DURATION_SECONDS", env["DURATION_SECONDS"], CanonicalProtocol.DurationSeconds)
+	assertFloatPin(t, "WARMUP_SECONDS", env["WARMUP_SECONDS"], CanonicalProtocol.WarmupSeconds)
+}
+
+func assertIntPin(t *testing.T, key, raw string, want int) {
+	t.Helper()
+	got, err := strconv.Atoi(strings.TrimSpace(raw))
+	if err != nil {
+		t.Fatalf("%s %q: %v", key, raw, err)
+	}
+	if got != want {
+		t.Errorf("CanonicalProtocol %s = %d, versions.env = %d", key, want, got)
+	}
+}
+
+func assertFloatPin(t *testing.T, key, raw string, want float64) {
+	t.Helper()
+	got, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
+	if err != nil {
+		t.Fatalf("%s %q: %v", key, raw, err)
+	}
+	if got != want {
+		t.Errorf("CanonicalProtocol %s = %v, versions.env = %v", key, want, got)
+	}
+}
+
+func parseEnvFile(t *testing.T, path string) map[string]string {
+	t.Helper()
+	data, err := os.ReadFile(path) //nolint:gosec // fixed in-repo config path
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	env := map[string]string{}
+	for _, line := range strings.Split(string(data), "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if k, v, ok := strings.Cut(line, "="); ok {
+			env[strings.TrimSpace(k)] = strings.TrimSpace(v)
+		}
+	}
+	return env
+}
+
+func parseIntCSV(s string) ([]int, error) {
+	var out []int
+	for _, tok := range strings.Split(s, ",") {
+		n, err := strconv.Atoi(strings.TrimSpace(tok))
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, n)
+	}
+	return out, nil
 }
 
 func lineWith(s, sub string) string {

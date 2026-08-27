@@ -1647,6 +1647,44 @@ snapshot (so the block holds real numbers rather than the honest "not yet
 recorded" placeholders). Wiring `benchmark-report-check` into CI is **done** —
 the `benchmark-report-drift` job (Phase 8 below).
 
+**Publishability guards (pre-advertisement review) — done.** Before the numbers
+go front-and-centre in the root README, three review findings on the committed
+dev snapshot were fixed so a snapshot can never quietly overclaim:
+
+1. **A dirty tree is stamped, not published silently.** `make benchmark-report`
+   now renders a loud `⚠️ UNPUBLISHABLE DEVELOPMENT RUN` callout at the top of
+   the block whenever `metadata.git_dirty` is true (numbers not tied to a
+   committed source state ⇒ not reproducible ⇒ must not be cited). The stamp is
+   driven purely by the recorded metadata, so it survives regeneration and the
+   CI drift diff.
+2. **Canonical protocol vs. this snapshot's parameters are no longer conflated.**
+   `report.CanonicalProtocol` (1/10/100/500/1000, 5 trials × 30 s, 10 s warm-up)
+   is the published-run protocol, and a `TestCanonicalProtocolMatchesVersionsEnv`
+   guard parses `benchmarks/config/versions.env` and fails if the constant drifts
+   from that single source of truth. When a run's recorded params are narrower,
+   the report stamps a **“Reduced development snapshot”** callout that names each
+   differing dimension (e.g. *concurrency 1/10/100 (canonical 1/10/100/500/1000)*).
+   `methodology.md` now separates the **canonical protocol** from *a particular
+   snapshot's parameters* and points the reader at the metadata block, not the
+   prose, for what actually ran.
+3. **Per-app resource-limit verdicts survive the merge (a real bug, not polish).**
+   `mergedMetadata` previously unioned only the framework/runtime version maps, so
+   the scalar `resource_limits` was last-write — one app's `partial` could be
+   silently overwritten by the next app's `enforced`. Metadata now carries
+   `resource_limits_by_framework` (a map, unioned across the six-app merge exactly
+   like the version maps) and `postgres_resource_limits` (the shared DB
+   container's verdict, classified once by `run-crud-all.sh`'s
+   `verify_postgres_limits`). The report renders the per-app verdicts (collapsing
+   to one line only when every app got the same one) plus the Postgres line; the
+   scalar stays the standalone `make benchmark-crud` path's intended-budget
+   string. Regression-tested: the run-crud merge test gives two apps distinct
+   verdicts and asserts both survive (removing the union fails it), and the
+   run-crud-all shell test asserts `verify_postgres_limits` sets the verdict and
+   `measure` passes it through as `-postgres-resource-limits`.
+
+These are report/metadata-only; the committed snapshot is unchanged and now
+honestly wears both banners until the canonical clean-tree run replaces it.
+
 - `benchmarks/internal` summarizer: `results.json` → `results.csv` →
   `summary.md`, plus the README marker-block generator (§4).
 - Add the `## Performance` section to root `README.md` (framework-tax table,

@@ -50,6 +50,10 @@ COMPOSE=(docker compose --env-file "$CONFIG" -f benchmarks/compose.yml)
 OUT_DIR="${OUT_DIR:-benchmarks/results/latest}"
 # Which apps to run (default: all six, in a stable order).
 APPS="${APPS:-gin-gorm gombit django rails laravel nestjs}"
+# The shared Postgres container's applied-limit verdict, classified once in
+# main (verify_postgres_limits) and recorded on every app's row. Declared here
+# so measure() references it safely under set -u even if verification is skipped.
+POSTGRES_LIMITS="${POSTGRES_LIMITS:-}"
 
 # Seams over the Go tools so the orchestration can be driven with fakes in the
 # test without Docker or a real build.
@@ -150,7 +154,29 @@ measure() {
     -k6-image "grafana/k6:$K6_VERSION" \
     -out-dir "$OUT_DIR" \
     -postgres-version "$POSTGRES_IMAGE" \
-    -resource-limits "$limits"
+    -resource-limits "$limits" \
+    -postgres-resource-limits "$POSTGRES_LIMITS"
+}
+
+# verify_postgres_limits — classify the shared Postgres container's applied
+# limit once for the whole snapshot (it's the same container across every app),
+# into the POSTGRES_LIMITS global that measure() records. Postgres is up before
+# this runs. A tool failure leaves POSTGRES_LIMITS empty (honest "unknown"),
+# not a fabricated verdict; it never aborts the run since the DB is shared
+# context, not a per-app SUT.
+verify_postgres_limits() {
+  local cid
+  cid="$("${COMPOSE[@]}" ps -q postgres)"
+  if [ -z "$cid" ]; then
+    echo "run-crud-all: postgres container not found; postgres limit unknown" >&2
+    return 0
+  fi
+  if ! POSTGRES_LIMITS="$(inspect_limits -container "$cid" -cpus "$POSTGRES_CPUS" -memory "$POSTGRES_MEMORY")"; then
+    echo "run-crud-all: inspect-limits failed for postgres; postgres limit unknown" >&2
+    POSTGRES_LIMITS=""
+    return 0
+  fi
+  echo "run-crud-all: postgres applied limit: $POSTGRES_LIMITS"
 }
 
 # run_one APP — the full measured cycle for one implementation. The SUT is
@@ -175,6 +201,7 @@ run_one() {
 main() {
   echo "run-crud-all: ensuring postgres is up"
   "${COMPOSE[@]}" up -d postgres >/dev/null
+  verify_postgres_limits
   for app in $APPS; do
     run_one "$app"
   done
