@@ -2,3 +2,6 @@
 # snapshot IS committed, including `latest/raw/` (the per-trial k6 summaries) so
 # a later parser fix can reconstruct the numbers from the same run.
 runs/
+# The manual benchmarks.yml workflow writes here (never results/latest), so a
+# local dispatch run is never accidentally committed.
+dispatch/

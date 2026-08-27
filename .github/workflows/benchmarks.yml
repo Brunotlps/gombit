@@ -1,0 +1,89 @@
+name: Benchmarks (manual)
+
+# Manual, on-demand benchmark runs (issue #141 §11 "Manual full benchmark
+# workflow"). Unlike the per-PR benchmark-smoke gate, this runs a full or
+# selected suite and uploads the structured outputs as artifacts. It is
+# workflow_dispatch ONLY — never on push/PR — and it never commits: it writes to
+# benchmarks/results/dispatch on the runner, so main's committed
+# results/latest and the README ## Performance block are never overwritten
+# automatically (updating those stays the reviewed, manual local step).
+#
+# GitHub-hosted runners are noisy, so the numbers here are for inspection, not a
+# performance gate (§11). For a citable canonical run, use a dedicated host.
+
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: "Suite to run"
+        type: choice
+        options:
+          - full
+          - crud
+          - footprint
+          - micro
+        default: full
+      concurrency:
+        description: "CONCURRENCY override (e.g. 1,10,100); blank = versions.env"
+        type: string
+        default: ""
+      trials:
+        description: "TRIALS override; blank = versions.env"
+        type: string
+        default: ""
+      duration_seconds:
+        description: "DURATION_SECONDS override; blank = versions.env"
+        type: string
+        default: ""
+      warmup_seconds:
+        description: "WARMUP_SECONDS override; blank = versions.env"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    name: Benchmark (${{ inputs.suite }})
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Inputs are bound to the environment (never interpolated into the shell
+      # string) and consumed by the tested dispatcher, which forwards only the
+      # pins that are set. Docker + Compose v2 are preinstalled on ubuntu-latest;
+      # k6 and Postgres run as pinned images.
+      - name: Run suite
+        env:
+          SUITE: ${{ inputs.suite }}
+          CONCURRENCY: ${{ inputs.concurrency }}
+          TRIALS: ${{ inputs.trials }}
+          DURATION_SECONDS: ${{ inputs.duration_seconds }}
+          WARMUP_SECONDS: ${{ inputs.warmup_seconds }}
+        run: bash benchmarks/scripts/run-suite.sh
+
+      # Upload whatever the selected suite produced (a partial suite writes only
+      # some files); if:always so artifacts survive a later-step failure.
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-${{ inputs.suite }}-${{ github.run_number }}
+          path: |
+            benchmarks/results/dispatch/results.json
+            benchmarks/results/dispatch/results.csv
+            benchmarks/results/dispatch/summary.md
+            benchmarks/results/dispatch/metadata.json
+            benchmarks/results/dispatch/footprint.json
+            benchmarks/results/dispatch/footprint.csv
+            benchmarks/results/dispatch/microbench.json
+            benchmarks/results/dispatch/raw/
+          if-no-files-found: ignore
