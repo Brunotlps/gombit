@@ -189,13 +189,41 @@ wrapping transaction with the views doing nothing but a plain
 `Project.objects.create()`/`.save()` — the same shape as `gin-gorm`'s own
 handlers.
 
+### Under compose (containerized, with the §7 resource budget)
+
+The app is containerized (`Dockerfile`; self-contained, so the build context is
+this directory) and wired into `benchmarks/compose.yml` with the §7 app ceiling
+(2 vCPU / 1 GiB). The entrypoint has three verbs — `migrate`, `seed`, `serve`
+(gunicorn, never runserver). `serve` does **not** migrate, so run them in order.
+`migrate` creates the `gombit_bench_django` database if absent (idempotent,
+every bring-up, via `ensure_db.py` — not a fresh-volume init script):
+
+```sh
+docker compose --env-file benchmarks/config/versions.env \
+  -f benchmarks/compose.yml up -d postgres
+
+docker compose --env-file benchmarks/config/versions.env \
+  -f benchmarks/compose.yml run --rm django migrate
+docker compose --env-file benchmarks/config/versions.env \
+  -f benchmarks/compose.yml run --rm django seed
+
+docker compose --env-file benchmarks/config/versions.env \
+  -f benchmarks/compose.yml up -d django
+go run ./benchmarks/scripts/inspect-limits \
+  -container "$(docker compose -f benchmarks/compose.yml ps -q django)" \
+  -cpus 2 -memory 1g
+```
+
+`GUNICORN_WORKERS` (default 4) is passed to both `--workers` and the pool-split
+math in `settings.py`, so they stay in sync.
+
 ## Status
 
 Schema, seed, CRUD app, its own test suite, and CI (a Python 3.12 +
 `manage.py test` step in `.github/workflows/ci.yml`'s `database-postgres`
 job) are done (tracked in
 [docs/plans/BENCH-1-benchmark-suite.md](../../../docs/plans/BENCH-1-benchmark-suite.md)
-Phase 4). Still open: a `Dockerfile`/`benchmarks/compose.yml` service (the Go
-apps don't have one yet either — deferred to Phase 8's CI work), and
-extending the Go `benchmarks/apps/fairness_test.go` cross-implementation
-check to include this app as a third leg.
+Phase 4). This app now has a `Dockerfile` + `benchmarks/compose.yml` `django`
+service with the §7 budget (see [Under compose](#under-compose-containerized-with-the-7-resource-budget)).
+Still open: extending the Go `benchmarks/apps/fairness_test.go`
+cross-implementation check to include this app as a third leg.

@@ -7,7 +7,7 @@ Full plan: [docs/plans/BENCH-1-benchmark-suite.md](../docs/plans/BENCH-1-benchma
 
 ```text
 benchmarks/
-├── compose.yml          PostgreSQL + the two Go app services (gin-gorm, gombit; §7 limits); ecosystem apps land next
+├── compose.yml          PostgreSQL + app services (gin-gorm, gombit, django; §7 limits); rails/laravel/nestjs land next
 ├── config/
 │   └── versions.env     pinned load generator (k6), Postgres image, resource limits, workload defaults
 ├── docs/
@@ -46,15 +46,17 @@ benchmarks/
 All six canonical CRUD implementations exist, the result schema / metadata
 collector / run-config pins are in place, and the headline CRUD-read workload
 runs end to end against one implementation (`make benchmark-crud`). The Phase 6
-compose loop has started: both Go apps (`gin-gorm` and `gombit`) are
-containerized with `compose.yml` services carrying the §7 resource budget —
-`gombit` also applies its real Atlas migrations in-container (pinned `atlas`
-image) — and `internal/reslimits` + `scripts/inspect-limits` verify the ceiling
-actually landed on the live container (issue #141's "detect/report rather than
-silently pretend"). Still scoped to later phases: `docs/methodology.md`,
-containerizing the four ecosystem apps and the loop that brings all six up and
-runs `run-crud` over each, per-app resource/RSS capture (Phase 6 footprint), the
-other `make benchmark-*`
+compose loop has started: the two Go apps (`gin-gorm`, `gombit`) and the
+`django` ecosystem app are containerized with `compose.yml` services carrying
+the §7 resource budget — `gombit` also applies its real Atlas migrations
+in-container (pinned `atlas` image), and the migration-bearing apps create their
+own database idempotently on every bring-up — and `internal/reslimits` +
+`scripts/inspect-limits` verify the ceiling actually landed on the live
+container (issue #141's "detect/report rather than silently pretend"). Still
+scoped to later phases: `docs/methodology.md`, containerizing the remaining
+three ecosystem apps (rails/laravel/nestjs) and the loop that brings all six up
+and runs `run-crud` over each, per-app resource/RSS capture (Phase 6 footprint),
+the other `make benchmark-*`
 workloads, and extending `fairness_test.go` to all six.
 
 ## Resource limits (§7): intention vs. reality
