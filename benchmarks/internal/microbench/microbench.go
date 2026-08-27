@@ -79,10 +79,7 @@ func ParseBenchOutput(stack string, r io.Reader) ([]Row, error) {
 		if len(fields) < 2 || !strings.HasPrefix(fields[0], benchPrefix) {
 			continue
 		}
-		scenario := strings.TrimPrefix(fields[0], benchPrefix)
-		if i := strings.LastIndex(scenario, "-"); i >= 0 {
-			scenario = scenario[:i] // drop the trailing -<GOMAXPROCS>
-		}
+		scenario := stripProcs(strings.TrimPrefix(fields[0], benchPrefix))
 		ns, bytesPer, allocs, ok := parseMetrics(fields)
 		if !ok {
 			continue
@@ -110,6 +107,24 @@ func ParseBenchOutput(stack string, r io.Reader) ([]Row, error) {
 		rows = append(rows, *byScenario[s])
 	}
 	return rows, nil
+}
+
+// stripProcs removes the trailing -<GOMAXPROCS> Go appends to a benchmark name,
+// matching testing.benchmarkName: the suffix is only present when GOMAXPROCS !=
+// 1 and is always digits, so it is dropped only when what follows the last '-'
+// is entirely numeric. That leaves the hyphenated scenario names (path-param,
+// valid-post, invalid-post) intact when Go emits them unsuffixed (GOMAXPROCS=1).
+func stripProcs(s string) string {
+	i := strings.LastIndex(s, "-")
+	if i < 0 || i == len(s)-1 {
+		return s
+	}
+	for _, r := range s[i+1:] {
+		if r < '0' || r > '9' {
+			return s
+		}
+	}
+	return s[:i]
 }
 
 // parseMetrics returns (ns/op, B/op, allocs/op, ok) from the "<value> <unit>"

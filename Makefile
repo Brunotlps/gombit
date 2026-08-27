@@ -1,6 +1,6 @@
-# Benchmark developer UX (issue #141 §10). More targets (benchmark-micro,
-# -auth, -techempower, -footprint, -report, and the all-in-one benchmark) land
-# with their phases; this file starts with the pieces that exist.
+# Benchmark developer UX (issue #141 §10). The crud/crud-all/micro/footprint/
+# summary/report/metadata targets are here; -auth, -techempower, and the
+# all-in-one benchmark land with their phases.
 #
 # Run configuration is sourced from benchmarks/config/versions.env (the single
 # source of truth for the pinned k6 version, resource limits, and workload
@@ -28,8 +28,9 @@ INTENDED_LIMITS ?= intended (applied only under benchmark-crud-all): app $(APP_C
 
 .PHONY: benchmark-crud benchmark-crud-all benchmark-micro benchmark-footprint benchmark-summary benchmark-metadata benchmark-report benchmark-report-check
 
-# Framework-tax microbenchmark iterations (-count). The last iteration per
-# scenario wins; more iterations warm the numbers, they don't add variance rows.
+# Framework-tax microbenchmark sample count (-count). Every ns/op sample is
+# persisted to microbench.json and the report publishes the median, so this is
+# the number of samples per scenario, not a warmup knob.
 MICRO_COUNT ?= 10
 
 ## benchmark-micro: run the framework-tax microbenchmark (net/http -> Gin ->

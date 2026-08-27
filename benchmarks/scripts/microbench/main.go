@@ -1,7 +1,8 @@
 // Command microbench parses `go test -bench=BenchmarkFrameworkTax` output for
-// one stack (read from stdin) and merges the rows into OUT/microbench.json by
-// (stack, scenario). `make benchmark-micro` pipes each stack's `go test` output
-// through it, so the four runs accumulate into one file the report reads.
+// one stack (read from stdin) and merges the rows into OUT/microbench.json,
+// replacing that stack as a whole (so a re-run can't leave a stale scenario).
+// `make benchmark-micro` pipes each stack's `go test` output through it, so the
+// four runs accumulate into one file the report reads.
 //
 //	go test ./benchmarks/micro/gin -bench=BenchmarkFrameworkTax -benchmem -run='^$' \
 //	  | go run ./benchmarks/scripts/microbench -stack gin -out benchmarks/results/latest/microbench.json

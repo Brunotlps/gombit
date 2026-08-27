@@ -49,7 +49,7 @@ const (
 // stackLadder is the abstraction order (thinnest → thickest) and the display
 // name for each framework-tax stack.
 var stackLadder = []struct{ key, name string }{
-	{"nethttp", "net/http"}, {"gin", "Gin"}, {"huma", "Huma"}, {"gombit", "Gombit"},
+	{"nethttp", "net/http"}, {"gin", "Gin"}, {"huma", "Huma + Gin"}, {"gombit", "Gombit"},
 }
 
 // Render returns the Markdown block (without the markers) for the given data.

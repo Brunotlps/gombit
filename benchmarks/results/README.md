@@ -28,6 +28,9 @@ results/
 of [docs/plans/BENCH-1-benchmark-suite.md](../../docs/plans/BENCH-1-benchmark-suite.md)),
 so the published README performance tables are always regenerable from a
 committed snapshot. The orchestration that fills `latest/` exists —
-`make benchmark-crud-all` runs the CRUD-read workload across all six apps and
-`make benchmark-summary` renders `summary.md`; committing a canonical snapshot is
+`make benchmark-crud-all` (CRUD throughput across all six apps),
+`make benchmark-footprint` (cold-start/RSS/CPU → `footprint.json`),
+`make benchmark-micro` (framework tax → `microbench.json`), and
+`make benchmark-summary`/`make benchmark-report` render `summary.md` and the
+README block; committing a canonical snapshot is
 the Phase 7 reporting step.

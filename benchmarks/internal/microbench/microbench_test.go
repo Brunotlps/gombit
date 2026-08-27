@@ -59,6 +59,47 @@ func TestParseBenchOutputKeepsEverySample(t *testing.T) {
 	}
 }
 
+// At GOMAXPROCS=1 (go test -cpu=1 / a 1-CPU host) Go omits the -<N> suffix, so
+// the hyphenated scenario names arrive bare. LastIndex("-") would truncate
+// valid-post -> valid; stripProcs must keep them.
+func TestParseBenchOutputUnsuffixedHyphenatedNames(t *testing.T) {
+	var b strings.Builder
+	for _, s := range Scenarios {
+		b.WriteString("BenchmarkFrameworkTax/" + s + "   100   1500 ns/op   256 B/op   4 allocs/op\n")
+	}
+	rows, err := ParseBenchOutput("gombit", strings.NewReader(b.String()))
+	if err != nil {
+		t.Fatalf("unsuffixed names must parse: %v", err)
+	}
+	seen := map[string]bool{}
+	for _, r := range rows {
+		seen[r.Scenario] = true
+	}
+	for _, want := range []string{"path-param", "valid-post", "invalid-post"} {
+		if !seen[want] {
+			t.Errorf("hyphenated scenario %q was mangled by the suffix strip; got %v", want, seen)
+		}
+	}
+}
+
+func TestStripProcs(t *testing.T) {
+	// A trailing -<digits> is dropped (the GOMAXPROCS suffix); a hyphen followed
+	// by non-digits is part of the scenario name and kept.
+	cases := map[string]string{
+		"valid-post-16": "valid-post",
+		"valid-post":    "valid-post",
+		"path-param-8":  "path-param",
+		"json-16":       "json",
+		"json":          "json",
+		"plaintext":     "plaintext",
+	}
+	for in, want := range cases {
+		if got := stripProcs(in); got != want {
+			t.Errorf("stripProcs(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
 func TestParseBenchOutputRejectsIncompleteRun(t *testing.T) {
 	// A panic after the GET scenarios leaves valid-post/invalid-post missing.
 	partial := "BenchmarkFrameworkTax/plaintext-16   1   1000 ns/op   1 B/op   1 allocs/op\n" +
