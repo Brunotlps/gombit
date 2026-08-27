@@ -97,8 +97,31 @@ class CanonicalSeed
         }
     }
 
+    // BENCH_SEED_USERS / BENCH_SEED_PROJECTS override the row counts for the CI
+    // smoke's small deterministic seed (issue #141 §11) — same content
+    // formulas, fewer rows. Unset/empty means the canonical default; a
+    // non-empty value that is not a positive integer is a fatal error, never a
+    // silent fall back to 100k. Same names and semantics as
+    // benchmarks/apps/shared.SeedCounts (Go). getenv (not env()) so it reads the
+    // real process environment the container is given, unaffected by config
+    // caching.
+    private static function seedCount(string $env, int $default): int
+    {
+        $raw = trim((string) getenv($env));
+        if ($raw === '') {
+            return $default;
+        }
+        if (preg_match('/^[1-9]\d*$/', $raw) !== 1) {
+            throw new \InvalidArgumentException("{$env}={$raw}: must be a positive integer");
+        }
+        return (int) $raw;
+    }
+
     public static function seedDatabase(): void
     {
-        self::seedDatabaseN(self::USER_COUNT, self::PROJECT_COUNT);
+        self::seedDatabaseN(
+            self::seedCount('BENCH_SEED_USERS', self::USER_COUNT),
+            self::seedCount('BENCH_SEED_PROJECTS', self::PROJECT_COUNT),
+        );
     }
 }

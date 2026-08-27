@@ -15,14 +15,19 @@ import (
 // content formulas and row counts — matching benchmarks/apps/gin-gorm/seed.go.
 const seedBatchSize = 1000
 
-// seedDatabase truncates and repopulates the canonical benchmark dataset at
-// production scale using benchmarks/apps/shared's deterministic content
+// seedDatabase truncates and repopulates the canonical benchmark dataset — at
+// production scale, or the small BENCH_SEED_USERS/BENCH_SEED_PROJECTS size the
+// CI smoke requests (issue #141 §11) — using benchmarks/apps/shared's content
 // formulas, the same ones benchmarks/apps/gin-gorm/seed.go uses, so the two
 // implementations' seeded row N are content-identical. See
 // benchmarks/apps/gin-gorm/seed.go's seedDatabaseN for the truncate/identity
 // reasoning this mirrors.
 func seedDatabase(ctx context.Context, db *gorm.DB) error {
-	return seedDatabaseN(ctx, db, shared.SeedUserCount, shared.SeedProjectCount)
+	users, projects, err := shared.SeedCounts()
+	if err != nil {
+		return err
+	}
+	return seedDatabaseN(ctx, db, users, projects)
 }
 
 func seedDatabaseN(ctx context.Context, db *gorm.DB, userCount, projectCount int) error {

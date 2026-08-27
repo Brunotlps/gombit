@@ -134,6 +134,33 @@ jobs:
       - name: Fail on benchmark report drift
         run: git diff --exit-code -- README.md
 
+  benchmark-smoke:
+    name: Benchmark smoke
+    # Correctness-only guard for the benchmark suite (issue #141 §11): build all
+    # six app images (a broken Dockerfile fails here) and run the containerized
+    # harness end to end (compose up -> migrate -> seed -> k6 -> parse) for ALL
+    # SIX apps with a tiny deterministic seed (BENCH_SEED_*) and a 1-VU x 1 short
+    # trial. Detects broken builds, broken endpoints, schema/migration drift,
+    # orchestration failures, and result-parser breakage. Numbers are discarded
+    # (throwaway out-dir); only success/failure matters (no perf gate on noisy
+    # shared runners, per §11). The small seed is what keeps all six affordable
+    # per PR. Docker + Compose v2 are preinstalled on ubuntu-latest; k6 and
+    # Postgres run as pinned images.
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run benchmark smoke
+        run: make benchmark-smoke
+
   database-sqlite:
     name: Database (sqlite)
     needs: test

@@ -70,7 +70,22 @@ module CanonicalSeed
     end
   end
 
+  # BENCH_SEED_USERS / BENCH_SEED_PROJECTS override the row counts for the CI
+  # smoke's small deterministic seed (issue #141 §11) — same content formulas,
+  # fewer rows. Unset/empty means the canonical default; a non-empty value that
+  # is not a positive integer is a fatal error, never a silent fall back to
+  # 100k. Same names and semantics as benchmarks/apps/shared.SeedCounts (Go).
+  def seed_count(env, default)
+    raw = ENV[env].to_s.strip
+    return default if raw.empty?
+    raise ArgumentError, "#{env}=#{raw.inspect}: must be a positive integer" unless raw.match?(/\A[1-9]\d*\z/)
+    raw.to_i
+  end
+
   def seed_database
-    seed_database_n(USER_COUNT, PROJECT_COUNT)
+    seed_database_n(
+      seed_count("BENCH_SEED_USERS", USER_COUNT),
+      seed_count("BENCH_SEED_PROJECTS", PROJECT_COUNT),
+    )
   end
 end

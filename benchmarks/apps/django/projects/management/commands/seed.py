@@ -1,4 +1,6 @@
-from django.core.management.base import BaseCommand
+import os
+
+from django.core.management.base import BaseCommand, CommandError
 from django.db import connection
 
 from projects.models import Project, User
@@ -77,8 +79,25 @@ def seed_database_n(user_count, project_count):
     )
 
 
+# BENCH_SEED_USERS / BENCH_SEED_PROJECTS override the row counts for the CI
+# smoke's small deterministic seed (issue #141 §11) — same content formulas,
+# fewer rows. Unset/empty means the canonical default; a non-empty value that
+# is not a positive integer is a fatal error, never a silent fall back to 100k.
+# Same names and semantics as benchmarks/apps/shared.SeedCounts (Go).
+def _seed_count(env, default):
+    raw = os.environ.get(env, "").strip()
+    if raw == "":
+        return default
+    if not raw.isdigit() or int(raw) < 1:
+        raise CommandError(f"{env}={raw!r}: must be a positive integer")
+    return int(raw)
+
+
 def seed_database():
-    seed_database_n(SEED_USER_COUNT, SEED_PROJECT_COUNT)
+    seed_database_n(
+        _seed_count("BENCH_SEED_USERS", SEED_USER_COUNT),
+        _seed_count("BENCH_SEED_PROJECTS", SEED_PROJECT_COUNT),
+    )
 
 
 class Command(BaseCommand):

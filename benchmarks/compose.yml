@@ -78,6 +78,11 @@ services:
     command: ["serve"]
     environment:
       DATABASE_URL: postgres://gombit:gombit@postgres:5432/gombit_bench?sslmode=disable
+      # Small deterministic seed for the CI smoke (issue #141 §11); empty ->
+      # the app's canonical 1,000/100,000 default. Passed through to the `seed`
+      # container from the orchestrator's environment.
+      BENCH_SEED_USERS: "${BENCH_SEED_USERS:-}"
+      BENCH_SEED_PROJECTS: "${BENCH_SEED_PROJECTS:-}"
       PORT: "8081"
       POOL_MAX_OPEN: "${POOL_MAX_OPEN:-20}"
       POOL_MAX_IDLE: "${POOL_MAX_IDLE:-20}"
@@ -124,6 +129,8 @@ services:
     command: ["serve"]
     environment:
       DATABASE_URL: postgres://gombit:gombit@postgres:5432/gombit_bench_gombit?sslmode=disable
+      BENCH_SEED_USERS: "${BENCH_SEED_USERS:-}"
+      BENCH_SEED_PROJECTS: "${BENCH_SEED_PROJECTS:-}"
       # The migrate verb creates TARGET_DB if absent, connecting via
       # ADMIN_DATABASE_URL (an existing DB on the same server) — idempotent,
       # every bring-up, no fresh-volume dependency.
@@ -168,6 +175,8 @@ services:
     environment:
       DATABASE_URL: postgres://gombit:gombit@postgres:5432/gombit_bench_django?sslmode=disable
       ADMIN_DATABASE_URL: postgres://gombit:gombit@postgres:5432/gombit_bench?sslmode=disable
+      BENCH_SEED_USERS: "${BENCH_SEED_USERS:-}"
+      BENCH_SEED_PROJECTS: "${BENCH_SEED_PROJECTS:-}"
       TARGET_DB: gombit_bench_django
       PORT: "8082"
       GUNICORN_WORKERS: "4"
@@ -209,6 +218,8 @@ services:
     command: ["serve"]
     environment:
       DATABASE_URL: postgres://gombit:gombit@postgres:5432/gombit_bench_rails?sslmode=disable
+      BENCH_SEED_USERS: "${BENCH_SEED_USERS:-}"
+      BENCH_SEED_PROJECTS: "${BENCH_SEED_PROJECTS:-}"
       PORT: "8083"
       WEB_CONCURRENCY: "2"
       RAILS_MAX_THREADS: "3"
@@ -252,6 +263,8 @@ services:
     environment:
       DATABASE_URL: postgres://gombit:gombit@postgres:5432/gombit_bench_laravel?sslmode=disable
       ADMIN_DATABASE_URL: postgres://gombit:gombit@postgres:5432/gombit_bench?sslmode=disable
+      BENCH_SEED_USERS: "${BENCH_SEED_USERS:-}"
+      BENCH_SEED_PROJECTS: "${BENCH_SEED_PROJECTS:-}"
       TARGET_DB: gombit_bench_laravel
       DB_CONNECTION: pgsql
       APP_ENV: production
@@ -294,6 +307,8 @@ services:
     environment:
       DATABASE_URL: postgres://gombit:gombit@postgres:5432/gombit_bench_nestjs?sslmode=disable
       ADMIN_DATABASE_URL: postgres://gombit:gombit@postgres:5432/gombit_bench?sslmode=disable
+      BENCH_SEED_USERS: "${BENCH_SEED_USERS:-}"
+      BENCH_SEED_PROJECTS: "${BENCH_SEED_PROJECTS:-}"
       TARGET_DB: gombit_bench_nestjs
       NODE_ENV: production
       PORT: "8085"

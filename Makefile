@@ -33,7 +33,7 @@ OUT_DIR ?= benchmarks/results/latest
 # applied verdict per app (via inspect-limits).
 INTENDED_LIMITS ?= intended (applied only under benchmark-crud-all): app $(APP_CPUS)cpu/$(APP_MEMORY); postgres $(POSTGRES_CPUS)cpu/$(POSTGRES_MEMORY)
 
-.PHONY: help benchmark benchmark-crud benchmark-crud-all benchmark-micro benchmark-footprint benchmark-summary benchmark-metadata benchmark-report benchmark-report-check
+.PHONY: help benchmark benchmark-smoke benchmark-crud benchmark-crud-all benchmark-micro benchmark-footprint benchmark-summary benchmark-metadata benchmark-report benchmark-report-check
 
 ## help: list the benchmark targets (the default goal — a bare `make` prints
 ## this, never a multi-hour run). Full docs: benchmarks/README.md.
@@ -62,6 +62,31 @@ benchmark:
 	$(MAKE) benchmark-footprint
 	$(MAKE) benchmark-micro
 	$(MAKE) benchmark-report
+
+# The apps the smoke runs end to end (default: all six) and the small
+# deterministic seed it uses (issue #141 §11). 20 users / 100 projects is tiny
+# but keeps a full 20-row first page, which the read workload asserts. Every app
+# reads BENCH_SEED_USERS/BENCH_SEED_PROJECTS with the same semantics
+# (benchmarks/apps/shared.SeedCounts and its per-language ports); unset falls
+# back to the canonical 1,000/100,000.
+BENCH_SMOKE_APPS ?= gin-gorm gombit django rails laravel nestjs
+SMOKE_SEED_USERS ?= 20
+SMOKE_SEED_PROJECTS ?= 100
+
+## benchmark-smoke: per-PR correctness guard (issue #141 §11) — build all six
+## app images (a broken Dockerfile fails here) and run the containerized harness
+## end to end (compose up -> migrate -> seed -> k6 -> parse) for all six with a
+## tiny deterministic seed and a 1-VU x 1 short trial, into a THROWAWAY dir so it
+## never touches results/latest. Numbers are discarded; only pass/fail matters —
+## a broken image, endpoint, migration/schema, orchestration, or result parser
+## fails the run. This is what CI runs on every PR (the `benchmark-smoke` job in
+## ci.yml). The small seed is what keeps all six affordable per PR.
+benchmark-smoke:
+	docker compose --env-file $(BENCH_CONFIG) -f benchmarks/compose.yml build
+	@dir="$$(mktemp -d)"; trap 'rm -rf "$$dir"' EXIT; \
+		BENCH_SEED_USERS=$(SMOKE_SEED_USERS) BENCH_SEED_PROJECTS=$(SMOKE_SEED_PROJECTS) \
+		$(MAKE) benchmark-crud-all APPS="$(BENCH_SMOKE_APPS)" OUT_DIR="$$dir" \
+			CONCURRENCY=1 TRIALS=1 DURATION_SECONDS=3 WARMUP_SECONDS=1
 
 # Framework-tax microbenchmark sample count (-count). Every ns/op sample is
 # persisted to microbench.json and the report publishes the median, so this is
