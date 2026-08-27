@@ -300,8 +300,12 @@ func mergedMetadata(path string, meta metadata.Metadata) metadata.Metadata {
 	meta.RuntimeVersions = union(existing.RuntimeVersions, meta.RuntimeVersions)
 	// Preserve every app's applied-limit verdict, not just the last writer's.
 	meta.ResourceLimitsByFramework = union(existing.ResourceLimitsByFramework, meta.ResourceLimitsByFramework)
-	// Postgres is the same container across apps; keep an existing verdict if
-	// this run didn't re-verify it.
+	// Postgres is the same container across apps. Empty means "this run did not
+	// re-verify" (the standalone benchmark-crud default) — keep any prior verdict.
+	// A non-empty value, INCLUDING an explicit "unknown …" from run-crud-all when
+	// it looked but could not classify, is authoritative for this run and
+	// overwrites — so a stale enforced/partial never sticks across a re-run whose
+	// check failed.
 	if meta.PostgresResourceLimits == "" {
 		meta.PostgresResourceLimits = existing.PostgresResourceLimits
 	}

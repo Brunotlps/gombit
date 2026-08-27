@@ -1707,6 +1707,19 @@ not produce" defects, all fixed in the same PR:
    stale value. It now clears `POSTGRES_LIMITS` unconditionally at entry; the
    shell test asserts emptiness on both non-classifying paths (not just no-abort).
 
+A third pass caught that fix #4's `""`-on-unknown collided with the merge:
+`mergedMetadata` keeps a prior `postgres_resource_limits` when the new value is
+`""`, so a re-run whose postgres check *failed* would silently inherit the stale
+`enforced`/`partial` from the last snapshot — `""` was overloaded as both "not
+re-verified" (the standalone `benchmark-crud` default, where keep-if-empty is
+right) and "verified, could not classify" (where it must overwrite).
+`verify_postgres_limits` now records an **explicit `unknown (…)` string** on the
+missing-container / inspect-failure paths, leaving `""` to mean only "not
+re-verified". A Go unit test on `mergedMetadata` (reading through the on-disk
+snapshot, which the shell tests never did) locks all three cases: empty keeps
+the prior verdict, an explicit `unknown` overwrites it, a fresh verdict
+overwrites it.
+
 - `benchmarks/internal` summarizer: `results.json` → `results.csv` →
   `summary.md`, plus the README marker-block generator (§4).
 - Add the `## Performance` section to root `README.md` (framework-tax table,

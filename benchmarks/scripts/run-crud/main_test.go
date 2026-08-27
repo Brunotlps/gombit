@@ -1,11 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/gombit-dev/gombit/benchmarks/internal/metadata"
 	"github.com/gombit-dev/gombit/benchmarks/internal/result"
 )
 
@@ -46,6 +48,50 @@ func TestMergeRowsReplacesSameFrameworkKeepsOthers(t *testing.T) {
 	}
 	if gombit != 1 {
 		t.Errorf("gombit rows = %d, want 1 (other framework kept)", gombit)
+	}
+}
+
+// mergedMetadata must treat the postgres verdict's two "empty-ish" states
+// differently, reading through the on-disk snapshot (not just the in-memory
+// value): an empty string means "this run did not re-verify" and keeps whatever
+// the prior snapshot claimed, while an explicit "unknown …" from a run that
+// looked and could not classify OVERWRITES — so a stale enforced/partial can
+// never stick across a re-run whose check failed.
+func TestMergedMetadataPostgresSentinelDistinguishesNotProvidedFromVerifiedUnknown(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "metadata.json")
+	prior := "enforced: cpu 2.00 vCPU, memory 2 GiB"
+	writeMetadataJSON(t, path, metadata.Metadata{PostgresResourceLimits: prior})
+
+	// Empty ("not provided", e.g. standalone benchmark-crud) keeps the prior verdict.
+	got := mergedMetadata(path, metadata.Metadata{PostgresResourceLimits: ""})
+	if got.PostgresResourceLimits != prior {
+		t.Errorf(`empty postgres verdict should keep the prior one; got %q, want %q`, got.PostgresResourceLimits, prior)
+	}
+
+	// A verified-unknown re-run overwrites the stale verdict (does not inherit it).
+	unknown := "unknown (inspect-limits failed)"
+	got = mergedMetadata(path, metadata.Metadata{PostgresResourceLimits: unknown})
+	if got.PostgresResourceLimits != unknown {
+		t.Errorf("verified-unknown should overwrite the stale verdict; got %q, want %q", got.PostgresResourceLimits, unknown)
+	}
+
+	// A fresh real verdict overwrites too (the ordinary re-verify case).
+	fresh := "partial: memory unset"
+	got = mergedMetadata(path, metadata.Metadata{PostgresResourceLimits: fresh})
+	if got.PostgresResourceLimits != fresh {
+		t.Errorf("a fresh verdict should overwrite; got %q, want %q", got.PostgresResourceLimits, fresh)
+	}
+}
+
+func writeMetadataJSON(t *testing.T, path string, meta metadata.Metadata) {
+	t.Helper()
+	data, err := json.Marshal(meta)
+	if err != nil {
+		t.Fatalf("marshal metadata: %v", err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write metadata: %v", err)
 	}
 }
 
