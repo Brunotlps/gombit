@@ -11,14 +11,16 @@ benchmarks/
 ├── config/
 │   └── versions.env     pinned load generator (k6), Postgres image, resource limits, workload defaults
 ├── docs/
-│   └── schema.md        canonical schema/API/envelope every benchmarks/apps/ implementation targets
+│   ├── schema.md        canonical schema/API/envelope every benchmarks/apps/ implementation targets
+│   └── methodology.md   full method + "How not to interpret these results" (linked from the README table)
 ├── internal/            machine-readable output plumbing (Phase 1)
 │   ├── result/           results.json/results.csv schema + encoders (issue §9)
 │   ├── metadata/         reproducibility metadata struct + host/toolchain collector
 │   ├── k6/               parses a crud-list.js summary into result rows (+ Validate)
 │   ├── summary/          aggregates trials into per-group stats + renders summary.md (CoV flag)
 │   ├── reslimits/        classifies a container's Docker-recorded limits (HostConfig) vs the §7 budget (honest detection)
-│   └── footprint/        operational-footprint schema (cold-start/RSS/CPU) + encoders
+│   ├── footprint/        operational-footprint schema (cold-start/RSS/CPU) + encoders
+│   └── report/           renders the README ## Performance block from results/footprint/metadata + drift check
 ├── workloads/
 │   └── crud-list.js      the headline GET /api/projects read workload (k6)
 ├── scripts/
@@ -29,6 +31,7 @@ benchmarks/
 │   ├── footprint-all.sh   measures cold-start/RSS/CPU for all six containers (make benchmark-footprint)
 │   ├── k6load/            drives validated crud-list load for the footprint loaded/CPU sampling (fail-closed)
 │   ├── summarize/         results.json -> summary.md (make benchmark-summary)
+│   ├── report/            regenerates the root README ## Performance block; -check for drift (make benchmark-report)
 │   └── inspect-limits/    reports whether a live container got the §7 ceiling (uses internal/reslimits)
 ├── micro/                Go abstraction-overhead microbenchmarks (Phase 2)
 │   ├── scenario/          shared resource types, Huma route registration, correctness assertions
@@ -59,9 +62,15 @@ container and records it (`internal/reslimits` + `scripts/inspect-limits`, issue
 #141's "detect/report rather than silently pretend"), runs the workload, and
 merges all six into one `results.json`. `make benchmark-footprint` captures the
 operational footprint (cold-start, idle/loaded memory, CPU-under-load) of the
-same six containers into `footprint.json`. Still scoped to later phases:
-`docs/methodology.md`, the embedded-Gombit single-binary footprint variant, the
-other `make benchmark-*` workloads, and extending `fairness_test.go` to all six.
+same six containers into `footprint.json`. `make benchmark-report` regenerates
+the root README's `## Performance` block (and `summary.md`) from those files, and
+`make benchmark-report-check` fails on drift; the full method and the required
+"How not to interpret these results" caveats live in
+[docs/methodology.md](docs/methodology.md). Still scoped to later phases: the
+embedded-Gombit single-binary footprint variant, the other `make benchmark-*`
+workloads, extending `fairness_test.go` to all six, committing a canonical
+`results/latest/` snapshot from a dedicated-host run, and wiring
+`benchmark-report-check` into CI (Phase 8).
 
 ## Resource limits (§7): intention vs. reality
 

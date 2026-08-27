@@ -1607,6 +1607,27 @@ two code leftovers, all fixed.
 
 ### Phase 7 — Reporting, README integration, drift detection
 
+**README `## Performance` generator + drift check + methodology — done.**
+`benchmarks/internal/report` renders the block (CRUD median-rps pivot from
+`results.json` via `internal/summary`; container footprint table from
+`footprint.json`; a host/commit/date/Postgres/limits note from `metadata.json`)
+and replaces the content between the `benchmark-results` markers.
+`benchmarks/scripts/report` writes it, or `-check` fails on drift.
+`make benchmark-report` regenerates the README block + `summary.md`;
+`make benchmark-report-check` is the CI drift guard. The root README has the
+markers + a `## Performance` section, and `benchmarks/docs/methodology.md`
+carries the full method and the required "How not to interpret these results"
+section. Unit-tested (CRUD pivot incl. missing-cell dashes, footprint table
+excludes the embedded variant, methodology from metadata, marker replace +
+drift + missing-marker error) and the CLI (write→check clean, drift detected,
+missing markers fail); verified end to end against crafted results/footprint/
+metadata. **Still open in Phase 7:** the framework-tax (micro) table needs the
+`go test -bench` rows persisted to a file first (not yet captured to JSON);
+running the full suite on a dedicated host and committing the canonical
+`results/latest/` snapshot (so the block holds real numbers rather than the
+honest "not yet recorded" placeholders); and wiring `benchmark-report-check`
+into CI (Phase 8).
+
 - `benchmarks/internal` summarizer: `results.json` → `results.csv` →
   `summary.md`, plus the README marker-block generator (§4).
 - Add the `## Performance` section to root `README.md` (framework-tax table,
