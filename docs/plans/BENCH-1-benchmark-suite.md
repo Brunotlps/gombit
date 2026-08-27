@@ -1388,7 +1388,19 @@ in:
   Verified end to end against a live container on an existing volume: migrate
   creates the DB and applies migrations (a second migrate is a no-op), seed
   completes, `healthy` via `/livez`, canonical envelope (`total: 100000`),
-  inspect-limits `enforced`. rails / laravel / nestjs are the next slices.
+  inspect-limits `enforced`.
+- `benchmarks/apps/rails/Dockerfile` + `docker-entrypoint.sh` (Ruby/Rails
+  ecosystem app). Multi-stage `ruby:3.3.12-slim` (native `pg` gem compiled in
+  the build stage, `libpq5` at runtime); self-contained context. Three verbs;
+  `serve` is Puma clustered in `RAILS_ENV=production` (`WEB_CONCURRENCY` workers
+  × `RAILS_MAX_THREADS` threads, pool split per worker). `migrate` uses
+  `db:create` (idempotent) so it provisions `gombit_bench_rails` every bring-up;
+  `SECRET_KEY_BASE` is generated per boot (no committed secret). The runtime
+  stage creates `tmp/`/`log/` and chowns `/app` so the non-root user can boot
+  Puma. Verified end to end against a live container: db:create + migrate
+  (second run a no-op), seed, `healthy` via `/livez`, Puma comes up in cluster
+  mode with 2 workers on `0.0.0.0:8083`, canonical envelope, inspect-limits
+  `enforced`. laravel / nestjs are the next slices.
 - `benchmarks/internal/reslimits` + `benchmarks/scripts/inspect-limits`: the
   issue's "detect and report rather than silently pretend limits were applied"
   requirement. A compose budget is only an *intention*; the tool reads the

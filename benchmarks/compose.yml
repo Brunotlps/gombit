@@ -1,7 +1,7 @@
 # PostgreSQL + the benchmark app services under test. App services are added
 # as each is containerized (Phase 6 compose loop): the two Go apps `gin-gorm`
 # (the reference control) and `gombit` (same API on the Gombit runtime) plus the
-# `django` ecosystem app are in; rails / laravel / nestjs are the next slices.
+# `django` and `rails` ecosystem apps are in; laravel / nestjs are the next slices.
 #
 # Version pin: issue #141 requires major.minor (or digest), not a
 # major-only floating tag. The pin lives once in
@@ -181,6 +181,48 @@ services:
     # route. The slim image has no wget/curl, so probe with python's urllib.
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request as u,sys; sys.exit(0 if u.urlopen('http://127.0.0.1:8082/livez').status==200 else 1)\""]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    deploy:
+      resources:
+        limits:
+          cpus: "${APP_CPUS:-2}"
+          memory: ${APP_MEMORY:-1g}
+
+  # The rails app (issue #141 §7 app budget: 2 vCPU / 1 GiB) — Ruby/ActiveRecord
+  # ecosystem context. Self-contained build context. Puma clustered in
+  # production (WEB_CONCURRENCY workers x RAILS_MAX_THREADS threads, config/
+  # puma.rb), pool split across workers. `migrate` runs `db:create` (idempotent)
+  # so it provisions gombit_bench_rails on every bring-up; SECRET_KEY_BASE is
+  # generated per boot by the entrypoint (no committed secret):
+  #
+  #   docker compose ... up -d postgres
+  #   docker compose ... run --rm rails migrate
+  #   docker compose ... run --rm rails seed
+  #   docker compose ... up -d rails
+  rails:
+    build:
+      context: apps/rails
+    image: bench-rails:local
+    command: ["serve"]
+    environment:
+      DATABASE_URL: postgres://gombit:gombit@postgres:5432/gombit_bench_rails?sslmode=disable
+      PORT: "8083"
+      WEB_CONCURRENCY: "2"
+      RAILS_MAX_THREADS: "3"
+      POOL_MAX_OPEN: "${POOL_MAX_OPEN:-20}"
+      RAILS_ALLOWED_HOSTS: "127.0.0.1,localhost"
+      RAILS_LOG_LEVEL: "warn"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8083:8083"
+    # /livez -> Rails' built-in health controller (200, no DB) and silenced in
+    # logs — never the measured route. The slim image has ruby but no wget/curl.
+    healthcheck:
+      test: ["CMD-SHELL", "ruby -rnet/http -e \"exit(Net::HTTP.get_response(URI('http://127.0.0.1:8083/livez')).code == '200' ? 0 : 1)\""]
       interval: 3s
       timeout: 3s
       retries: 20

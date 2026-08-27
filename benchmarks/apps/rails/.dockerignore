@@ -1,0 +1,9 @@
+# Build context is this directory; keep local dev/runtime cruft out of the image
+# (tmp/ and log/ are recreated at runtime; .bundle/vendor would shadow the
+# image's gems).
+.git
+tmp
+log
+.bundle
+vendor/bundle
+*.log
