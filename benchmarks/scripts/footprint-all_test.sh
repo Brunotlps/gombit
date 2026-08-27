@@ -57,6 +57,52 @@ fi
 grep -qF '{{.Config.Image}}' benchmarks/scripts/footprint-all.sh \
   || note "image-size no longer inspects the app image by tag (.Config.Image)"
 
+# ---- now_ms is monotonic + non-negative: elapsed timing can't go backward on a
+#      wall-clock step (that's why cold starts aren't timed with date +%s%3N,
+#      whose two reads produced -1609081096361592473 on a real run) ----
+a="$(now_ms)"; sleep 0.02; b="$(now_ms)"
+[[ "$a" =~ ^[0-9]+$ ]] || note "now_ms is not a non-negative integer: '$a'"
+[ "$b" -ge "$a" ] 2>/dev/null || note "now_ms went backwards: $a -> $b"
+
+# ---- cold_start_samples: a malformed sample is rejected, and the fix REDOES the
+#      stop/start (a fresh cold start), never a warm re-poll of the up container;
+#      it neither records garbage nor fail-closes the whole run on a transient
+#      one. The COMPOSE recorder counts start calls so the restart invariant is
+#      actually tested, not just the value. ----
+COLD_START_RUNS=1
+PORT=8081
+cs_starts=0
+cs_count="$(mktemp)"
+# COMPOSE recorder runs in THIS shell (not a $()), so cs_starts survives.
+cs_rec() { case "$1" in start) cs_starts=$((cs_starts + 1)) ;; esac; return 0; }
+COMPOSE=(cs_rec)
+# wait_ready_ms runs in its own $() each call, so it counts via a file.
+wait_ready_ms() {
+  local n; n=$(( $(cat "$cs_count") + 1 )); echo "$n" > "$cs_count"
+  if [ "$n" -eq 1 ]; then echo "-1609081096361592473"; else echo "120"; fi
+}
+
+# One malformed reading then a good one: retries to 120 AND restarts twice.
+echo 0 > "$cs_count"; cs_starts=0; csout="$(mktemp)"
+cold_start_samples gin-gorm http://x/livez > "$csout" 2>/dev/null || note "cold_start_samples failed on a recoverable sample"
+[ "$(cat "$csout")" = "120" ] || note "cold_start_samples did not retry to the good sample: '$(cat "$csout")'"
+[ "$cs_starts" -eq 2 ] || note "a rejected sample did not trigger a second stop/start (starts=$cs_starts, want 2)"
+
+# Persistently malformed: fails, restarts all 5 attempts, records nothing.
+wait_ready_ms() { echo "-1609081096361592473"; }
+cs_starts=0
+if cold_start_samples gin-gorm http://x/livez >/dev/null 2>&1; then
+  note "cold_start_samples recorded a persistently malformed sample instead of failing"
+fi
+[ "$cs_starts" -eq 5 ] || note "persistent-malformed path did not restart 5 times (starts=$cs_starts, want 5)"
+
+# A huge positive (ms-minus-ns shape) is rejected too.
+wait_ready_ms() { echo "1609081096361592473"; }
+if cold_start_samples gin-gorm http://x/livez >/dev/null 2>&1; then
+  note "cold_start_samples accepted an absurdly large sample"
+fi
+rm -f "$cs_count" "$csout"
+
 # ---- fakes for the measure_container control-flow tests ----
 CALLS=()
 fake_compose() { if [ "$1" = ps ]; then echo "cid-$3"; return 0; fi; CALLS+=("compose $*"); }
