@@ -15,7 +15,8 @@ results/
     ├── results.csv     flat CSV derived from results.json
     ├── summary.md      human-readable tables derived from results.json
     ├── footprint.json  operational-footprint rows (benchmarks/internal/footprint)
-    └── footprint.csv   flat CSV derived from footprint.json
+    ├── footprint.csv   flat CSV derived from footprint.json
+    └── microbench.json framework-tax ns/op·B/op·allocs/op (benchmarks/internal/microbench)
 ```
 
 `results.json` / `results.csv` are the machine-readable schema defined in

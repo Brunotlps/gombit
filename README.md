@@ -210,9 +210,9 @@ Numbers are a same-host, closed-loop snapshot under fixed resource limits; read 
 
 ### Framework tax — `net/http` → Gin → Huma → Gombit
 
-Per-request overhead of each layer on the same machine (ns/op, B/op, allocs/op; lower is better) — the same-language, same-runtime cost of adopting Gombit.
+Per-request overhead of each layer on the same machine for the typed-JSON handler scenario (ns/op, B/op, allocs/op; lower is better) — the same-language, same-runtime cost of adopting Gombit.
 
-_Not yet recorded — run `go test ./benchmarks/micro/... -bench=BenchmarkFrameworkTax -benchmem -count=10` (persisting these rows to the report is a follow-up)._
+_Not yet recorded — run `make benchmark-micro`._
 
 ### PostgreSQL CRUD read — `GET /api/projects?page=1&limit=20`
 

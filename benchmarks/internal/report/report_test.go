@@ -6,6 +6,7 @@ import (
 
 	"github.com/gombit-dev/gombit/benchmarks/internal/footprint"
 	"github.com/gombit-dev/gombit/benchmarks/internal/metadata"
+	"github.com/gombit-dev/gombit/benchmarks/internal/microbench"
 	"github.com/gombit-dev/gombit/benchmarks/internal/result"
 )
 
@@ -38,11 +39,26 @@ func TestRenderCRUDCarriesTailsAndCoVFlag(t *testing.T) {
 		PostgresVersion: "postgres:16.4-alpine", ResourceLimits: "enforced", BenchmarkTool: "grafana/k6:0.55.0",
 	}
 
-	out := Render(results, prints, meta)
+	micro := []microbench.Row{
+		{Stack: "nethttp", Scenario: "json", NsPerOp: 900, BytesPerOp: 128, AllocsPerOp: 2},
+		{Stack: "gombit", Scenario: "json", NsPerOp: 3100, BytesPerOp: 640, AllocsPerOp: 10},
+		{Stack: "gin", Scenario: "plaintext", NsPerOp: 500, BytesPerOp: 64, AllocsPerOp: 1}, // wrong scenario -> excluded
+	}
+	out := Render(results, prints, micro, meta)
 
-	// Framework-tax section always present (even without data).
-	if !strings.Contains(out, "### Framework tax") || !strings.Contains(out, "BenchmarkFrameworkTax") {
-		t.Errorf("framework-tax section/placeholder missing:\n%s", out)
+	// Framework-tax table: json-scenario rows, in ladder order, wrong-scenario
+	// row excluded. Only nethttp + gombit have a json row here.
+	for _, want := range []string{
+		"### Framework tax", "| stack | ns/op | B/op | allocs/op |",
+		"| net/http | 900 | 128 | 2 |", "| Gombit | 3100 | 640 | 10 |",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("framework-tax table missing %q\n%s", want, out)
+		}
+	}
+	// net/http (thinnest) must render before Gombit (thickest).
+	if strings.Index(out, "| net/http |") > strings.Index(out, "| Gombit |") {
+		t.Errorf("framework-tax rows not in ladder order:\n%s", out)
 	}
 	// CRUD table: headline concurrency, req/s + tails, ⚠ on the noisy row only.
 	for _, want := range []string{
@@ -83,16 +99,16 @@ func TestPickConcurrencyFallsBackToMax(t *testing.T) {
 		crudRow("x", 10, 1, 100, 1, 1, 1),
 		crudRow("x", 500, 1, 90, 2, 2, 2),
 	}
-	out := Render(results, nil, metadata.Metadata{})
+	out := Render(results, nil, nil, metadata.Metadata{})
 	if !strings.Contains(out, "At **500 concurrent clients**") {
 		t.Errorf("expected fallback to the max concurrency:\n%s", out)
 	}
 }
 
 func TestRenderEmptyDataIsHonest(t *testing.T) {
-	out := Render(nil, nil, metadata.Metadata{})
+	out := Render(nil, nil, nil, metadata.Metadata{})
 	for _, want := range []string{
-		"### Framework tax", "run `make benchmark-crud-all`", "run `make benchmark-footprint`",
+		"### Framework tax", "run `make benchmark-micro`", "run `make benchmark-crud-all`", "run `make benchmark-footprint`",
 		"metadata not yet recorded",
 	} {
 		if !strings.Contains(out, want) {

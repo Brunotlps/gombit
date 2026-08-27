@@ -1622,16 +1622,21 @@ README block + `summary.md`; `make benchmark-report-check` is the local drift
 guard (wiring it into CI is Phase 8 — the README says so, no false CI claim).
 The root README has the markers + a `## Performance` section, and
 `benchmarks/docs/methodology.md` carries the full method and the required "How
-not to interpret these results" section. Unit-tested (CRUD tails + CoV flag +
-headline-concurrency fallback, footprint excludes the embedded variant,
-framework-tax placeholder present, methodology from metadata, marker
-replace/InSync/missing-marker) and the CLI (renders a real decoded `results.json`,
-write→check clean, drift detected, missing markers fail). **Still open in Phase
-7:** persisting the framework-tax `go test -bench` rows so that section fills;
-running the full suite on a dedicated host and committing the canonical
-`results/latest/` snapshot (so the block holds real numbers rather than the
-honest "not yet recorded" placeholders); and wiring `benchmark-report-check`
-into CI (Phase 8).
+not to interpret these results" section. The **framework-tax section is now
+data-backed**: `benchmarks/internal/microbench` parses `go test -bench` output
+(ns/op/B/op/allocs/op per stack×scenario), `benchmarks/scripts/microbench` +
+`make benchmark-micro` run each stack as its own process and accumulate
+`microbench.json`, and the report publishes the typed-JSON ladder (net/http →
+Gin → Huma → Gombit). Unit-tested (CRUD tails + CoV flag + headline-concurrency
+fallback, footprint excludes the embedded variant, framework-tax ladder order +
+scenario filter, the bench parser incl. -count last-wins/noise, merge/JSON,
+methodology from metadata, marker replace/InSync/missing-marker) and the CLIs
+(report renders a real decoded `results.json`; microbench accumulates stacks and
+fails on empty output); verified end to end — `make benchmark-micro` produced a
+real ladder (net/http 804ns → Gombit 5217ns). **Still open in Phase 7:** running
+the full suite on a dedicated host and committing the canonical `results/latest/`
+snapshot (so the block holds real numbers rather than the honest "not yet
+recorded" placeholders); and wiring `benchmark-report-check` into CI (Phase 8).
 
 - `benchmarks/internal` summarizer: `results.json` → `results.csv` →
   `summary.md`, plus the README marker-block generator (§4).

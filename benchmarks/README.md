@@ -20,7 +20,8 @@ benchmarks/
 │   ├── summary/          aggregates trials into per-group stats + renders summary.md (CoV flag)
 │   ├── reslimits/        classifies a container's Docker-recorded limits (HostConfig) vs the §7 budget (honest detection)
 │   ├── footprint/        operational-footprint schema (cold-start/RSS/CPU) + encoders
-│   └── report/           renders the README ## Performance block from results/footprint/metadata + drift check
+│   ├── microbench/       framework-tax schema + `go test -bench` parser (ns/op, B/op, allocs/op)
+│   └── report/           renders the README ## Performance block from results/footprint/micro/metadata + drift check
 ├── workloads/
 │   └── crud-list.js      the headline GET /api/projects read workload (k6)
 ├── scripts/
@@ -31,6 +32,7 @@ benchmarks/
 │   ├── footprint-all.sh   measures cold-start/RSS/CPU for all six containers (make benchmark-footprint)
 │   ├── k6load/            drives validated crud-list load for the footprint loaded/CPU sampling (fail-closed)
 │   ├── summarize/         results.json -> summary.md (make benchmark-summary)
+│   ├── microbench/        merges `go test -bench` output into microbench.json (make benchmark-micro)
 │   ├── report/            regenerates the root README ## Performance block; -check for drift (make benchmark-report)
 │   └── inspect-limits/    reports whether a live container got the §7 ceiling (uses internal/reslimits)
 ├── micro/                Go abstraction-overhead microbenchmarks (Phase 2)
@@ -219,6 +221,8 @@ into the orchestrator yet.
 ## Running the framework-tax matrix
 
 ```sh
+make benchmark-micro         # runs each stack + persists microbench.json for the report
+# or, without persisting:
 go test ./benchmarks/micro/... -bench=BenchmarkFrameworkTax -benchmem -count=10
 ```
 
@@ -227,6 +231,10 @@ runs each as its own process. That's required, not incidental: constructing a
 `framework.App` (the `gombit` row) calls `contract.Install`, which replaces
 Huma's process-global `huma.NewError` for the rest of that process — see
 [micro/gombit/gombit.go](micro/gombit/gombit.go)'s doc comment.
+`make benchmark-micro` runs the four packages separately for exactly this reason
+and pipes each through `scripts/microbench`, accumulating ns/op / B/op /
+allocs/op into `results/latest/microbench.json`; the README's Framework-tax
+table publishes the typed-JSON scenario from it.
 
 Every row's `TestScenarios` checks the same four scenarios (plaintext, JSON,
 path parameter, validated POST) structurally before it's trusted for
