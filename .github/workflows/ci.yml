@@ -134,6 +134,31 @@ jobs:
       - name: Fail on benchmark report drift
         run: git diff --exit-code -- README.md
 
+  benchmark-smoke:
+    name: Benchmark smoke
+    # Correctness-only guard for the benchmark suite: build all six app images (a
+    # broken Dockerfile fails here) and run the harness end to end (compose up ->
+    # migrate -> seed -> k6 -> parse) against the two Go reference apps with a
+    # tiny 1-VU x 1 short trial. The numbers are discarded (throwaway out-dir);
+    # only success/failure matters. The four ecosystem apps' routes are covered
+    # by their own suites in database-postgres, so this proves the harness path
+    # cheaply rather than re-seeding all six. Docker + Compose v2 are
+    # preinstalled on ubuntu-latest; k6 and Postgres run as pinned images.
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run benchmark smoke
+        run: make benchmark-smoke
+
   database-sqlite:
     name: Database (sqlite)
     needs: test

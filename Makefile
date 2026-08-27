@@ -33,7 +33,7 @@ OUT_DIR ?= benchmarks/results/latest
 # applied verdict per app (via inspect-limits).
 INTENDED_LIMITS ?= intended (applied only under benchmark-crud-all): app $(APP_CPUS)cpu/$(APP_MEMORY); postgres $(POSTGRES_CPUS)cpu/$(POSTGRES_MEMORY)
 
-.PHONY: help benchmark benchmark-crud benchmark-crud-all benchmark-micro benchmark-footprint benchmark-summary benchmark-metadata benchmark-report benchmark-report-check
+.PHONY: help benchmark benchmark-smoke benchmark-crud benchmark-crud-all benchmark-micro benchmark-footprint benchmark-summary benchmark-metadata benchmark-report benchmark-report-check
 
 ## help: list the benchmark targets (the default goal — a bare `make` prints
 ## this, never a multi-hour run). Full docs: benchmarks/README.md.
@@ -62,6 +62,26 @@ benchmark:
 	$(MAKE) benchmark-footprint
 	$(MAKE) benchmark-micro
 	$(MAKE) benchmark-report
+
+# The two Go reference apps the smoke exercises end to end. The other four
+# ecosystem apps are still image-built by the smoke (a broken Dockerfile fails
+# there), but their routes are covered by their own suites in the CI
+# database-postgres job, so the harness path (up -> migrate -> seed -> k6 ->
+# parse) is proven cheaply on gin-gorm + gombit rather than re-seeding all six.
+BENCH_SMOKE_APPS ?= gin-gorm gombit
+
+## benchmark-smoke: per-PR correctness guard — build all six app images (a
+## broken Dockerfile fails here) and run the harness end to end (compose up ->
+## migrate -> seed -> k6 -> parse) against the two Go reference apps with a tiny
+## 1-VU x 1 short trial, into a THROWAWAY dir so it never touches
+## results/latest. Numbers are discarded; only pass/fail matters — a route
+## regression or a broken result parser fails the run. This is what CI runs on
+## every PR (the `benchmark-smoke` job in ci.yml).
+benchmark-smoke:
+	docker compose --env-file $(BENCH_CONFIG) -f benchmarks/compose.yml build
+	@dir="$$(mktemp -d)"; trap 'rm -rf "$$dir"' EXIT; \
+		$(MAKE) benchmark-crud-all APPS="$(BENCH_SMOKE_APPS)" OUT_DIR="$$dir" \
+			CONCURRENCY=1 TRIALS=1 DURATION_SECONDS=3 WARMUP_SECONDS=1
 
 # Framework-tax microbenchmark sample count (-count). Every ns/op sample is
 # persisted to microbench.json and the report publishes the median, so this is

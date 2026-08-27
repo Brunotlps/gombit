@@ -84,8 +84,36 @@ if grep -qE '^(benchmark-micro|benchmark-report)' "$REC"; then
   note "a stage ran after the failed one (chain did not abort)"
 fi
 
+# ---- 6. benchmark-smoke: build all six images, harness-test the two Go apps
+#         with tiny params, into a THROWAWAY dir (never results/latest) ----
+# A full argv-recording stub for the recursive $(MAKE) (the recmake above only
+# kept a few fields), and a docker stub so `docker compose build` no-ops.
+smokerec="$stubdir/smokelog"; : > "$smokerec"
+printf '#!/usr/bin/env bash\necho "$*" >> "%s"\nexit 0\n' "$smokerec" > "$stubdir/argmake"
+dockrec="$stubdir/dockerlog"; : > "$dockrec"
+printf '#!/usr/bin/env bash\necho "$*" >> "%s"\nexit 0\n' "$dockrec" > "$stubdir/docker"
+chmod +x "$stubdir/argmake" "$stubdir/docker"
+
+PATH="$stubdir:$PATH" make benchmark-smoke MAKE="$stubdir/argmake" >/dev/null 2>&1 \
+  || note "benchmark-smoke failed on a clean stub run"
+
+# Built all six: `docker compose … build` with NO trailing service name.
+grep -qE 'compose .*-f benchmarks/compose.yml build$' "$dockrec" \
+  || note "benchmark-smoke did not build all app images: $(cat "$dockrec")"
+
+smokeargs="$(cat "$smokerec")"
+case "$smokeargs" in
+  *"benchmark-crud-all"*"APPS=gin-gorm gombit"*"CONCURRENCY=1"*"TRIALS=1"*"DURATION_SECONDS=3"*"WARMUP_SECONDS=1"*) : ;;
+  *) note "benchmark-smoke did not run crud-all with the tiny two-Go-app params: $smokeargs" ;;
+esac
+case "$smokeargs" in
+  *"OUT_DIR=benchmarks/results/latest"*) note "benchmark-smoke targeted results/latest, not a throwaway dir: $smokeargs" ;;
+  *"OUT_DIR="*) : ;;
+  *) note "benchmark-smoke passed no OUT_DIR (would default to results/latest): $smokeargs" ;;
+esac
+
 if [ "$fail" -ne 0 ]; then
   echo "benchmark-target_test: FAILED" >&2
   exit 1
 fi
-echo "benchmark-target_test: default-goal, no-prereq composition, ordered stages, pin propagation, and fail-closed all pass"
+echo "benchmark-target_test: default-goal, no-prereq composition, ordered stages, pin propagation, fail-closed, and smoke (build-6/harness-2/throwaway) all pass"

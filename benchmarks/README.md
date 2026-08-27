@@ -142,6 +142,28 @@ propagation, fail-closed) without Docker by stubbing the recursive make.
 The individual `make benchmark-crud-all`, `-footprint`, `-micro`, and `-report`
 targets below run each stage on its own.
 
+### Per-PR smoke
+
+`make benchmark-smoke` is the fast correctness guard CI runs on every PR (the
+`benchmark-smoke` job in `.github/workflows/ci.yml`, `needs: test`):
+
+```sh
+make benchmark-smoke
+```
+
+It builds **all six** app images (`docker compose build` — a broken Dockerfile
+fails here), then runs the harness end to end (compose up → migrate → seed → k6
+→ parse) against the **two Go reference apps** (`gin-gorm`, `gombit`) with a tiny
+1-VU × 1 short trial, into a throwaway `mktemp` dir — so a route regression or a
+broken result parser fails CI, and the run never touches `results/latest`. The
+numbers are discarded; only pass/fail matters. The four ecosystem apps' routes
+are covered by their own suites in the `database-postgres` CI job, so the smoke
+proves the containerized harness path cheaply rather than re-seeding all six
+(the heavier all-six run — plus a tiny-seed knob across the six languages — is a
+follow-up). `benchmarks/scripts/benchmark-target_test.sh` locks the target's
+contract (builds all six, runs the two-Go-app tiny params, throwaway `OUT_DIR`)
+without Docker by stubbing the recursive make and `docker`.
+
 ## Running the CRUD-read workload
 
 The headline workload is `GET /api/projects?page=1&limit=20`
