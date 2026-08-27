@@ -248,13 +248,42 @@ found several:
   `test_rejects_null_description_on_{create,update}`, which fail on the
   pre-fix commit (create 201, update 500).
 
+### Under compose (containerized, with the §7 resource budget)
+
+The app is containerized (`Dockerfile`; self-contained, so the build context is
+this directory) and wired into `benchmarks/compose.yml` with the §7 app ceiling
+(2 vCPU / 1 GiB). The entrypoint has three verbs — `migrate`, `seed`, `serve`
+(Puma clustered in `RAILS_ENV=production`, never dev mode). `serve` does **not**
+migrate, so run them in order. `migrate` runs `db:create` (idempotent) so it
+provisions `gombit_bench_rails` on every bring-up; `SECRET_KEY_BASE` is generated
+per boot by the entrypoint (no committed secret):
+
+```sh
+docker compose --env-file benchmarks/config/versions.env \
+  -f benchmarks/compose.yml up -d postgres
+
+docker compose --env-file benchmarks/config/versions.env \
+  -f benchmarks/compose.yml run --rm rails migrate
+docker compose --env-file benchmarks/config/versions.env \
+  -f benchmarks/compose.yml run --rm rails seed
+
+docker compose --env-file benchmarks/config/versions.env \
+  -f benchmarks/compose.yml up -d rails
+go run ./benchmarks/scripts/inspect-limits \
+  -container "$(docker compose -f benchmarks/compose.yml ps -q rails)" \
+  -cpus 2 -memory 1g
+```
+
+`WEB_CONCURRENCY` (2) and `RAILS_MAX_THREADS` (3) drive Puma; the pool is
+`POOL_MAX_OPEN / WEB_CONCURRENCY` per worker (`config/database.yml`).
+
 ## Status
 
 Schema, seed, CRUD app, its own test suite, and CI (a Ruby 3.3.12 +
 `bin/rails test` step in `.github/workflows/ci.yml`'s `database-postgres`
 job) are done (tracked in
 [docs/plans/BENCH-1-benchmark-suite.md](../../../docs/plans/BENCH-1-benchmark-suite.md)
-Phase 4). Still open, matching the Phase 3a/3b/4a precedent: a
-`Dockerfile`/`benchmarks/compose.yml` service, and extending the Go
-`benchmarks/apps/fairness_test.go` cross-implementation check to include
-this app as a fourth leg.
+Phase 4). This app now has a `Dockerfile` + `benchmarks/compose.yml` `rails`
+service with the §7 budget (see [Under compose](#under-compose-containerized-with-the-7-resource-budget)).
+Still open: extending the Go `benchmarks/apps/fairness_test.go`
+cross-implementation check to include this app as a fourth leg.
