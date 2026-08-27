@@ -73,6 +73,58 @@ case "$RUN_CRUD_ARGS" in
   *) note "run_crud did not receive the inspect verdict as -resource-limits: $RUN_CRUD_ARGS" ;;
 esac
 
+# ---- 2b. postgres limit is verified once and carried onto the app row ----
+# verify_postgres_limits classifies the shared DB container into POSTGRES_LIMITS,
+# and measure() must pass that to run-crud as -postgres-resource-limits so the
+# DB's applied verdict is recorded per snapshot (not left blank).
+CALLS=()
+COMPOSE=(fake_compose)
+wait_healthy() { return 0; }
+POSTGRES_LIMITS=""
+# inspect_limits is called for both the app and postgres; return the DB verdict
+# when the container id is the postgres one, else the app verdict.
+inspect_limits() {
+  local cid=""; while [ $# -gt 0 ]; do [ "$1" = -container ] && cid="$2"; shift; done
+  case "$cid" in
+    cid-postgres) printf 'enforced: cpu 2.00 vCPU, memory 2 GiB' ;;
+    *)            printf 'enforced: cpu 2.00 vCPU, memory 1 GiB' ;;
+  esac
+}
+run_crud() { RUN_CRUD_ARGS="$*"; }
+
+verify_postgres_limits
+[ "$POSTGRES_LIMITS" = "enforced: cpu 2.00 vCPU, memory 2 GiB" ] \
+  || note "verify_postgres_limits did not set POSTGRES_LIMITS from the DB container: '$POSTGRES_LIMITS'"
+
+run_one gin-gorm
+case "$RUN_CRUD_ARGS" in
+  *"-postgres-resource-limits enforced: cpu 2.00 vCPU, memory 2 GiB"*) : ;;
+  *) note "run_crud did not receive the postgres verdict as -postgres-resource-limits: $RUN_CRUD_ARGS" ;;
+esac
+
+# A missing postgres container records an EXPLICIT "unknown …" verdict — not the
+# empty string (which means "not re-verified" and makes mergedMetadata keep a
+# prior verdict) and not a stale value from a prior call. This run looked and
+# could not tell, so the recorded value must say so and overwrite on merge.
+fake_compose_nopg() { if [ "$1" = ps ]; then echo ""; return 0; fi; }
+COMPOSE=(fake_compose_nopg)
+POSTGRES_LIMITS="sentinel"
+verify_postgres_limits || note "verify_postgres_limits aborted when postgres container was absent"
+case "$POSTGRES_LIMITS" in
+  unknown*) : ;;
+  *) note "missing postgres container: verdict '$POSTGRES_LIMITS', want an explicit 'unknown …' (not empty, not stale)" ;;
+esac
+
+# An inspect-tool failure likewise records an explicit "unknown …", never empty.
+COMPOSE=(fake_compose)
+POSTGRES_LIMITS="sentinel"
+inspect_limits() { echo "inspect-limits: boom" >&2; return 3; }
+verify_postgres_limits || note "verify_postgres_limits aborted on postgres inspect failure"
+case "$POSTGRES_LIMITS" in
+  unknown*) : ;;
+  *) note "postgres inspect failure: verdict '$POSTGRES_LIMITS', want an explicit 'unknown …' (not empty, not stale)" ;;
+esac
+
 # ---- 3. inspect TOOL failure must NOT publish a row, but still stop the SUT ----
 CALLS=()
 RAN_CRUD=0

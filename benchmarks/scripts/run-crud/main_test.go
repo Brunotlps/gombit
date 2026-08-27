@@ -1,11 +1,13 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/gombit-dev/gombit/benchmarks/internal/metadata"
 	"github.com/gombit-dev/gombit/benchmarks/internal/result"
 )
 
@@ -46,6 +48,50 @@ func TestMergeRowsReplacesSameFrameworkKeepsOthers(t *testing.T) {
 	}
 	if gombit != 1 {
 		t.Errorf("gombit rows = %d, want 1 (other framework kept)", gombit)
+	}
+}
+
+// mergedMetadata must treat the postgres verdict's two "empty-ish" states
+// differently, reading through the on-disk snapshot (not just the in-memory
+// value): an empty string means "this run did not re-verify" and keeps whatever
+// the prior snapshot claimed, while an explicit "unknown …" from a run that
+// looked and could not classify OVERWRITES — so a stale enforced/partial can
+// never stick across a re-run whose check failed.
+func TestMergedMetadataPostgresSentinelDistinguishesNotProvidedFromVerifiedUnknown(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "metadata.json")
+	prior := "enforced: cpu 2.00 vCPU, memory 2 GiB"
+	writeMetadataJSON(t, path, metadata.Metadata{PostgresResourceLimits: prior})
+
+	// Empty ("not provided", e.g. standalone benchmark-crud) keeps the prior verdict.
+	got := mergedMetadata(path, metadata.Metadata{PostgresResourceLimits: ""})
+	if got.PostgresResourceLimits != prior {
+		t.Errorf(`empty postgres verdict should keep the prior one; got %q, want %q`, got.PostgresResourceLimits, prior)
+	}
+
+	// A verified-unknown re-run overwrites the stale verdict (does not inherit it).
+	unknown := "unknown (inspect-limits failed)"
+	got = mergedMetadata(path, metadata.Metadata{PostgresResourceLimits: unknown})
+	if got.PostgresResourceLimits != unknown {
+		t.Errorf("verified-unknown should overwrite the stale verdict; got %q, want %q", got.PostgresResourceLimits, unknown)
+	}
+
+	// A fresh real verdict overwrites too (the ordinary re-verify case).
+	fresh := "partial: memory unset"
+	got = mergedMetadata(path, metadata.Metadata{PostgresResourceLimits: fresh})
+	if got.PostgresResourceLimits != fresh {
+		t.Errorf("a fresh verdict should overwrite; got %q, want %q", got.PostgresResourceLimits, fresh)
+	}
+}
+
+func writeMetadataJSON(t *testing.T, path string, meta metadata.Metadata) {
+	t.Helper()
+	data, err := json.Marshal(meta)
+	if err != nil {
+		t.Fatalf("marshal metadata: %v", err)
+	}
+	if err := os.WriteFile(path, data, 0o600); err != nil {
+		t.Fatalf("write metadata: %v", err)
 	}
 }
 
@@ -102,6 +148,9 @@ func TestRunWritesAndAccumulatesAcrossFrameworks(t *testing.T) {
 			targetURL: "http://unused", framework: fw, frameworkVersion: "v" + fw,
 			concurrency: []int{10}, duration: "1s", warmup: "1s", trials: 1,
 			outDir: dir, k6Image: "grafana/k6:0.55.0",
+			// Distinct per-app verdicts to prove the merge preserves both,
+			// plus a shared postgres verdict.
+			resourceLimits: "limit-" + fw, postgresResourceLimits: "pg-enforced",
 		}
 		if err := run(cfg, k6run); err != nil {
 			t.Fatalf("run(%s) = %v", fw, err)
@@ -137,5 +186,16 @@ func TestRunWritesAndAccumulatesAcrossFrameworks(t *testing.T) {
 	}
 	if !strings.Contains(s, `"gin-gorm": "vgin-gorm"`) || !strings.Contains(s, `"gombit": "vgombit"`) {
 		t.Errorf("metadata framework_versions did not accumulate both runs:\n%s", s)
+	}
+
+	// The bug this guards: resource_limits_by_framework must preserve EVERY
+	// app's applied-limit verdict across the merge, not just the last writer's.
+	// The scalar resource_limits is allowed to be last-write, but the per-app
+	// map is authoritative and must carry both.
+	if !strings.Contains(s, `"gin-gorm": "limit-gin-gorm"`) || !strings.Contains(s, `"gombit": "limit-gombit"`) {
+		t.Errorf("resource_limits_by_framework did not preserve both apps' verdicts:\n%s", s)
+	}
+	if !strings.Contains(s, `"postgres_resource_limits": "pg-enforced"`) {
+		t.Errorf("postgres_resource_limits was not recorded/preserved:\n%s", s)
 	}
 }

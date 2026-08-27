@@ -38,19 +38,20 @@ import (
 const resourceLimitsNotApplied = "not applied (run-crud does not start or constrain the app; pass -resource-limits with an inspect-limits verdict to record a verified ceiling)"
 
 type runConfig struct {
-	targetURL        string
-	framework        string
-	frameworkVersion string
-	runtimeName      string
-	runtimeVersion   string
-	concurrency      []int
-	duration         string
-	warmup           string
-	trials           int
-	outDir           string
-	postgresVersion  string
-	resourceLimits   string
-	k6Image          string
+	targetURL              string
+	framework              string
+	frameworkVersion       string
+	runtimeName            string
+	runtimeVersion         string
+	concurrency            []int
+	duration               string
+	warmup                 string
+	trials                 int
+	outDir                 string
+	postgresVersion        string
+	resourceLimits         string
+	postgresResourceLimits string
+	k6Image                string
 }
 
 // k6Runner runs the workload once at vus concurrency for duration; a non-empty
@@ -77,7 +78,9 @@ func main() {
 	flag.StringVar(&cfg.outDir, "out-dir", "benchmarks/results/latest", "output directory")
 	flag.StringVar(&cfg.postgresVersion, "postgres-version", "", "PostgreSQL version, for metadata")
 	flag.StringVar(&cfg.resourceLimits, "resource-limits", resourceLimitsNotApplied,
-		"resource limits string recorded in metadata; defaults to an honest 'not applied' since this command does not constrain the app")
+		"this app's applied-limit verdict, recorded per framework; defaults to an honest 'not applied' since this command does not constrain the app")
+	flag.StringVar(&cfg.postgresResourceLimits, "postgres-resource-limits", "",
+		"the database container's applied-limit verdict (from inspect-limits), recorded once for the snapshot")
 	flag.Parse()
 
 	if cfg.targetURL == "" || cfg.framework == "" {
@@ -159,12 +162,19 @@ func run(cfg runConfig, k6run k6Runner) error {
 		// The actual load-generator image that ran, not a bare "k6" token —
 		// issue #141's reproducibility metadata requires the benchmark-tool
 		// version, and overriding -k6-image must be reflected here.
-		BenchmarkTool:   cfg.k6Image,
-		ResourceLimits:  cfg.resourceLimits,
-		DurationSeconds: durationSeconds(cfg.duration),
-		WarmupSeconds:   durationSeconds(cfg.warmup),
-		Concurrency:     cfg.concurrency,
-		Trials:          cfg.trials,
+		BenchmarkTool: cfg.k6Image,
+		// The scalar stays this app's verdict for back-compat; the authoritative,
+		// merge-preserved field is the per-framework map, so a partial/not-applied
+		// on one app is never overwritten by the next app's enforced (mergedMetadata
+		// unions it like the version maps). Postgres is the shared DB container's
+		// verdict, recorded once for the snapshot.
+		ResourceLimits:            cfg.resourceLimits,
+		ResourceLimitsByFramework: map[string]string{cfg.framework: cfg.resourceLimits},
+		PostgresResourceLimits:    cfg.postgresResourceLimits,
+		DurationSeconds:           durationSeconds(cfg.duration),
+		WarmupSeconds:             durationSeconds(cfg.warmup),
+		Concurrency:               cfg.concurrency,
+		Trials:                    cfg.trials,
 	})
 	if err := writeOutputs(cfg.outDir, cfg.framework, rows, meta); err != nil {
 		return err
@@ -288,6 +298,17 @@ func mergedMetadata(path string, meta metadata.Metadata) metadata.Metadata {
 	}
 	meta.FrameworkVersions = union(existing.FrameworkVersions, meta.FrameworkVersions)
 	meta.RuntimeVersions = union(existing.RuntimeVersions, meta.RuntimeVersions)
+	// Preserve every app's applied-limit verdict, not just the last writer's.
+	meta.ResourceLimitsByFramework = union(existing.ResourceLimitsByFramework, meta.ResourceLimitsByFramework)
+	// Postgres is the same container across apps. Empty means "this run did not
+	// re-verify" (the standalone benchmark-crud default) — keep any prior verdict.
+	// A non-empty value, INCLUDING an explicit "unknown …" from run-crud-all when
+	// it looked but could not classify, is authoritative for this run and
+	// overwrites — so a stale enforced/partial never sticks across a re-run whose
+	// check failed.
+	if meta.PostgresResourceLimits == "" {
+		meta.PostgresResourceLimits = existing.PostgresResourceLimits
+	}
 	return meta
 }
 

@@ -49,11 +49,19 @@ type Metadata struct {
 	RuntimeVersions   map[string]string `json:"runtime_versions"`
 	BenchmarkTool     string            `json:"benchmark_tool"`
 
-	ResourceLimits  string  `json:"resource_limits"`
-	DurationSeconds float64 `json:"duration_seconds"`
-	WarmupSeconds   float64 `json:"warmup_seconds"`
-	Concurrency     []int   `json:"concurrency"`
-	Trials          int     `json:"trials"`
+	// ResourceLimits is the single scalar the standalone/host-only path records
+	// (an intended budget). For a multi-app run the authoritative field is
+	// ResourceLimitsByFramework: the *applied* verdict verified per app (from
+	// inspect-limits), preserved by merge so a partial/not-applied on one app is
+	// never overwritten by an enforced on the next. PostgresResourceLimits is the
+	// database container's verified verdict.
+	ResourceLimits            string            `json:"resource_limits"`
+	ResourceLimitsByFramework map[string]string `json:"resource_limits_by_framework"`
+	PostgresResourceLimits    string            `json:"postgres_resource_limits"`
+	DurationSeconds           float64           `json:"duration_seconds"`
+	WarmupSeconds             float64           `json:"warmup_seconds"`
+	Concurrency               []int             `json:"concurrency"`
+	Trials                    int               `json:"trials"`
 }
 
 // Runner runs a command and returns its trimmed stdout. It exists so tests can
@@ -67,15 +75,17 @@ type Options struct {
 	Now func() time.Time
 	Run Runner
 
-	PostgresVersion   string
-	FrameworkVersions map[string]string
-	RuntimeVersions   map[string]string
-	BenchmarkTool     string
-	ResourceLimits    string
-	DurationSeconds   float64
-	WarmupSeconds     float64
-	Concurrency       []int
-	Trials            int
+	PostgresVersion           string
+	FrameworkVersions         map[string]string
+	RuntimeVersions           map[string]string
+	BenchmarkTool             string
+	ResourceLimits            string
+	ResourceLimitsByFramework map[string]string
+	PostgresResourceLimits    string
+	DurationSeconds           float64
+	WarmupSeconds             float64
+	Concurrency               []int
+	Trials                    int
 }
 
 // Collect gathers the metadata. Discovery is best-effort: a missing tool
@@ -127,6 +137,10 @@ func Collect(ctx context.Context, opts Options) Metadata {
 	if concurrency == nil {
 		concurrency = []int{}
 	}
+	limitsByFramework := opts.ResourceLimitsByFramework
+	if limitsByFramework == nil {
+		limitsByFramework = map[string]string{}
+	}
 
 	return Metadata{
 		SchemaVersion: SchemaVersion,
@@ -151,11 +165,13 @@ func Collect(ctx context.Context, opts Options) Metadata {
 		RuntimeVersions:   runtimeVersions,
 		BenchmarkTool:     opts.BenchmarkTool,
 
-		ResourceLimits:  opts.ResourceLimits,
-		DurationSeconds: opts.DurationSeconds,
-		WarmupSeconds:   opts.WarmupSeconds,
-		Concurrency:     concurrency,
-		Trials:          opts.Trials,
+		ResourceLimits:            opts.ResourceLimits,
+		ResourceLimitsByFramework: limitsByFramework,
+		PostgresResourceLimits:    opts.PostgresResourceLimits,
+		DurationSeconds:           opts.DurationSeconds,
+		WarmupSeconds:             opts.WarmupSeconds,
+		Concurrency:               concurrency,
+		Trials:                    opts.Trials,
 	}
 }
 

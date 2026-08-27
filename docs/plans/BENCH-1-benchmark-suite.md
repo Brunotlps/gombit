@@ -1647,6 +1647,79 @@ snapshot (so the block holds real numbers rather than the honest "not yet
 recorded" placeholders). Wiring `benchmark-report-check` into CI is **done** —
 the `benchmark-report-drift` job (Phase 8 below).
 
+**Publishability guards (pre-advertisement review) — done.** Before the numbers
+go front-and-centre in the root README, three review findings on the committed
+dev snapshot were fixed so a snapshot can never quietly overclaim:
+
+1. **A dirty tree is stamped, not published silently.** `make benchmark-report`
+   now renders a loud `⚠️ UNPUBLISHABLE DEVELOPMENT RUN` callout at the top of
+   the block whenever `metadata.git_dirty` is true (numbers not tied to a
+   committed source state ⇒ not reproducible ⇒ must not be cited). The stamp is
+   driven purely by the recorded metadata, so it survives regeneration and the
+   CI drift diff.
+2. **Canonical protocol vs. this snapshot's parameters are no longer conflated.**
+   `report.CanonicalProtocol` (1/10/100/500/1000, 5 trials × 30 s, 10 s warm-up)
+   is the published-run protocol, and a `TestCanonicalProtocolMatchesVersionsEnv`
+   guard parses `benchmarks/config/versions.env` and fails if the constant drifts
+   from that single source of truth. When a run's recorded params are narrower,
+   the report stamps a **“Reduced development snapshot”** callout that names each
+   differing dimension (e.g. *concurrency 1/10/100 (canonical 1/10/100/500/1000)*).
+   `methodology.md` now separates the **canonical protocol** from *a particular
+   snapshot's parameters* and points the reader at the metadata block, not the
+   prose, for what actually ran.
+3. **Per-app resource-limit verdicts survive the merge (a real bug, not polish).**
+   `mergedMetadata` previously unioned only the framework/runtime version maps, so
+   the scalar `resource_limits` was last-write — one app's `partial` could be
+   silently overwritten by the next app's `enforced`. Metadata now carries
+   `resource_limits_by_framework` (a map, unioned across the six-app merge exactly
+   like the version maps) and `postgres_resource_limits` (the shared DB
+   container's verdict, classified once by `run-crud-all.sh`'s
+   `verify_postgres_limits`). The report renders the per-app verdicts (collapsing
+   to one line only when every app got the same one) plus the Postgres line; the
+   scalar stays the standalone `make benchmark-crud` path's intended-budget
+   string. Regression-tested: the run-crud merge test gives two apps distinct
+   verdicts and asserts both survive (removing the union fails it), and the
+   run-crud-all shell test asserts `verify_postgres_limits` sets the verdict and
+   `measure` passes it through as `-postgres-resource-limits`.
+
+These are report/metadata-only; the committed snapshot is unchanged and now
+honestly wears both banners until the canonical clean-tree run replaces it.
+
+A second review pass caught four "the caption describes a state the tree does
+not produce" defects, all fixed in the same PR:
+
+1. **The banners named `make benchmark`, which does not exist on this branch**
+   (the all-in-one target is PR #204). A remediation command that 404s is a
+   broken caption — the dirty banner now names the real chain that ships here
+   (`make benchmark-crud-all benchmark-footprint benchmark-micro benchmark-report`),
+   and methodology.md's reduced-run example uses `make benchmark-crud-all …`.
+2. **The reduced banner sent the reader to "How these were measured" for the
+   canonical sweep** — but that block, by design, prints *this* run's parameters.
+   It now cites the canonical source (`versions.env` / methodology.md) instead.
+3. **"all apps" over-claimed coverage.** run-crud always writes a per-framework
+   entry, so a standalone or `APPS="gin-gorm gombit"` subset run yields a uniform
+   map too; `uniformValue` means "these values are equal", not "the whole suite
+   was measured". The collapsed line now *names the frameworks* it covers
+   (`Resource limits (gin-gorm, gombit): …`), never "all apps"; a 1-entry-map
+   test guards it.
+4. **`verify_postgres_limits` cleared the verdict on tool failure but not on a
+   missing container** — the comment promised empty-on-unknown, the code left a
+   stale value. It now clears `POSTGRES_LIMITS` unconditionally at entry; the
+   shell test asserts emptiness on both non-classifying paths (not just no-abort).
+
+A third pass caught that fix #4's `""`-on-unknown collided with the merge:
+`mergedMetadata` keeps a prior `postgres_resource_limits` when the new value is
+`""`, so a re-run whose postgres check *failed* would silently inherit the stale
+`enforced`/`partial` from the last snapshot — `""` was overloaded as both "not
+re-verified" (the standalone `benchmark-crud` default, where keep-if-empty is
+right) and "verified, could not classify" (where it must overwrite).
+`verify_postgres_limits` now records an **explicit `unknown (…)` string** on the
+missing-container / inspect-failure paths, leaving `""` to mean only "not
+re-verified". A Go unit test on `mergedMetadata` (reading through the on-disk
+snapshot, which the shell tests never did) locks all three cases: empty keeps
+the prior verdict, an explicit `unknown` overwrites it, a fresh verdict
+overwrites it.
+
 - `benchmarks/internal` summarizer: `results.json` → `results.csv` →
   `summary.md`, plus the README marker-block generator (§4).
 - Add the `## Performance` section to root `README.md` (framework-tax table,
