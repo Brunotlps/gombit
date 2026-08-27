@@ -7,7 +7,7 @@ Full plan: [docs/plans/BENCH-1-benchmark-suite.md](../docs/plans/BENCH-1-benchma
 
 ```text
 benchmarks/
-├── compose.yml          PostgreSQL + app services (gin-gorm, gombit, django, rails, laravel; §7 limits); nestjs lands next
+├── compose.yml          PostgreSQL + all six app services (gin-gorm, gombit, django, rails, laravel, nestjs; §7 limits)
 ├── config/
 │   └── versions.env     pinned load generator (k6), Postgres image, resource limits, workload defaults
 ├── docs/
@@ -46,18 +46,17 @@ benchmarks/
 All six canonical CRUD implementations exist, the result schema / metadata
 collector / run-config pins are in place, and the headline CRUD-read workload
 runs end to end against one implementation (`make benchmark-crud`). The Phase 6
-compose loop has started: the two Go apps (`gin-gorm`, `gombit`) and the
-`django`, `rails`, and `laravel` ecosystem apps are containerized with
+compose loop is now well underway: **all six** implementations (`gin-gorm`,
+`gombit`, `django`, `rails`, `laravel`, `nestjs`) are containerized with
 `compose.yml` services carrying the §7 resource budget — `gombit` also applies
 its real Atlas migrations in-container (pinned `atlas` image), and every
 migration-bearing app creates its own database idempotently on every bring-up
 (no fresh-volume init scripts) — and `internal/reslimits` +
 `scripts/inspect-limits` verify the ceiling actually landed on the live
 container (issue #141's "detect/report rather than silently pretend"). Still
-scoped to later phases: `docs/methodology.md`, containerizing the last ecosystem
-app (`nestjs`) and the loop that brings all six up and runs `run-crud` over
-each, per-app resource/RSS capture (Phase 6 footprint), the other
-`make benchmark-*`
+scoped to later phases: `docs/methodology.md`, the loop that brings all six up
+and runs `run-crud` over each, per-app resource/RSS capture (Phase 6 footprint),
+the other `make benchmark-*`
 workloads, and extending `fairness_test.go` to all six.
 
 ## Resource limits (§7): intention vs. reality

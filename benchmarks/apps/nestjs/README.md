@@ -157,13 +157,41 @@ in CI):
   serializer converts them to numbers for the response (ids fit in a JS
   number).
 
+### Under compose (containerized, with the §7 resource budget)
+
+The app is containerized (`Dockerfile`; self-contained, so the build context is
+this directory) and wired into `benchmarks/compose.yml` with the §7 app ceiling
+(2 vCPU / 1 GiB). The entrypoint has three verbs — `migrate`, `seed`, `serve`.
+`serve` runs the compiled `node dist/main`; `migrate`/`seed` use the committed
+ts-node npm scripts, so the image keeps devDependencies (`NODE_ENV=production`
+is set only at run time). `serve` does **not** migrate, so run them in order.
+`migrate` creates the `gombit_bench_nestjs` database if absent (idempotent,
+every bring-up, via `ensure_db.js` using `pg` — not a fresh-volume init script):
+
+```sh
+docker compose --env-file benchmarks/config/versions.env \
+  -f benchmarks/compose.yml up -d postgres
+
+docker compose --env-file benchmarks/config/versions.env \
+  -f benchmarks/compose.yml run --rm nestjs migrate
+docker compose --env-file benchmarks/config/versions.env \
+  -f benchmarks/compose.yml run --rm nestjs seed
+
+docker compose --env-file benchmarks/config/versions.env \
+  -f benchmarks/compose.yml up -d nestjs
+go run ./benchmarks/scripts/inspect-limits \
+  -container "$(docker compose -f benchmarks/compose.yml ps -q nestjs)" \
+  -cpus 2 -memory 1g
+```
+
 ## Status
 
 Schema, seed, CRUD app, its own test suite, and CI (a Node 24 + `npm test`
 step in `.github/workflows/ci.yml`'s `database-postgres` job) are done
 (tracked in
 [docs/plans/BENCH-1-benchmark-suite.md](../../../docs/plans/BENCH-1-benchmark-suite.md)
-Phase 4). Still open, matching the Phase 3/4 precedent: a
-`benchmarks/compose.yml` app service, and extending the Go
-`benchmarks/apps/fairness_test.go` cross-implementation check to include this
-app.
+Phase 4). This app now has a `Dockerfile` + `benchmarks/compose.yml` `nestjs`
+service with the §7 budget (see [Under compose](#under-compose-containerized-with-the-7-resource-budget)),
+completing the containerization of all six implementations. Still open:
+extending the Go `benchmarks/apps/fairness_test.go` cross-implementation check
+to include this app.

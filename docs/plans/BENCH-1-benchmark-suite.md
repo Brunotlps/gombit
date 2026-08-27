@@ -1431,6 +1431,21 @@ in:
   FPM access lines. Also pinned `mlocati/php-extension-installer` to `2.9.0`
   (was the floating `:2`) and reconciled the gin-gorm/gombit README Status
   lines that still called the ecosystem services open.
+- `benchmarks/apps/nestjs/Dockerfile` + `docker-entrypoint.sh` + `ensure_db.js`
+  (Node/NestJS/TypeORM ecosystem app — the last one). `node:24-slim`, `npm ci`
+  + `nest build`; devDependencies are kept because `migrate`/`seed` use the
+  committed ts-node npm scripts (`NODE_ENV=production` is a run-time env, not a
+  build arg, so `npm ci` doesn't drop them). `serve` runs the compiled
+  `node dist/main`. `migrate` provisions `gombit_bench_nestjs` via
+  `ensure_db.js` (pg, guarded `CREATE DATABASE`, every bring-up). Verified end
+  to end against a live container: ensure_db creates the DB + TypeORM
+  `migration:run` (second run a no-op), seed, `healthy` via `/livez`, canonical
+  envelope (`total: 100000`), inspect-limits `enforced`. **All six
+  implementations are now containerized** — two Go apps + four ecosystem apps,
+  each a `compose.yml` service under the §7 budget with a `/livez` health check
+  and idempotent per-app database provisioning. The remaining Phase 6 work is
+  the orchestration loop that brings them up and runs `run-crud` over each into
+  one `results.json`, plus the footprint capture below.
 - `benchmarks/internal/reslimits` + `benchmarks/scripts/inspect-limits`: the
   issue's "detect and report rather than silently pretend limits were applied"
   requirement. A compose budget is only an *intention*; the tool reads the
