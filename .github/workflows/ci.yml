@@ -109,7 +109,9 @@ jobs:
 
   benchmark-report-drift:
     name: Benchmark report drift
-    needs: test
+    # Only needs the Go toolchain + the committed README/results; it does not
+    # consume `test`'s output, so it gates on build for faster time-to-signal.
+    needs: build
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -121,12 +123,16 @@ jobs:
           go-version-file: go.mod
           cache: true
 
-      # Pure-Go, no Docker: the README ## Performance block is generated from
-      # benchmarks/results/latest/ and must match what the generator produces
-      # (issue #141 §9: Markdown is derived, never hand-edited). The full
-      # benchmark-smoke job that builds the six app images is separate.
+      # Pure-Go, no Docker: regenerate the README ## Performance block from the
+      # committed benchmarks/results/latest/ and fail if it changed (issue #141
+      # §9: Markdown is derived, never hand-edited). Regenerate-then-diff mirrors
+      # the contract-drift job, so a failure shows the exact hunk in the log. The
+      # heavier benchmark-smoke job that builds the six app images is separate.
+      - name: Regenerate the README performance block
+        run: make benchmark-report
+
       - name: Fail on benchmark report drift
-        run: make benchmark-report-check
+        run: git diff --exit-code -- README.md
 
   database-sqlite:
     name: Database (sqlite)

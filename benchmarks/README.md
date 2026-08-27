@@ -66,13 +66,15 @@ merges all six into one `results.json`. `make benchmark-footprint` captures the
 operational footprint (cold-start, idle/loaded memory, CPU-under-load) of the
 same six containers into `footprint.json`. `make benchmark-report` regenerates
 the root README's `## Performance` block (and `summary.md`) from those files, and
-`make benchmark-report-check` fails on drift; the full method and the required
+`make benchmark-report-check` fails on drift — a CI job (`benchmark-report-drift`)
+runs the same regenerate-then-diff on every PR. The full method and the required
 "How not to interpret these results" caveats live in
 [docs/methodology.md](docs/methodology.md). Still scoped to later phases: the
 embedded-Gombit single-binary footprint variant, the other `make benchmark-*`
 workloads, extending `fairness_test.go` to all six, committing a canonical
-`results/latest/` snapshot from a dedicated-host run, and wiring
-`benchmark-report-check` into CI (Phase 8).
+`results/latest/` snapshot from a dedicated-host run, the `benchmark-smoke` CI
+job that builds the six app images, and the `benchmarks.yml` manual workflow
+(Phase 8).
 
 ## Resource limits (§7): intention vs. reality
 
