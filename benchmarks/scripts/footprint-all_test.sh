@@ -57,6 +57,35 @@ fi
 grep -qF '{{.Config.Image}}' benchmarks/scripts/footprint-all.sh \
   || note "image-size no longer inspects the app image by tag (.Config.Image)"
 
+# ---- cold_start_samples retries an out-of-range (clock-step) sample instead of
+#      fail-closing the whole run. A wall-clock step between wait_ready_ms's two
+#      `date` reads yields a negative/absurd elapsed (a real canonical run hit
+#      "-1609081096361592473"); that's a bad sample, not a broken app. ----
+cs_noop() { :; } # stop/start are no-ops here
+COMPOSE=(cs_noop)
+PORT=8081
+# Count calls via a file: wait_ready_ms runs in its own command-substitution
+# subshell each time, so a shell var would reset. First reading is the real
+# garbage a canonical run hit; the retry is clean.
+cs_count="$(mktemp)"; echo 0 > "$cs_count"
+wait_ready_ms() {
+  local n; n=$(( $(cat "$cs_count") + 1 )); echo "$n" > "$cs_count"
+  if [ "$n" -eq 1 ]; then echo "-1609081096361592473"; else echo "120"; fi
+}
+got="$(COLD_START_RUNS=1 cold_start_samples gin-gorm http://x/livez 2>/dev/null)"
+[ "$got" = "120" ] || note "cold_start_samples did not retry past a clock-step sample: '$got'"
+rm -f "$cs_count"
+# A persistently out-of-range sample fails, never records the garbage.
+wait_ready_ms() { echo "-1609081096361592473"; }
+if COLD_START_RUNS=1 cold_start_samples gin-gorm http://x/livez >/dev/null 2>&1; then
+  note "cold_start_samples recorded a persistently out-of-range sample instead of failing"
+fi
+# A huge positive (clock stepped forward) is also rejected.
+wait_ready_ms() { echo "1609081096361592473"; }
+if COLD_START_RUNS=1 cold_start_samples gin-gorm http://x/livez >/dev/null 2>&1; then
+  note "cold_start_samples accepted an absurdly large sample"
+fi
+
 # ---- fakes for the measure_container control-flow tests ----
 CALLS=()
 fake_compose() { if [ "$1" = ps ]; then echo "cid-$3"; return 0; fi; CALLS+=("compose $*"); }

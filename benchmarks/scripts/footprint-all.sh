@@ -151,11 +151,27 @@ measure_under_load() {
 # cold_start_samples APP LIVEZ_URL — echo COLD_START_RUNS comma-separated
 # start→ready samples (ms), stopping/starting the existing container each time.
 cold_start_samples() {
-  local app="$1" url="$2" samples="" ms
+  local app="$1" url="$2" samples="" ms attempt
   for _ in $(seq 1 "$COLD_START_RUNS"); do
-    "${COMPOSE[@]}" stop "$app" >/dev/null
-    "${COMPOSE[@]}" start "$app" >/dev/null
-    ms="$(wait_ready_ms "$url")" || { echo "footprint: $app cold-start did not become ready" >&2; return 1; }
+    ms=""
+    # wait_ready_ms polls for at most ~30s, so a valid start->ready sample is a
+    # non-negative integer well under 60000 ms. A negative or absurd value means
+    # the host wall clock stepped between the two `date` reads mid-measurement
+    # (an NTP adjustment / clock discontinuity — this ~20-iteration loop runs
+    # long enough to catch one on any host, WSL or bare metal). That's a bad
+    # *sample*, not a broken app, so redo the stop/start rather than fail-closing
+    # the entire multi-hour run on a transient clock step.
+    for attempt in 1 2 3 4 5; do
+      "${COMPOSE[@]}" stop "$app" >/dev/null
+      "${COMPOSE[@]}" start "$app" >/dev/null
+      ms="$(wait_ready_ms "$url")" || { echo "footprint: $app cold-start did not become ready" >&2; return 1; }
+      if [[ "$ms" =~ ^[0-9]+$ ]] && [ "$ms" -le 60000 ]; then
+        break
+      fi
+      echo "footprint: $app cold-start sample '$ms' out of range (clock skew?); retry $attempt/5" >&2
+      ms=""
+    done
+    [ -n "$ms" ] || { echo "footprint: $app cold-start kept producing an out-of-range sample" >&2; return 1; }
     samples="${samples:+$samples,}$ms"
   done
   printf '%s' "$samples"
