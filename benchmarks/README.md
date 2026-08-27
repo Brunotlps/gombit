@@ -74,9 +74,9 @@ snapshot already backs the README numbers, but from a **reduced run on a single
 dev host** (recorded in `metadata.json` and printed in the README block); still
 scoped to later phases: the embedded-Gombit single-binary footprint variant, the
 other `make benchmark-*` workloads, extending `fairness_test.go` to all six,
-re-running the full canonical sweep on dedicated hardware, the `benchmark-smoke`
-CI job that builds the six app images, and the `benchmarks.yml` manual workflow
-(Phase 8).
+re-running the full canonical sweep on dedicated hardware, and the
+`benchmarks.yml` manual workflow (Phase 8). The per-PR `benchmark-smoke` CI job
+is in (see below).
 
 ## Resource limits (§7): intention vs. reality
 
@@ -152,17 +152,20 @@ make benchmark-smoke
 ```
 
 It builds **all six** app images (`docker compose build` — a broken Dockerfile
-fails here), then runs the harness end to end (compose up → migrate → seed → k6
-→ parse) against the **two Go reference apps** (`gin-gorm`, `gombit`) with a tiny
-1-VU × 1 short trial, into a throwaway `mktemp` dir — so a route regression or a
-broken result parser fails CI, and the run never touches `results/latest`. The
-numbers are discarded; only pass/fail matters. The four ecosystem apps' routes
-are covered by their own suites in the `database-postgres` CI job, so the smoke
-proves the containerized harness path cheaply rather than re-seeding all six
-(the heavier all-six run — plus a tiny-seed knob across the six languages — is a
-follow-up). `benchmarks/scripts/benchmark-target_test.sh` locks the target's
-contract (builds all six, runs the two-Go-app tiny params, throwaway `OUT_DIR`)
-without Docker by stubbing the recursive make and `docker`.
+fails here), then runs the containerized harness end to end (compose up →
+migrate → seed → k6 → parse) for **all six** apps with a **small deterministic
+seed** (20 users / 100 projects, enough for the workload's full 20-row first
+page) and a 1-VU × 1 short trial, into a throwaway `mktemp` dir. This is the
+issue #141 §11 smoke: it detects broken builds, broken endpoints, schema/
+migration drift, orchestration failures, and result-parser breakage. The numbers
+are discarded and `results/latest` is never touched — only pass/fail matters (no
+perf gate on noisy shared runners). The small seed is what keeps all six
+affordable per PR: every app reads `BENCH_SEED_USERS` / `BENCH_SEED_PROJECTS`
+with the same semantics (`benchmarks/apps/shared.SeedCounts` and its per-language
+ports; unset → the canonical 1,000/100,000). `benchmark-target_test.sh` locks the
+target's contract (builds all six, runs all six with the tiny params + small
+seed, throwaway `OUT_DIR`) without Docker by stubbing the recursive make and
+`docker`.
 
 ## Running the CRUD-read workload
 

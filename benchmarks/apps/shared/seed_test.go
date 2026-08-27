@@ -2,6 +2,55 @@ package shared
 
 import "testing"
 
+// TestSeedCountsEnvOverride locks the small-deterministic-seed contract (issue
+// #141 §11) the CI smoke and every per-language port depend on: unset/empty ->
+// canonical, a positive integer overrides, and a malformed value is a fatal
+// error rather than a silent fall back to 100k.
+func TestSeedCountsEnvOverride(t *testing.T) {
+	t.Run("unset -> canonical", func(t *testing.T) {
+		u, p, err := SeedCounts()
+		if err != nil {
+			t.Fatalf("SeedCounts() unset: %v", err)
+		}
+		if u != SeedUserCount || p != SeedProjectCount {
+			t.Errorf("unset = %d/%d, want canonical %d/%d", u, p, SeedUserCount, SeedProjectCount)
+		}
+	})
+
+	t.Run("positive integers override", func(t *testing.T) {
+		t.Setenv(SeedUsersEnv, "20")
+		t.Setenv(SeedProjectsEnv, "100")
+		u, p, err := SeedCounts()
+		if err != nil {
+			t.Fatalf("SeedCounts() override: %v", err)
+		}
+		if u != 20 || p != 100 {
+			t.Errorf("override = %d/%d, want 20/100", u, p)
+		}
+	})
+
+	t.Run("empty -> canonical", func(t *testing.T) {
+		t.Setenv(SeedUsersEnv, "")
+		t.Setenv(SeedProjectsEnv, "   ")
+		u, p, err := SeedCounts()
+		if err != nil {
+			t.Fatalf("SeedCounts() empty: %v", err)
+		}
+		if u != SeedUserCount || p != SeedProjectCount {
+			t.Errorf("empty = %d/%d, want canonical", u, p)
+		}
+	})
+
+	for _, bad := range []string{"0", "-5", "abc", "12x", "1.5"} {
+		t.Run("malformed "+bad+" is fatal", func(t *testing.T) {
+			t.Setenv(SeedUsersEnv, bad)
+			if _, _, err := SeedCounts(); err == nil {
+				t.Errorf("SeedCounts() with %s=%q = nil error; want a failure, not a silent fall back", SeedUsersEnv, bad)
+			}
+		})
+	}
+}
+
 // TestSeedContentIsDeterministic pins the exact deterministic-content
 // formulas issue #141's seed dataset requires ("the same values for every
 // implementation"). No database, no build tag.

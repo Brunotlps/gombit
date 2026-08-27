@@ -15,9 +15,14 @@ import (
 const seedBatchSize = 1000
 
 // seedDatabase truncates and repopulates the canonical benchmark dataset at
-// production scale. See seedDatabaseN.
+// production scale — or the small deterministic size BENCH_SEED_USERS/
+// BENCH_SEED_PROJECTS request (issue #141 §11's CI smoke). See seedDatabaseN.
 func seedDatabase(ctx context.Context, db *gorm.DB) error {
-	return seedDatabaseN(ctx, db, shared.SeedUserCount, shared.SeedProjectCount)
+	users, projects, err := shared.SeedCounts()
+	if err != nil {
+		return err
+	}
+	return seedDatabaseN(ctx, db, users, projects)
 }
 
 // seedDatabaseN is seedDatabase parameterized by row counts, so tests can

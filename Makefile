@@ -63,23 +63,28 @@ benchmark:
 	$(MAKE) benchmark-micro
 	$(MAKE) benchmark-report
 
-# The two Go reference apps the smoke exercises end to end. The other four
-# ecosystem apps are still image-built by the smoke (a broken Dockerfile fails
-# there), but their routes are covered by their own suites in the CI
-# database-postgres job, so the harness path (up -> migrate -> seed -> k6 ->
-# parse) is proven cheaply on gin-gorm + gombit rather than re-seeding all six.
-BENCH_SMOKE_APPS ?= gin-gorm gombit
+# The apps the smoke runs end to end (default: all six) and the small
+# deterministic seed it uses (issue #141 §11). 20 users / 100 projects is tiny
+# but keeps a full 20-row first page, which the read workload asserts. Every app
+# reads BENCH_SEED_USERS/BENCH_SEED_PROJECTS with the same semantics
+# (benchmarks/apps/shared.SeedCounts and its per-language ports); unset falls
+# back to the canonical 1,000/100,000.
+BENCH_SMOKE_APPS ?= gin-gorm gombit django rails laravel nestjs
+SMOKE_SEED_USERS ?= 20
+SMOKE_SEED_PROJECTS ?= 100
 
-## benchmark-smoke: per-PR correctness guard — build all six app images (a
-## broken Dockerfile fails here) and run the harness end to end (compose up ->
-## migrate -> seed -> k6 -> parse) against the two Go reference apps with a tiny
-## 1-VU x 1 short trial, into a THROWAWAY dir so it never touches
-## results/latest. Numbers are discarded; only pass/fail matters — a route
-## regression or a broken result parser fails the run. This is what CI runs on
-## every PR (the `benchmark-smoke` job in ci.yml).
+## benchmark-smoke: per-PR correctness guard (issue #141 §11) — build all six
+## app images (a broken Dockerfile fails here) and run the containerized harness
+## end to end (compose up -> migrate -> seed -> k6 -> parse) for all six with a
+## tiny deterministic seed and a 1-VU x 1 short trial, into a THROWAWAY dir so it
+## never touches results/latest. Numbers are discarded; only pass/fail matters —
+## a broken image, endpoint, migration/schema, orchestration, or result parser
+## fails the run. This is what CI runs on every PR (the `benchmark-smoke` job in
+## ci.yml). The small seed is what keeps all six affordable per PR.
 benchmark-smoke:
 	docker compose --env-file $(BENCH_CONFIG) -f benchmarks/compose.yml build
 	@dir="$$(mktemp -d)"; trap 'rm -rf "$$dir"' EXIT; \
+		BENCH_SEED_USERS=$(SMOKE_SEED_USERS) BENCH_SEED_PROJECTS=$(SMOKE_SEED_PROJECTS) \
 		$(MAKE) benchmark-crud-all APPS="$(BENCH_SMOKE_APPS)" OUT_DIR="$$dir" \
 			CONCURRENCY=1 TRIALS=1 DURATION_SECONDS=3 WARMUP_SECONDS=1
 

@@ -84,12 +84,14 @@ if grep -qE '^(benchmark-micro|benchmark-report)' "$REC"; then
   note "a stage ran after the failed one (chain did not abort)"
 fi
 
-# ---- 6. benchmark-smoke: build all six images, harness-test the two Go apps
-#         with tiny params, into a THROWAWAY dir (never results/latest) ----
-# A full argv-recording stub for the recursive $(MAKE) (the recmake above only
-# kept a few fields), and a docker stub so `docker compose build` no-ops.
+# ---- 6. benchmark-smoke (issue #141 §11): build all six images, run the
+#         containerized harness for ALL SIX with a tiny deterministic seed and
+#         tiny load, into a THROWAWAY dir (never results/latest) ----
+# A recording stub for the recursive $(MAKE) that captures both the argv and the
+# BENCH_SEED_* env the recipe exports, and a docker stub so `compose build`
+# no-ops.
 smokerec="$stubdir/smokelog"; : > "$smokerec"
-printf '#!/usr/bin/env bash\necho "$*" >> "%s"\nexit 0\n' "$smokerec" > "$stubdir/argmake"
+printf '#!/usr/bin/env bash\necho "$* SEED=${BENCH_SEED_USERS:-unset}/${BENCH_SEED_PROJECTS:-unset}" >> "%s"\nexit 0\n' "$smokerec" > "$stubdir/argmake"
 dockrec="$stubdir/dockerlog"; : > "$dockrec"
 printf '#!/usr/bin/env bash\necho "$*" >> "%s"\nexit 0\n' "$dockrec" > "$stubdir/docker"
 chmod +x "$stubdir/argmake" "$stubdir/docker"
@@ -102,9 +104,17 @@ grep -qE 'compose .*-f benchmarks/compose.yml build$' "$dockrec" \
   || note "benchmark-smoke did not build all app images: $(cat "$dockrec")"
 
 smokeargs="$(cat "$smokerec")"
+# All six apps, tiny load params, and a small deterministic seed passed through.
+for app in gin-gorm gombit django rails laravel nestjs; do
+  case "$smokeargs" in *"$app"*) : ;; *) note "benchmark-smoke did not run app '$app': $smokeargs" ;; esac
+done
 case "$smokeargs" in
-  *"benchmark-crud-all"*"APPS=gin-gorm gombit"*"CONCURRENCY=1"*"TRIALS=1"*"DURATION_SECONDS=3"*"WARMUP_SECONDS=1"*) : ;;
-  *) note "benchmark-smoke did not run crud-all with the tiny two-Go-app params: $smokeargs" ;;
+  *"benchmark-crud-all"*"CONCURRENCY=1"*"TRIALS=1"*"DURATION_SECONDS=3"*"WARMUP_SECONDS=1"*) : ;;
+  *) note "benchmark-smoke did not run crud-all with the tiny params: $smokeargs" ;;
+esac
+case "$smokeargs" in
+  *"SEED=20/100"*) : ;;
+  *) note "benchmark-smoke did not export the small deterministic seed (BENCH_SEED_*): $smokeargs" ;;
 esac
 case "$smokeargs" in
   *"OUT_DIR=benchmarks/results/latest"*) note "benchmark-smoke targeted results/latest, not a throwaway dir: $smokeargs" ;;
@@ -116,4 +126,4 @@ if [ "$fail" -ne 0 ]; then
   echo "benchmark-target_test: FAILED" >&2
   exit 1
 fi
-echo "benchmark-target_test: default-goal, no-prereq composition, ordered stages, pin propagation, fail-closed, and smoke (build-6/harness-2/throwaway) all pass"
+echo "benchmark-target_test: default-goal, no-prereq composition, ordered stages, pin propagation, fail-closed, and smoke (build-6/run-6/small-seed/throwaway) all pass"

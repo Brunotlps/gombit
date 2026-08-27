@@ -54,10 +54,28 @@ export async function seedDatabaseN(
   }
 }
 
+// BENCH_SEED_USERS / BENCH_SEED_PROJECTS override the row counts for the CI
+// smoke's small deterministic seed (issue #141 §11) — same content formulas,
+// fewer rows. Unset/empty means the canonical default; a non-empty value that
+// is not a positive integer is a fatal error, never a silent fall back to 100k.
+// Same names and semantics as benchmarks/apps/shared.SeedCounts (Go).
+function seedCount(env: string, def: number): number {
+  const raw = (process.env[env] ?? '').trim();
+  if (raw === '') {
+    return def;
+  }
+  if (!/^[1-9]\d*$/.test(raw)) {
+    throw new Error(`${env}=${raw}: must be a positive integer`);
+  }
+  return Number(raw);
+}
+
 async function main(): Promise<void> {
+  const userCount = seedCount('BENCH_SEED_USERS', USER_COUNT);
+  const projectCount = seedCount('BENCH_SEED_PROJECTS', PROJECT_COUNT);
   await AppDataSource.initialize();
   try {
-    await seedDatabaseN(AppDataSource, USER_COUNT, PROJECT_COUNT);
+    await seedDatabaseN(AppDataSource, userCount, projectCount);
     console.log('nestjs: seed complete');
   } finally {
     await AppDataSource.destroy();

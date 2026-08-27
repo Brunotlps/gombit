@@ -1748,31 +1748,41 @@ and the recurring "the README claims a CI gate that doesn't exist" review
 finding. Verified locally: clean on the committed README, fails (with the diff)
 on a hand-edited block.
 
-**Per-PR `benchmark-smoke` gate — done.** `make benchmark-smoke` and the
-`benchmark-smoke` CI job (needs: `test`) are in. The target builds **all six**
-app images with `docker compose build` — a broken Dockerfile fails here — then
-runs the harness end to end (compose up → migrate → seed → k6 → parse) against
-the **two Go reference apps** (`gin-gorm`, `gombit`) with a tiny 1-VU × 1
-short-trial load into a **throwaway `mktemp` dir**, so a route regression or a
-broken result parser fails CI while the run never touches
-`benchmarks/results/latest`. Coverage split (a deliberate speed/scope choice):
-`docker compose build` catches a broken image for **all six**, and the four
-ecosystem apps' routes are already exercised by their own suites in the
-`database-postgres` job, so the smoke proves the containerized harness path
-cheaply on the Go pair rather than re-seeding all six every PR (the 100 k seed
-is per-app and unparameterized across the six languages; a tiny-seed knob +
-all-six containerized run is the heavier follow-up variant). The
-`benchmark-target_test.sh` stub suite locks the target's contract without Docker
-(builds all six via `compose build`, runs crud-all with the two-Go-app tiny
-params, and — the safety property — passes a throwaway `OUT_DIR`, never
-`results/latest`; the last is regression-checked). **Still open in Phase 8:** the
-`benchmarks.yml` `workflow_dispatch` for the full/selected suites with artifact
-upload.
+**Per-PR `benchmark-smoke` gate — done (the issue #141 §11 smoke).**
+`make benchmark-smoke` and the `benchmark-smoke` CI job (needs: `test`) are in.
+The target builds **all six** app images with `docker compose build` — a broken
+Dockerfile fails here — then runs the **containerized** harness end to end
+(compose up → migrate → seed → k6 → parse) for **all six** apps with a **small
+deterministic seed** and a 1-VU × 1 short-trial load, into a **throwaway
+`mktemp` dir** so it never touches `benchmarks/results/latest`. That covers §11's
+required detections — broken builds, broken endpoints, schema/migration drift,
+orchestration failures, result-parser breakage — and, per §11, gates on
+correctness only (no perf assertion on noisy shared runners; numbers discarded).
+
+The small seed is what makes all-six affordable per PR, and it is a real
+cross-language capability, not a smoke-only hack: every seeder reads
+`BENCH_SEED_USERS` / `BENCH_SEED_PROJECTS` with identical semantics —
+`benchmarks/apps/shared.SeedCounts` (Go, unit-tested: unset → canonical, a
+positive integer overrides, a malformed value is fatal) and independent ports in
+the Django command, the Rails/Laravel `CanonicalSeed`, and the NestJS seeder;
+unset falls back to the canonical 1,000/100,000. compose passes them through to
+each app's `seed` container (`BENCH_SEED_*: "${BENCH_SEED_*:-}"`). The smoke uses
+20 users / 100 projects — tiny, but ≥ 20 projects so the read workload's
+asserted full 20-row first page still holds. An earlier iteration of this slice
+only harness-tested the two Go apps and leaned on `database-postgres` as the
+ecosystem apps' substitute; that was wrong (`database-postgres` tests their
+handlers **in-process**, never the container's `ENTRYPOINT`/migrate/serve path),
+so the smoke now runs the container path for all six. `benchmark-target_test.sh`
+locks the target's contract without Docker (builds all six via `compose build`,
+runs all six with the tiny params, exports the small seed, and — the safety
+property — passes a throwaway `OUT_DIR`, never `results/latest`; regression-
+checked). **Still open in Phase 8:** the `benchmarks.yml` `workflow_dispatch` for
+the full/selected suites with artifact upload.
 
 - ~~`ci.yml`: add a `benchmark-smoke` job (needs: `test`) running
-  `make benchmark-smoke` — 1 short trial, low concurrency, correctness-only, on
-  every PR.~~ **Done** (see above; the "tiny seed" reduction across all six
-  languages is folded into the deferred all-six variant).
+  `make benchmark-smoke` — small deterministic seed, 1 short trial, low
+  concurrency, correctness-only, all six apps, on every PR.~~ **Done** (see
+  above).
 - New `.github/workflows/benchmarks.yml`: `workflow_dispatch` with an input
   to select `micro | crud | auth | techempower | footprint | full`; uploads
   `metadata.json`, raw results, `results.json`, `results.csv`, `summary.md`
