@@ -1582,7 +1582,16 @@ two code leftovers, all fixed.
   SUT on the happy path — the exact `|| true` / no-trap pattern PR #192 had just
   removed. Fixed as above (validated `k6load`, concurrent steady-state sampling,
   fail-closed no-row-on-dirty-load, always-stop) and the leftover "footprint is a
-  later slice" sentences in the touched files were swept.
+  later slice" sentences in the touched files were swept. A second round closed
+  two more: (1) the sample aggregator still fail-*open*ed — `median_*` printed a
+  `0` sentinel on empty input, so a dropped-ramp/one-sample series wrote
+  `loaded=0`/`cpu=0`; now `median_*` fail on empty and `aggregate_load_samples`
+  refuses unless ≥2 in-load samples remain (and `stats_sample` reads mem+cpu in
+  one `docker stats` call, a true 1s tick, no extra sleep). (2) `k6load` had no
+  tests despite being the load authority; added `k6load/main_test.go` driving its
+  `-docker` seam with the real k6 goldens — clean → exit 0, all-failed → non-zero
+  (deleting `Validate` fails it), no summary → non-zero. The shell test now
+  asserts the real 8 MB / 150% values and the aggregator's fail-closed.
 - Gombit-specific: build via `gombit build --embed`, verify the embedded
   binary serves API + admin + frontend assets, measure its binary size,
   container image size, cold start, and idle RSS as the headline

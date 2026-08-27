@@ -43,9 +43,11 @@ run_load() {
 record_footprint() { go run ./benchmarks/scripts/footprint "$@"; }
 
 # median_int / median_float read numbers on stdin and echo the median (integer
-# floored for byte counts). Empty input -> 0.
-median_int() { sort -n | awk '{a[NR]=$1} END{ if(NR==0){print 0;exit} if(NR%2){printf "%d", a[(NR+1)/2]} else {printf "%d", (a[NR/2]+a[NR/2+1])/2} }'; }
-median_float() { sort -n | awk '{a[NR]=$1} END{ if(NR==0){print 0;exit} if(NR%2){print a[(NR+1)/2]} else {print (a[NR/2]+a[NR/2+1])/2} }'; }
+# floored for byte counts). Empty input FAILS (non-zero) rather than printing a
+# 0 sentinel — an absent series is not "0 bytes", and the caller must refuse the
+# row, not record a zero (issue #141: don't publish bogus data).
+median_int() { sort -n | awk '{a[NR]=$1} END{ if(NR==0){exit 1} if(NR%2){printf "%d", a[(NR+1)/2]} else {printf "%d", (a[NR/2]+a[NR/2+1])/2} }'; }
+median_float() { sort -n | awk '{a[NR]=$1} END{ if(NR==0){exit 1} if(NR%2){print a[(NR+1)/2]} else {print (a[NR/2]+a[NR/2+1])/2} }'; }
 
 # to_bytes converts a `docker stats` size token (45.2MiB, 1.1GiB, 900B, …) to an
 # integer byte count on stdin.
@@ -69,6 +71,15 @@ mem_bytes() {
 # cpu_pct CONTAINER — CPU percent (docker stats; 100 == one core).
 cpu_pct() { docker stats --no-stream --format '{{.CPUPerc}}' "$1" | tr -d '% '; }
 
+# stats_sample CONTAINER — one "<mem_bytes> <cpu_pct>" line from a single
+# `docker stats --no-stream` call (which already blocks ~1s, so this is the 1s
+# tick — no extra sleep needed, and it reads mem+cpu from the same instant).
+stats_sample() {
+  docker stats --no-stream --format '{{.MemUsage}}|{{.CPUPerc}}' "$1" \
+    | awk -F'|' '{gsub(/ .*/, "", $1); print $1, $2}' \
+    | { read -r mem cpu; printf '%s %s\n' "$(printf '%s' "$mem" | to_bytes)" "$(printf '%s' "$cpu" | tr -d '% ')"; }
+}
+
 # wait_ready_ms URL — poll until HTTP 200, echo elapsed milliseconds (or fail).
 wait_ready_ms() {
   local url="$1" start now code
@@ -85,22 +96,38 @@ wait_ready_ms() {
   return 1
 }
 
-# sample_stats CONTAINER FILE STOPFILE — until STOPFILE exists, append
-# "<mem_bytes> <cpu_pct>" once per second. Runs concurrently with the load so
-# the samples are provably taken while k6 is driving the app.
+# sample_stats CONTAINER FILE STOPFILE — until STOPFILE exists, append one
+# "<mem_bytes> <cpu_pct>" line per `docker stats` tick (~1s). Runs concurrently
+# with the load so the samples are provably taken while k6 drives the app.
 sample_stats() {
   while [ ! -f "$3" ]; do
-    printf '%s %s\n' "$(mem_bytes "$1")" "$(cpu_pct "$1")" >> "$2"
-    sleep 1
+    stats_sample "$1" >> "$2"
   done
+}
+
+# aggregate_load_samples FILE — echo "<loaded_rss_bytes> <cpu_pct>" as the
+# steady-state median of the samples, dropping the first (ramp) sample. FAILS
+# (non-zero) unless at least two in-load samples remain: a missing or one-sample
+# series must not become a 0-byte/0% "loaded" reading (that would be a sentinel
+# with a field name, not a measurement). median_* also fail on empty input.
+aggregate_load_samples() {
+  local n loaded cpu
+  n="$(wc -l < "$1")"
+  if [ "$n" -lt 3 ]; then
+    return 1 # need >= 2 after dropping the ramp sample
+  fi
+  loaded="$(tail -n +2 "$1" | awk '{print $1}' | median_int)" || return 1
+  cpu="$(tail -n +2 "$1" | awk '{print $2}' | median_float)" || return 1
+  printf '%s %s' "$loaded" "$cpu"
 }
 
 # measure_under_load CONTAINER TARGET_URL — echo "<loaded_rss_bytes> <cpu_pct>"
 # from steady-state samples taken *while validated load runs*, or fail (non-zero)
-# if the load was not a clean measurement — so a failed/absent k6 never yields a
-# loaded/CPU number. The load generator is the authority (k6load validates).
+# if the load was not a clean measurement (k6load Validate) OR too few in-load
+# samples exist — so neither a failed/absent k6 nor an empty sample series yields
+# a loaded/CPU number.
 measure_under_load() {
-  local cid="$1" turl="$2" sf stop spid load_ok=0
+  local cid="$1" turl="$2" sf stop spid out load_ok=0
   sf="$(mktemp)"; stop="$sf.stop"; rm -f "$stop"
   sample_stats "$cid" "$sf" "$stop" &
   spid=$!
@@ -116,12 +143,9 @@ measure_under_load() {
     rm -f "$sf" "$stop"
     return 1
   fi
-  # Drop the first sample (ramp) and report the steady-state median, not a peak.
-  local loaded cpu
-  loaded="$(tail -n +2 "$sf" | awk '{print $1}' | median_int)"
-  cpu="$(tail -n +2 "$sf" | awk '{print $2}' | median_float)"
+  out="$(aggregate_load_samples "$sf")" || { rm -f "$sf" "$stop"; return 1; }
   rm -f "$sf" "$stop"
-  printf '%s %s' "$loaded" "$cpu"
+  printf '%s' "$out"
 }
 
 # cold_start_samples APP LIVEZ_URL — echo COLD_START_RUNS comma-separated

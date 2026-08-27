@@ -187,14 +187,17 @@ budget, seeds it, and records into `benchmarks/results/latest/footprint.{json,cs
 - **idle memory** — the container's cgroup working set (`docker stats`) after an
   `IDLE_SETTLE`-second settle (default 10, the issue's suggestion), recorded as
   `idle_rss_bytes`;
-- **loaded memory + CPU** — the **steady-state median** working set and CPU
-  sampled once per second *while the crud-list workload drives the app*. The
-  load is run through `benchmarks/scripts/k6load`, which keeps and validates the
-  k6 summary (`benchmarks/internal/k6`'s `Summary.Validate`): if k6 sends no
-  traffic, errors, or fails a content check, the load is rejected and **no
-  loaded/CPU row is published** — the same fail-closed rule as `run-crud`, so an
-  idle sample can never masquerade as a loaded one. The k6 image is pre-pulled
-  so no pull lands inside the measured window;
+- **loaded memory + CPU** — the **steady-state median** working set and CPU,
+  sampled once per `docker stats` tick (~1s) *while the crud-list workload drives
+  the app*, dropping the first (ramp) sample. Fail-closed on two fronts: the load
+  is run through `benchmarks/scripts/k6load`, which keeps and validates the k6
+  summary (`benchmarks/internal/k6`'s `Summary.Validate`) — no traffic, any HTTP
+  error, or a failed content check rejects the load; and the aggregator refuses
+  to publish unless at least two in-load samples remain, so a missing/one-sample
+  series can never become a `0`-byte "loaded" reading. Either failure means **no
+  loaded/CPU row is published** — the same rule as `run-crud`. The k6 image is
+  pre-pulled and `k6load` pre-built so neither a pull nor a Go compile lands
+  inside the measured window;
 - **image size** — the container image's on-disk size.
 
 Reduce the cost for a smoke with `COLD_START_RUNS=3 LOAD_SECONDS=4 IDLE_SETTLE=1`,
