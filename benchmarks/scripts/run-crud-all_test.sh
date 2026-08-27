@@ -84,8 +84,18 @@ run_one gombit || rc=$?
 [ "$RAN_CRUD" -eq 0 ]  || note "run_crud ran despite inspect failure (would publish a blank resource_limits)"
 called "compose stop gombit" || note "SUT not stopped after inspect failure"
 
+# ---- 4. load_pins respects an overriding environment (Make/CLI override) ----
+# A revert to `set -a; . versions.env` (which clobbers exported vars) fails here.
+if ! CONCURRENCY=__override__ bash -c '
+      APPS="" source benchmarks/scripts/run-crud-all.sh
+      [ "$CONCURRENCY" = "__override__" ] || { echo "CONCURRENCY clobbered to $CONCURRENCY" >&2; exit 1; }
+      [ -n "$TRIALS" ] || { echo "TRIALS not loaded from the file" >&2; exit 1; }
+    '; then
+  note "load_pins does not let the environment override versions.env"
+fi
+
 if [ "$fail" -ne 0 ]; then
   echo "run-crud-all_test: FAILED" >&2
   exit 1
 fi
-echo "run-crud-all_test: identity tuples, inspect consumption, stop-before-next, and fail-closed inspect all pass"
+echo "run-crud-all_test: identity tuples, inspect consumption, stop-before-next, fail-closed inspect, and env override all pass"

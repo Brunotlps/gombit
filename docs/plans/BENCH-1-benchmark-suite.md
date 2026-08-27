@@ -1196,8 +1196,9 @@ real MAJOR findings, all confirmed and fixed.
 ### Phase 5 — Workload depth: auth overhead, TechEmpower-inspired, concurrency sweep
 
 **Headline CRUD-read workload + `make benchmark-crud` — the per-implementation
-measurement engine — done; the all-six compose loop and footprint capture are
-the next slices.**
+measurement engine — done; the all-six compose loop (`make benchmark-crud-all`)
+is done too (see the Phase 6 bullets), and footprint capture is the remaining
+slice.**
 
 - `benchmarks/workloads/crud-list.js`: the headline `GET /api/projects?page=1&limit=20`
   workload (issue §"Required headline workload"), run by the pinned k6 image
@@ -1232,12 +1233,12 @@ the next slices.**
   container runs as the invoking uid so the mounted summary file is writable.
   `cpu_percent`/`rss_bytes` stay 0 — per-app footprint (and enforcing/observing
   the §7 limits) is the compose loop / Phase 6, not this engine.
-- **Still open in Phase 5:** the loop that brings all six apps up under compose
-  (with the §7 resource limits) and runs `run-crud` over each; the auth,
-  TechEmpower-inspired, and concurrency-sweep workloads below; and the
-  CoV summarization the AC's "trial variance recorded" needs — **done** (see
-  the summarizer note below); still open is the multi-app loop that produces a
-  full six-framework `results.json` for it to summarize.
+- **Phase 5 follow-through:** the multi-app loop that brings all six apps up
+  under compose (with the §7 resource limits) and runs `run-crud` over each into
+  a full six-framework `results.json` is **done** (`make benchmark-crud-all`, see
+  the Phase 6 bullets); the CoV summarization is **done** (the summarizer note
+  below). Still open: the auth, TechEmpower-inspired, and concurrency-sweep
+  workloads below.
 
 **Trial-variance summarizer (`benchmarks/internal/summary` + `summarize` /
 `make benchmark-summary`) — done.** Reads `results.json`, groups the trial
@@ -1473,6 +1474,11 @@ in:
   builds/migrates/seeds/serves, reaches healthy, records
   `enforced: cpu 2.00 / memory 1 GiB`, runs k6 (errors=0), and merges the rows.
   The remaining Phase 6 work is the per-app footprint capture below.
+  Two follow-up review rounds on PR #192 fixed the framework key (`gin-gorm`, not
+  `gin`), the `|| true` blank-limit / no-trap bug, the Make override, weak tests,
+  and — across the whole benchmarks tree, not just the named paragraphs — every
+  present-tense claim that the loop is future work or that the recorded limit is
+  "enforced" rather than the honest detect/report classification.
 - `benchmarks/internal/reslimits` + `benchmarks/scripts/inspect-limits`: the
   issue's "detect and report rather than silently pretend limits were applied"
   requirement. A compose budget is only an *intention*; the tool reads the

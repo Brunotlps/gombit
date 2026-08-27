@@ -71,13 +71,16 @@ which the daemon zeroes or rejects when it can't apply them, an honest signal of
 a dropped ceiling) via `internal/reslimits` and classifies them against the
 intended budget — `enforced`, `partial`, or `not applied`.
 
-`make benchmark-crud-all` records that verdict as `metadata.resource_limits`:
-for each app it classifies the live container and passes the result to
-`run-crud -resource-limits`, so the recorded limit is the one actually applied
-(and if `inspect-limits` cannot classify the container at all, that app's row is
-not published rather than recorded blank). The standalone `make benchmark-crud`
-starts and constrains nothing, so it records `run-crud`'s honest "not applied"
-default unless you pass `-resource-limits "$(inspect-limits …)"` yourself.
+`make benchmark-crud-all` records that classification as
+`metadata.resource_limits`: for each app it classifies the live container and
+passes the result to `run-crud -resource-limits`, so the recorded value is
+whichever of `enforced` / `partial` / `not applied` the container actually
+shows — a record of what was applied, not an assumption that the ceiling held.
+(If `inspect-limits` cannot classify the container at all — a tool failure — that
+app's row is not published rather than recorded blank.) The standalone
+`make benchmark-crud` starts and constrains nothing, so it records `run-crud`'s
+honest "not applied" default unless you pass
+`-resource-limits "$(inspect-limits …)"` yourself.
 
 ## Result schema and run metadata
 
@@ -147,7 +150,9 @@ against a healthy app must be error-free (`benchmarks/internal/k6`'s
 `Summary.Validate`). Standalone, `run-crud` does not start or resource-constrain
 the app, so its default `metadata.resource_limits` says so honestly; under
 `benchmark-crud-all` the app runs in its §7-limited container and the loop passes
-the live `inspect-limits` verdict, so the recorded limit is the enforced one.
+the live `inspect-limits` verdict, so the recorded value is that container's
+classification (`enforced` / `partial` / `not applied`), not an assumption that
+the ceiling held.
 Per-app `cpu_percent`/`rss_bytes` footprint capture is still a later Phase 6
 slice.
 

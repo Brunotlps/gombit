@@ -11,11 +11,11 @@
 // errors, failed content checks) fails the command loudly with nothing written
 // (issue #141 §10).
 //
-// It does NOT start or resource-constrain the app; the recorded
-// resource_limits therefore says so honestly. The full make benchmark-crud
-// that brings all six apps up under compose with the §7 limits and loops this
-// over them is the next slice; this is the per-implementation engine, verified
-// end-to-end against benchmarks/apps/gin-gorm.
+// It does NOT start or resource-constrain the app; run standalone, the recorded
+// resource_limits therefore says so honestly. This is the per-implementation
+// engine: `make benchmark-crud-all` (benchmarks/scripts/run-crud-all.sh) brings
+// all six apps up under compose with the §7 limits, records each container's
+// applied-limit classification, and loops this over them.
 package main
 
 import (
