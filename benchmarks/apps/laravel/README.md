@@ -200,13 +200,44 @@ against [../../docs/schema.md](../../docs/schema.md):
   pinned shape exactly (`with`, not a JOIN, so no documented deviation is
   needed the way `../django`'s 2-query `select_related` JOIN did).
 
+### Under compose (containerized, with the §7 resource budget)
+
+The app is containerized (`Dockerfile`; self-contained, so the build context is
+this directory) and wired into `benchmarks/compose.yml` with the §7 app ceiling
+(2 vCPU / 1 GiB). It runs the production topology — **nginx + PHP-FPM in one
+container** (the `deploy/` configs), never `php artisan serve`. The entrypoint
+has three verbs — `migrate`, `seed`, `serve`. `serve` does **not** migrate, so
+run them in order. `migrate` creates the `gombit_bench_laravel` database if
+absent (idempotent, every bring-up, via `ensure_db.php` using PDO — not a
+fresh-volume init script); `APP_KEY` is generated per boot (no committed secret):
+
+```sh
+docker compose --env-file benchmarks/config/versions.env \
+  -f benchmarks/compose.yml up -d postgres
+
+docker compose --env-file benchmarks/config/versions.env \
+  -f benchmarks/compose.yml run --rm laravel migrate
+docker compose --env-file benchmarks/config/versions.env \
+  -f benchmarks/compose.yml run --rm laravel seed
+
+docker compose --env-file benchmarks/config/versions.env \
+  -f benchmarks/compose.yml up -d laravel
+go run ./benchmarks/scripts/inspect-limits \
+  -container "$(docker compose -f benchmarks/compose.yml ps -q laravel)" \
+  -cpus 2 -memory 1g
+```
+
+PHP extensions (`pdo_pgsql`, `mbstring`, `zip`) are installed with
+`mlocati/php-extension-installer`.
+
 ## Status
 
 Schema, seed, CRUD app, its own test suite, CI (a PHP 8.3 + `php artisan
 test` step in `.github/workflows/ci.yml`'s `database-postgres` job), and the
 documented nginx + PHP-FPM production config (`deploy/`) are done (tracked in
 [docs/plans/BENCH-1-benchmark-suite.md](../../../docs/plans/BENCH-1-benchmark-suite.md)
-Phase 4). Still open, matching the Phase 3/4 precedent: a
-`benchmarks/compose.yml` app service, and extending the Go
+Phase 4). This app now has a `Dockerfile` + `benchmarks/compose.yml` `laravel`
+service with the §7 budget (see [Under compose](#under-compose-containerized-with-the-7-resource-budget)),
+running the `deploy/` nginx + PHP-FPM config. Still open: extending the Go
 `benchmarks/apps/fairness_test.go` cross-implementation check to include this
 app.
