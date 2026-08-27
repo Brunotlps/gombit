@@ -1363,8 +1363,21 @@ in:
   `.dockerignore` keeps node_modules/vendor/.git out of the context) +
   `docker-entrypoint.sh` with `seed`/`serve` verbs, and a `gin-gorm` service in
   `benchmarks/compose.yml` carrying the §7 app budget (2 vCPU / 1 GiB) and a
-  health check. gin-gorm is the reference app; the other five are the next
-  slices.
+  `/livez` health check (never the measured route). gin-gorm is the reference
+  app.
+- `benchmarks/apps/gombit/Dockerfile` + `docker-entrypoint.sh` (second Go app,
+  same pattern) — but it applies **real Atlas migrations**, so the image also
+  carries the `gombit` CLI, the pinned `atlas` binary (`ATLAS_IMAGE` in
+  `versions.env`, the *-alpine* variant so the musl binary matches the runtime
+  base, multi-stage COPY), and a psql client. The entrypoint has three verbs
+  (`migrate`/`seed`/`serve`; `serve` does not migrate); `migrate` **creates the
+  `gombit_bench_gombit` database if absent** (idempotent, every bring-up) then
+  applies the migration. Verified end to end against a live container:
+  `gombit db migrate` creates the DB and applies the Atlas migration
+  in-container, seed completes, the service reaches `healthy` via `/livez`,
+  `GET /api/projects` returns the canonical envelope (`total: 100000`), and
+  inspect-limits reads `enforced` (2 vCPU / 1 GiB). The four ecosystem apps are
+  the next slices.
 - `benchmarks/internal/reslimits` + `benchmarks/scripts/inspect-limits`: the
   issue's "detect and report rather than silently pretend limits were applied"
   requirement. A compose budget is only an *intention*; the tool reads the

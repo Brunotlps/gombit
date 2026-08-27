@@ -1,6 +1,7 @@
 # PostgreSQL + the benchmark app services under test. App services are added
-# as each is containerized (Phase 6 compose loop); `gin-gorm` is the first —
-# the reference Go control the others are compared against.
+# as each is containerized (Phase 6 compose loop): the two Go apps `gin-gorm`
+# (the reference control) and `gombit` (same API on the Gombit runtime) are in;
+# the four ecosystem apps are the next slices.
 #
 # Version pin: issue #141 requires major.minor (or digest), not a
 # major-only floating tag. The pin lives once in
@@ -36,6 +37,13 @@ services:
       POSTGRES_USER: gombit
       POSTGRES_PASSWORD: gombit
       POSTGRES_DB: gombit_bench
+    # gin-gorm uses gombit_bench (POSTGRES_DB above); the gombit app needs a
+    # separate gombit_bench_gombit (real Atlas migration, not AutoMigrate — see
+    # benchmarks/apps/gombit/README.md). It is created idempotently by the
+    # gombit `migrate` verb on every bring-up, NOT by docker-entrypoint-initdb.d
+    # — that runs only on a fresh data volume, so on this suite's already-
+    # initialized volume it would never fire, and `down -v` to force it would
+    # wipe gin-gorm's seed.
     ports:
       - "127.0.0.1:55432:5432"
     healthcheck:
@@ -84,6 +92,54 @@ services:
     # ceiling) on every interval. The next apps' services copy this one.
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null 'http://127.0.0.1:8081/livez' || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    deploy:
+      resources:
+        limits:
+          cpus: "${APP_CPUS:-2}"
+          memory: ${APP_MEMORY:-1g}
+
+  # The gombit app (issue #141 §7 app budget: 2 vCPU / 1 GiB) — same canonical
+  # API as gin-gorm, on the Gombit runtime. Its image also carries the `gombit`
+  # CLI and the pinned `atlas` binary because migrations are applied as a
+  # separate step (real Atlas versioned migrations, not AutoMigrate), on its own
+  # gombit_bench_gombit database. `serve` does not migrate — bring it up in
+  # order, applying migrations (which also creates the database) and seeding as
+  # one-shots first:
+  #
+  #   docker compose ... up -d postgres
+  #   docker compose ... run --rm gombit migrate
+  #   docker compose ... run --rm gombit seed
+  #   docker compose ... up -d gombit
+  gombit:
+    build:
+      context: ..
+      dockerfile: benchmarks/apps/gombit/Dockerfile
+      args:
+        ATLAS_IMAGE: ${ATLAS_IMAGE:-arigaio/atlas:0.36.0-alpine}
+    image: bench-gombit:local
+    command: ["serve"]
+    environment:
+      DATABASE_URL: postgres://gombit:gombit@postgres:5432/gombit_bench_gombit?sslmode=disable
+      # The migrate verb creates TARGET_DB if absent, connecting via
+      # ADMIN_DATABASE_URL (an existing DB on the same server) — idempotent,
+      # every bring-up, no fresh-volume dependency.
+      ADMIN_DATABASE_URL: postgres://gombit:gombit@postgres:5432/gombit_bench?sslmode=disable
+      TARGET_DB: gombit_bench_gombit
+      PORT: "8080"
+      POOL_MAX_OPEN: "${POOL_MAX_OPEN:-20}"
+      POOL_MAX_IDLE: "${POOL_MAX_IDLE:-20}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8080:8080"
+    # /livez is served by framework.App with no DB touch (framework/app.go) —
+    # same rule as gin-gorm: never probe the measured route.
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null 'http://127.0.0.1:8080/livez' || exit 1"]
       interval: 3s
       timeout: 3s
       retries: 20

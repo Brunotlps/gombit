@@ -104,9 +104,10 @@ and the cross-implementation fairness check comparing them are all done
 Phase 3). See [../gombit/README.md](../gombit/README.md) for the Gombit-side
 details, including one discovered framework gap and two bugs the fairness
 comparison caught. This app is now containerized with a `benchmarks/compose.yml`
-`gin-gorm` service carrying the §7 budget (see [Run](#run) above). Still open:
-wiring the fairness check into automated CI (it needs both databases at the full
-canonical 1,000/100,000 scale, deferred to Phase 8's lighter-seed CI work); the
-`gombit` app's compose service and the six-app bring-up loop (later Phase 6
-slices); and consuming the `inspect-limits` verdict into a run's recorded
-`metadata.resource_limits` (today it is printed, not yet recorded).
+`gin-gorm` service carrying the §7 budget (see [Run](#run) above); the `gombit`
+app has its own service too. Still open: wiring the fairness check into automated
+CI (it needs both databases at the full canonical 1,000/100,000 scale, deferred
+to Phase 8's lighter-seed CI work); the four ecosystem apps' compose services and
+the six-app bring-up loop (later Phase 6 slices); and consuming the
+`inspect-limits` verdict into a run's recorded `metadata.resource_limits` (today
+it is printed, not yet recorded).
