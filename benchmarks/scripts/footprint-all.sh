@@ -80,14 +80,23 @@ stats_sample() {
     | { read -r mem cpu; printf '%s %s\n' "$(printf '%s' "$mem" | to_bytes)" "$(printf '%s' "$cpu" | tr -d '% ')"; }
 }
 
-# wait_ready_ms URL — poll until HTTP 200, echo elapsed milliseconds (or fail).
+# now_ms — MONOTONIC milliseconds (CLOCK_MONOTONIC via /proc/uptime, ~10ms
+# resolution). Elapsed timing uses this, NOT `date +%s%3N` (CLOCK_REALTIME):
+# two realtime reads can straddle a wall-clock adjustment and yield a garbage
+# difference (a real run produced -1609081096361592473, the shape of an ms read
+# minus a nanosecond-epoch read). /proc/uptime never runs backwards, so
+# start->ready elapsed is always a sane non-negative number.
+now_ms() { awk '{printf "%d", $1 * 1000}' /proc/uptime; }
+
+# wait_ready_ms URL — poll until HTTP 200, echo elapsed monotonic milliseconds
+# (or fail).
 wait_ready_ms() {
   local url="$1" start now code
-  start="$(date +%s%3N)"
+  start="$(now_ms)"
   for _ in $(seq 1 600); do
     code="$(curl -s -o /dev/null -w '%{http_code}' --max-time 2 "$url" 2>/dev/null || true)"
     if [ "$code" = "200" ]; then
-      now="$(date +%s%3N)"
+      now="$(now_ms)"
       echo "$((now - start))"
       return 0
     fi
@@ -154,13 +163,13 @@ cold_start_samples() {
   local app="$1" url="$2" samples="" ms attempt
   for _ in $(seq 1 "$COLD_START_RUNS"); do
     ms=""
-    # wait_ready_ms polls for at most ~30s, so a valid start->ready sample is a
-    # non-negative integer well under 60000 ms. A negative or absurd value means
-    # the host wall clock stepped between the two `date` reads mid-measurement
-    # (an NTP adjustment / clock discontinuity — this ~20-iteration loop runs
-    # long enough to catch one on any host, WSL or bare metal). That's a bad
-    # *sample*, not a broken app, so redo the stop/start rather than fail-closing
-    # the entire multi-hour run on a transient clock step.
+    # wait_ready_ms measures elapsed from the MONOTONIC clock (now_ms), so a
+    # sample can't be corrupted by a wall-clock step. This is defense in depth on
+    # top of that: a well-formed sample is a non-negative integer <= 60000 ms
+    # (wait_ready_ms polls at most ~30s), and anything else — a malformed reading
+    # from some other cause — is neither recorded nor allowed to fail-close the
+    # whole run; we REDO the stop/start (a fresh cold start), up to 5 times, then
+    # fail. It is a garbage filter, not clock-step detection.
     for attempt in 1 2 3 4 5; do
       "${COMPOSE[@]}" stop "$app" >/dev/null
       "${COMPOSE[@]}" start "$app" >/dev/null
@@ -168,10 +177,10 @@ cold_start_samples() {
       if [[ "$ms" =~ ^[0-9]+$ ]] && [ "$ms" -le 60000 ]; then
         break
       fi
-      echo "footprint: $app cold-start sample '$ms' out of range (clock skew?); retry $attempt/5" >&2
+      echo "footprint: $app cold-start sample '$ms' malformed; redoing stop/start ($attempt/5)" >&2
       ms=""
     done
-    [ -n "$ms" ] || { echo "footprint: $app cold-start kept producing an out-of-range sample" >&2; return 1; }
+    [ -n "$ms" ] || { echo "footprint: $app cold-start kept producing a malformed sample" >&2; return 1; }
     samples="${samples:+$samples,}$ms"
   done
   printf '%s' "$samples"
