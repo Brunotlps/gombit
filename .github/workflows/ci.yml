@@ -9,7 +9,7 @@ on:
 permissions:
   contents: read
 
-# Pipeline: lint → build → test → (database ∥ migrations ∥ conformance ∥ contract-drift)
+# Pipeline: lint → build → test → (database ∥ migrations ∥ conformance ∥ contract-drift ∥ benchmark-report-drift)
 jobs:
   lint:
     name: Lint
@@ -106,6 +106,27 @@ jobs:
 
       - name: Fail on contract drift
         run: git diff --exit-code -- examples/client/openapi.json examples/client/frontend/src/api/generated
+
+  benchmark-report-drift:
+    name: Benchmark report drift
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Pure-Go, no Docker: the README ## Performance block is generated from
+      # benchmarks/results/latest/ and must match what the generator produces
+      # (issue #141 §9: Markdown is derived, never hand-edited). The full
+      # benchmark-smoke job that builds the six app images is separate.
+      - name: Fail on benchmark report drift
+        run: make benchmark-report-check
 
   database-sqlite:
     name: Database (sqlite)

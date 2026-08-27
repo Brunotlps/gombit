@@ -1644,7 +1644,8 @@ accumulates stacks and fails on an incomplete run); verified end to end — a re
 ladder. **Still open in Phase 7:** running
 the full suite on a dedicated host and committing the canonical `results/latest/`
 snapshot (so the block holds real numbers rather than the honest "not yet
-recorded" placeholders); and wiring `benchmark-report-check` into CI (Phase 8).
+recorded" placeholders). Wiring `benchmark-report-check` into CI is **done** —
+the `benchmark-report-drift` job (Phase 8 below).
 
 - `benchmarks/internal` summarizer: `results.json` → `results.csv` →
   `summary.md`, plus the README marker-block generator (§4).
@@ -1662,6 +1663,18 @@ recorded" placeholders); and wiring `benchmark-report-check` into CI (Phase 8).
   README matches generated output.
 
 ### Phase 8 — CI integration
+
+**Report-drift CI gate — done.** `.github/workflows/ci.yml` has a
+`benchmark-report-drift` job (needs: `test`) running `make benchmark-report-check`
+— pure Go, no Docker, so it stays cheap on every PR. It regenerates the README
+`## Performance` block from the committed `benchmarks/results/latest/` (currently
+placeholders) and fails if the committed README no longer matches, closing the
+"README is regenerable, never hand-edited" AC and the recurring "the README
+claims a CI gate that doesn't exist" review finding. Verified locally: passes on
+the committed README, fails on a hand-edited block. **Still open in Phase 8:** the
+heavier `benchmark-smoke` job that builds the six app images and runs a
+correctness-only tiny run, and the `benchmarks.yml` `workflow_dispatch` for the
+full/selected suites with artifact upload.
 
 - `ci.yml`: add a `benchmark-smoke` job (needs: `test`) running
   `make benchmark-smoke` — tiny seed, 1 short trial, low concurrency,
