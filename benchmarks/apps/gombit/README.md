@@ -57,6 +57,37 @@ Env vars (all optional, defaults match `benchmarks/compose.yml`):
 with no version segment; left at the framework default this app's own route
 surface wouldn't have matched its own control.
 
+### Under compose (containerized, with the §7 resource budget)
+
+The app is containerized (`Dockerfile`, built from the **repo root**) and wired
+into `benchmarks/compose.yml` with the §7 app ceiling (2 vCPU / 1 GiB). Because
+it applies **real Atlas migrations** (not AutoMigrate), the image also carries
+the `gombit` CLI and the pinned `atlas` binary (`ATLAS_IMAGE` in
+`benchmarks/config/versions.env`), and its entrypoint has three verbs —
+`migrate`, `seed`, `serve`. The `gombit_bench_gombit` database is created by the
+postgres init script on a fresh volume.
+
+```sh
+# fresh Postgres (the init script creates gombit_bench_gombit) + build/up gombit
+docker compose --env-file benchmarks/config/versions.env \
+  -f benchmarks/compose.yml up -d postgres gombit
+
+# apply migrations, then seed — one-shots, before the served container is measured
+docker compose --env-file benchmarks/config/versions.env \
+  -f benchmarks/compose.yml run --rm gombit migrate
+docker compose --env-file benchmarks/config/versions.env \
+  -f benchmarks/compose.yml run --rm gombit seed
+
+# confirm the §7 ceiling actually landed on the live container
+go run ./benchmarks/scripts/inspect-limits \
+  -container "$(docker compose -f benchmarks/compose.yml ps -q gombit)" \
+  -cpus 2 -memory 1g
+```
+
+`down -v` resets the Postgres volume (and re-runs the init script). The full
+six-app bring-up/`run-crud` loop is a later Phase 6 slice; this containerizes the
+second of the two Go apps on the same pattern as `gin-gorm`.
+
 ## Test
 
 ```sh
@@ -117,8 +148,11 @@ pointer to file it as its own issue.
 Implementation, migration, and both test suites are done and verified
 against real PostgreSQL (schema diffed statement-log-for-statement-log
 against `gin-gorm`'s N+1 behavior, and cross-checked live via
-`TestCrossImplementationFairness`). Still open (tracked in
+`TestCrossImplementationFairness`). Both Go apps now have `benchmarks/compose.yml`
+services with the §7 budget (see [Under compose](#under-compose-containerized-with-the-7-resource-budget)
+above). Still open (tracked in
 [docs/plans/BENCH-1-benchmark-suite.md](../../../docs/plans/BENCH-1-benchmark-suite.md)
-Phase 3b): wiring the cross-implementation fairness check into CI (needs a
+Phase 3b/6): wiring the cross-implementation fairness check into CI (needs a
 lighter seed-size mechanism than the canonical 1,000/100,000, which is
-Phase 8's concern), and `benchmarks/compose.yml` app services for both apps.
+Phase 8's concern), the four ecosystem apps' compose services, and the six-app
+bring-up/`run-crud` loop.
