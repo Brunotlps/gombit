@@ -1376,8 +1376,19 @@ in:
   `gombit db migrate` creates the DB and applies the Atlas migration
   in-container, seed completes, the service reaches `healthy` via `/livez`,
   `GET /api/projects` returns the canonical envelope (`total: 100000`), and
-  inspect-limits reads `enforced` (2 vCPU / 1 GiB). The four ecosystem apps are
-  the next slices.
+  inspect-limits reads `enforced` (2 vCPU / 1 GiB).
+- `benchmarks/apps/django/Dockerfile` + `docker-entrypoint.sh` + `ensure_db.py`
+  (first ecosystem app). Self-contained, so the build context is the app dir
+  (`python:3.12-slim`, no repo-root context). Three verbs
+  (`migrate`/`seed`/`serve`); `serve` is gunicorn (WSGI, §17) with
+  `GUNICORN_WORKERS` workers — the same value `settings.py` divides
+  `POOL_MAX_OPEN` by, kept in sync by the entrypoint. `migrate` creates
+  `gombit_bench_django` idempotently via `ensure_db.py` (psycopg, guarded
+  `CREATE DATABASE`, every bring-up — the #187 provisioning lesson, reused).
+  Verified end to end against a live container on an existing volume: migrate
+  creates the DB and applies migrations (a second migrate is a no-op), seed
+  completes, `healthy` via `/livez`, canonical envelope (`total: 100000`),
+  inspect-limits `enforced`. rails / laravel / nestjs are the next slices.
 - `benchmarks/internal/reslimits` + `benchmarks/scripts/inspect-limits`: the
   issue's "detect and report rather than silently pretend limits were applied"
   requirement. A compose budget is only an *intention*; the tool reads the

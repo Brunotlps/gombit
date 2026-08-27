@@ -1,7 +1,7 @@
 # PostgreSQL + the benchmark app services under test. App services are added
 # as each is containerized (Phase 6 compose loop): the two Go apps `gin-gorm`
-# (the reference control) and `gombit` (same API on the Gombit runtime) are in;
-# the four ecosystem apps are the next slices.
+# (the reference control) and `gombit` (same API on the Gombit runtime) plus the
+# `django` ecosystem app are in; rails / laravel / nestjs are the next slices.
 #
 # Version pin: issue #141 requires major.minor (or digest), not a
 # major-only floating tag. The pin lives once in
@@ -140,6 +140,47 @@ services:
     # same rule as gin-gorm: never probe the measured route.
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null 'http://127.0.0.1:8080/livez' || exit 1"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    deploy:
+      resources:
+        limits:
+          cpus: "${APP_CPUS:-2}"
+          memory: ${APP_MEMORY:-1g}
+
+  # The django app (issue #141 §7 app budget: 2 vCPU / 1 GiB) — Python/DRF
+  # ecosystem context, not a framework-tax control. Self-contained, so the build
+  # context is the app dir. Same three-verb bring-up as gombit; `migrate` ensures
+  # its own gombit_bench_django database. gunicorn (WSGI, §17) with
+  # GUNICORN_WORKERS workers, the value settings.py divides POOL_MAX_OPEN by:
+  #
+  #   docker compose ... up -d postgres
+  #   docker compose ... run --rm django migrate
+  #   docker compose ... run --rm django seed
+  #   docker compose ... up -d django
+  django:
+    build:
+      context: apps/django
+    image: bench-django:local
+    command: ["serve"]
+    environment:
+      DATABASE_URL: postgres://gombit:gombit@postgres:5432/gombit_bench_django?sslmode=disable
+      ADMIN_DATABASE_URL: postgres://gombit:gombit@postgres:5432/gombit_bench?sslmode=disable
+      TARGET_DB: gombit_bench_django
+      PORT: "8082"
+      GUNICORN_WORKERS: "4"
+      POOL_MAX_OPEN: "${POOL_MAX_OPEN:-20}"
+      DJANGO_ALLOWED_HOSTS: "127.0.0.1,localhost"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8082:8082"
+    # /livez returns 200 with no DB touch (config/urls.py) — never the measured
+    # route. The slim image has no wget/curl, so probe with python's urllib.
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request as u,sys; sys.exit(0 if u.urlopen('http://127.0.0.1:8082/livez').status==200 else 1)\""]
       interval: 3s
       timeout: 3s
       retries: 20
