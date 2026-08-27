@@ -63,30 +63,33 @@ The app is containerized (`Dockerfile`, built from the **repo root**) and wired
 into `benchmarks/compose.yml` with the §7 app ceiling (2 vCPU / 1 GiB). Because
 it applies **real Atlas migrations** (not AutoMigrate), the image also carries
 the `gombit` CLI and the pinned `atlas` binary (`ATLAS_IMAGE` in
-`benchmarks/config/versions.env`), and its entrypoint has three verbs —
-`migrate`, `seed`, `serve`. The `gombit_bench_gombit` database is created by the
-postgres init script on a fresh volume.
+`benchmarks/config/versions.env`, the *-alpine* variant so the binary matches
+the runtime base), plus a psql client, and its entrypoint has three verbs —
+`migrate`, `seed`, `serve`. `serve` does **not** migrate, so run them in order.
+The `gombit_bench_gombit` database is created by the `migrate` verb if absent
+(idempotent, every bring-up — not by a fresh-volume init script, which wouldn't
+fire on this suite's already-initialized Postgres volume):
 
 ```sh
-# fresh Postgres (the init script creates gombit_bench_gombit) + build/up gombit
 docker compose --env-file benchmarks/config/versions.env \
-  -f benchmarks/compose.yml up -d postgres gombit
+  -f benchmarks/compose.yml up -d postgres
 
-# apply migrations, then seed — one-shots, before the served container is measured
+# apply migrations (also creates gombit_bench_gombit if missing), then seed
 docker compose --env-file benchmarks/config/versions.env \
   -f benchmarks/compose.yml run --rm gombit migrate
 docker compose --env-file benchmarks/config/versions.env \
   -f benchmarks/compose.yml run --rm gombit seed
 
-# confirm the §7 ceiling actually landed on the live container
+# now serve, and confirm the §7 ceiling actually landed on the live container
+docker compose --env-file benchmarks/config/versions.env \
+  -f benchmarks/compose.yml up -d gombit
 go run ./benchmarks/scripts/inspect-limits \
   -container "$(docker compose -f benchmarks/compose.yml ps -q gombit)" \
   -cpus 2 -memory 1g
 ```
 
-`down -v` resets the Postgres volume (and re-runs the init script). The full
-six-app bring-up/`run-crud` loop is a later Phase 6 slice; this containerizes the
-second of the two Go apps on the same pattern as `gin-gorm`.
+The full six-app bring-up/`run-crud` loop is a later Phase 6 slice; this
+containerizes the second of the two Go apps on the same pattern as `gin-gorm`.
 
 ## Test
 

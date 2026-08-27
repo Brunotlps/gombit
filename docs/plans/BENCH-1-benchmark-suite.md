@@ -1367,15 +1367,17 @@ in:
   app.
 - `benchmarks/apps/gombit/Dockerfile` + `docker-entrypoint.sh` (second Go app,
   same pattern) — but it applies **real Atlas migrations**, so the image also
-  carries the `gombit` CLI and the pinned `atlas` binary (`ATLAS_IMAGE` in
-  `versions.env`, multi-stage COPY), the entrypoint has three verbs
-  (`migrate`/`seed`/`serve`), and it uses its own `gombit_bench_gombit` database
-  created by a Postgres init script (`benchmarks/compose/initdb/`, fresh-volume).
-  Verified end to end against a live container: init script creates the second
-  DB, `gombit db migrate` applies the Atlas migration in-container, seed
-  completes, the service reaches `healthy` via `/livez`, `GET /api/projects`
-  returns the canonical envelope (`total: 100000`), and inspect-limits reads
-  `enforced` (2 vCPU / 1 GiB). The four ecosystem apps are the next slices.
+  carries the `gombit` CLI, the pinned `atlas` binary (`ATLAS_IMAGE` in
+  `versions.env`, the *-alpine* variant so the musl binary matches the runtime
+  base, multi-stage COPY), and a psql client. The entrypoint has three verbs
+  (`migrate`/`seed`/`serve`; `serve` does not migrate); `migrate` **creates the
+  `gombit_bench_gombit` database if absent** (idempotent, every bring-up) then
+  applies the migration. Verified end to end against a live container:
+  `gombit db migrate` creates the DB and applies the Atlas migration
+  in-container, seed completes, the service reaches `healthy` via `/livez`,
+  `GET /api/projects` returns the canonical envelope (`total: 100000`), and
+  inspect-limits reads `enforced` (2 vCPU / 1 GiB). The four ecosystem apps are
+  the next slices.
 - `benchmarks/internal/reslimits` + `benchmarks/scripts/inspect-limits`: the
   issue's "detect and report rather than silently pretend limits were applied"
   requirement. A compose budget is only an *intention*; the tool reads the

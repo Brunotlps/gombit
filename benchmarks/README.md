@@ -8,7 +8,6 @@ Full plan: [docs/plans/BENCH-1-benchmark-suite.md](../docs/plans/BENCH-1-benchma
 ```text
 benchmarks/
 ├── compose.yml          PostgreSQL + the two Go app services (gin-gorm, gombit; §7 limits); ecosystem apps land next
-├── compose/initdb/      Postgres init SQL (creates gombit's separate gombit_bench_gombit database)
 ├── config/
 │   └── versions.env     pinned load generator (k6), Postgres image, resource limits, workload defaults
 ├── docs/
