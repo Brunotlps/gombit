@@ -6,6 +6,7 @@ import (
 
 	"github.com/gombit-dev/gombit/benchmarks/internal/footprint"
 	"github.com/gombit-dev/gombit/benchmarks/internal/metadata"
+	"github.com/gombit-dev/gombit/benchmarks/internal/microbench"
 	"github.com/gombit-dev/gombit/benchmarks/internal/result"
 )
 
@@ -38,11 +39,34 @@ func TestRenderCRUDCarriesTailsAndCoVFlag(t *testing.T) {
 		PostgresVersion: "postgres:16.4-alpine", ResourceLimits: "enforced", BenchmarkTool: "grafana/k6:0.55.0",
 	}
 
-	out := Render(results, prints, meta)
+	// All four rungs at the headline (valid-post) scenario, with samples so the
+	// median is exercised; a wrong-scenario row must be excluded.
+	micro := []microbench.Row{
+		{Stack: "nethttp", Scenario: "valid-post", NsPerOp: []float64{820, 800}, BytesPerOp: 1425, AllocsPerOp: 14},
+		{Stack: "gin", Scenario: "valid-post", NsPerOp: []float64{900}, BytesPerOp: 1458, AllocsPerOp: 15},
+		{Stack: "huma", Scenario: "valid-post", NsPerOp: []float64{1078}, BytesPerOp: 1467, AllocsPerOp: 17},
+		{Stack: "gombit", Scenario: "valid-post", NsPerOp: []float64{3040, 3160}, BytesPerOp: 4901, AllocsPerOp: 51},
+		{Stack: "gin", Scenario: "json", NsPerOp: []float64{500}, BytesPerOp: 64, AllocsPerOp: 1}, // wrong scenario -> excluded
+	}
+	out := Render(results, prints, micro, meta)
 
-	// Framework-tax section always present (even without data).
-	if !strings.Contains(out, "### Framework tax") || !strings.Contains(out, "BenchmarkFrameworkTax") {
-		t.Errorf("framework-tax section/placeholder missing:\n%s", out)
+	// Framework-tax table: validated-POST ladder, median ns/op, relative column.
+	// net/http median (820,800)=810 baseline; gombit median (3040,3160)=3100 -> 3.8×.
+	for _, want := range []string{
+		"### Framework tax", "validated typed POST",
+		"| stack | ns/op | B/op | allocs/op | vs net/http |",
+		"| net/http | 810 | 1425 | 14 | 1.0× |",
+		"| Gombit | 3100 | 4901 | 51 | 3.8× |",
+	} {
+		if !strings.Contains(out, want) {
+			t.Errorf("framework-tax table missing %q\n%s", want, out)
+		}
+	}
+	if strings.Index(out, "| net/http |") > strings.Index(out, "| Gombit |") {
+		t.Errorf("framework-tax rows not in ladder order:\n%s", out)
+	}
+	if strings.Contains(out, "| 500 |") {
+		t.Errorf("wrong-scenario (json) row leaked into the framework-tax table:\n%s", out)
 	}
 	// CRUD table: headline concurrency, req/s + tails, ⚠ on the noisy row only.
 	for _, want := range []string{
@@ -77,22 +101,39 @@ func TestRenderCRUDCarriesTailsAndCoVFlag(t *testing.T) {
 	}
 }
 
+func TestFrameworkTaxIncompleteLadderNotPublished(t *testing.T) {
+	// Only three of the four rungs -> must render "Incomplete", not a holey table.
+	micro := []microbench.Row{
+		{Stack: "nethttp", Scenario: "valid-post", NsPerOp: []float64{800}},
+		{Stack: "gin", Scenario: "valid-post", NsPerOp: []float64{900}},
+		{Stack: "huma", Scenario: "valid-post", NsPerOp: []float64{1000}},
+		// gombit missing
+	}
+	out := Render(nil, nil, micro, metadata.Metadata{})
+	if !strings.Contains(out, "Incomplete") {
+		t.Errorf("a missing rung should render Incomplete, not a partial ladder:\n%s", out)
+	}
+	if strings.Contains(out, "| stack | ns/op") {
+		t.Errorf("no table should be published for an incomplete ladder:\n%s", out)
+	}
+}
+
 func TestPickConcurrencyFallsBackToMax(t *testing.T) {
 	// No headline (100) level -> the highest present (500) is published.
 	results := []result.Result{
 		crudRow("x", 10, 1, 100, 1, 1, 1),
 		crudRow("x", 500, 1, 90, 2, 2, 2),
 	}
-	out := Render(results, nil, metadata.Metadata{})
+	out := Render(results, nil, nil, metadata.Metadata{})
 	if !strings.Contains(out, "At **500 concurrent clients**") {
 		t.Errorf("expected fallback to the max concurrency:\n%s", out)
 	}
 }
 
 func TestRenderEmptyDataIsHonest(t *testing.T) {
-	out := Render(nil, nil, metadata.Metadata{})
+	out := Render(nil, nil, nil, metadata.Metadata{})
 	for _, want := range []string{
-		"### Framework tax", "run `make benchmark-crud-all`", "run `make benchmark-footprint`",
+		"### Framework tax", "run `make benchmark-micro`", "run `make benchmark-crud-all`", "run `make benchmark-footprint`",
 		"metadata not yet recorded",
 	} {
 		if !strings.Contains(out, want) {

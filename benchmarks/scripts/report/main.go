@@ -16,6 +16,7 @@ import (
 
 	"github.com/gombit-dev/gombit/benchmarks/internal/footprint"
 	"github.com/gombit-dev/gombit/benchmarks/internal/metadata"
+	"github.com/gombit-dev/gombit/benchmarks/internal/microbench"
 	"github.com/gombit-dev/gombit/benchmarks/internal/report"
 	"github.com/gombit-dev/gombit/benchmarks/internal/result"
 )
@@ -30,6 +31,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	var (
 		resultsPath   = fs.String("results", "benchmarks/results/latest/results.json", "throughput results.json")
 		footprintPath = fs.String("footprint", "benchmarks/results/latest/footprint.json", "footprint.json")
+		microPath     = fs.String("micro", "benchmarks/results/latest/microbench.json", "framework-tax microbench.json")
 		metadataPath  = fs.String("metadata", "benchmarks/results/latest/metadata.json", "run metadata.json")
 		readmePath    = fs.String("readme", "README.md", "README to regenerate / check")
 		check         = fs.Bool("check", false, "verify the README block matches the data instead of rewriting it")
@@ -46,6 +48,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if err != nil {
 		return fail(stderr, err)
 	}
+	micro, err := readMicro(*microPath)
+	if err != nil {
+		return fail(stderr, err)
+	}
 	meta, err := readMetadata(*metadataPath)
 	if err != nil {
 		return fail(stderr, err)
@@ -55,7 +61,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return fail(stderr, err)
 	}
 
-	block := report.Render(results, prints, meta)
+	block := report.Render(results, prints, micro, meta)
 
 	if *check {
 		ok, err := report.InSync(string(readme), block)
@@ -100,6 +106,15 @@ func readFootprint(path string) ([]footprint.Footprint, error) {
 	}
 	defer func() { _ = f.Close() }()
 	return footprint.ReadJSON(f)
+}
+
+func readMicro(path string) ([]microbench.Row, error) {
+	f, err := open(path)
+	if f == nil || err != nil {
+		return nil, err
+	}
+	defer func() { _ = f.Close() }()
+	return microbench.ReadJSON(f)
 }
 
 func readMetadata(path string) (metadata.Metadata, error) {

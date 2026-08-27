@@ -1610,8 +1610,9 @@ two code leftovers, all fixed.
 **README `## Performance` generator + drift check + methodology — done.**
 `benchmarks/internal/report` renders the block and replaces the content between
 the `benchmark-results` markers: a **framework-tax** section (net/http → Gin →
-Huma → Gombit — the headline abstraction-cost question; a placeholder until the
-`go test -bench` rows are persisted); the **CRUD** table at a single headline
+Huma → Gombit — the headline abstraction-cost question; the validated-POST ladder
+in median ns/op with a relative-to-net/http column, from `microbench.json`, or an
+honest incomplete/placeholder line when a rung is missing); the **CRUD** table at a single headline
 concurrency (100) with median req/s **and** median p50/p95/p99 and a ⚠ flag on
 high-variance groups (from `internal/summary`, §13 B / §7); the **container
 footprint** table from `footprint.json` (CPU labelled as work done, not a
@@ -1622,16 +1623,28 @@ README block + `summary.md`; `make benchmark-report-check` is the local drift
 guard (wiring it into CI is Phase 8 — the README says so, no false CI claim).
 The root README has the markers + a `## Performance` section, and
 `benchmarks/docs/methodology.md` carries the full method and the required "How
-not to interpret these results" section. Unit-tested (CRUD tails + CoV flag +
+not to interpret these results" section. The **framework-tax section is now
+data-backed**: `benchmarks/internal/microbench` parses `go test -bench` output
+(keeping **every `-count` ns/op sample** — B/op/allocs/op are deterministic
+scalars — so a statistical summary is a non-breaking addition, not lost data),
+requires all five scenarios per stack (an incomplete run fails rather than
+publishing a partial stack), and merges **whole stacks** (a re-run can't leave a
+stale scenario). `make benchmark-micro` runs each stack as its own process
+(truncating `microbench.json` first and surfacing a `go test` failure/panic
+rather than piping it away), and the report publishes the **validated-POST**
+ladder (§13 A's typed path, not the Hello-World GET) as median ns/op / B/op /
+allocs/op with a `vs net/http` relative column, only when all four rungs are
+present (else an honest "incomplete" line). Unit-tested (CRUD tails + CoV flag +
 headline-concurrency fallback, footprint excludes the embedded variant,
-framework-tax placeholder present, methodology from metadata, marker
-replace/InSync/missing-marker) and the CLI (renders a real decoded `results.json`,
-write→check clean, drift detected, missing markers fail). **Still open in Phase
-7:** persisting the framework-tax `go test -bench` rows so that section fills;
-running the full suite on a dedicated host and committing the canonical
-`results/latest/` snapshot (so the block holds real numbers rather than the
-honest "not yet recorded" placeholders); and wiring `benchmark-report-check`
-into CI (Phase 8).
+framework-tax ladder order + median + relative + fail-closed-on-missing-rung, the
+bench parser incl. keeps-all-samples/incomplete-run-rejected/noise, whole-stack
+merge, JSON, methodology, marker replace/InSync/missing-marker) and the CLIs
+(report renders a real decoded `results.json` **and** `microbench.json`; microbench
+accumulates stacks and fails on an incomplete run); verified end to end — a real
+ladder. **Still open in Phase 7:** running
+the full suite on a dedicated host and committing the canonical `results/latest/`
+snapshot (so the block holds real numbers rather than the honest "not yet
+recorded" placeholders); and wiring `benchmark-report-check` into CI (Phase 8).
 
 - `benchmarks/internal` summarizer: `results.json` → `results.csv` →
   `summary.md`, plus the README marker-block generator (§4).

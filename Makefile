@@ -1,6 +1,6 @@
-# Benchmark developer UX (issue #141 §10). More targets (benchmark-micro,
-# -auth, -techempower, -footprint, -report, and the all-in-one benchmark) land
-# with their phases; this file starts with the pieces that exist.
+# Benchmark developer UX (issue #141 §10). The crud/crud-all/micro/footprint/
+# summary/report/metadata targets are here; -auth, -techempower, and the
+# all-in-one benchmark land with their phases.
 #
 # Run configuration is sourced from benchmarks/config/versions.env (the single
 # source of truth for the pinned k6 version, resource limits, and workload
@@ -26,7 +26,26 @@ OUT_DIR ?= benchmarks/results/latest
 # applied verdict per app (via inspect-limits).
 INTENDED_LIMITS ?= intended (applied only under benchmark-crud-all): app $(APP_CPUS)cpu/$(APP_MEMORY); postgres $(POSTGRES_CPUS)cpu/$(POSTGRES_MEMORY)
 
-.PHONY: benchmark-crud benchmark-crud-all benchmark-footprint benchmark-summary benchmark-metadata benchmark-report benchmark-report-check
+.PHONY: benchmark-crud benchmark-crud-all benchmark-micro benchmark-footprint benchmark-summary benchmark-metadata benchmark-report benchmark-report-check
+
+# Framework-tax microbenchmark sample count (-count). Every ns/op sample is
+# persisted to microbench.json and the report publishes the median, so this is
+# the number of samples per scenario, not a warmup knob.
+MICRO_COUNT ?= 10
+
+## benchmark-micro: run the framework-tax microbenchmark (net/http -> Gin ->
+## Huma -> Gombit) and persist ns/op / B/op / allocs/op to OUT_DIR/microbench.json
+## for the report. Each stack is its own `go test` process (a framework.App
+## constructor mutates a process global), piped through the microbench parser.
+benchmark-micro:
+	@mkdir -p "$(OUT_DIR)"
+	@rm -f "$(OUT_DIR)/microbench.json"
+	bash -c 'set -euo pipefail; for s in nethttp gin huma gombit; do \
+		echo "benchmark-micro: $$s"; \
+		out="$$(go test ./benchmarks/micro/$$s -bench=BenchmarkFrameworkTax -benchmem -run="^$$" -count=$(MICRO_COUNT))" \
+			|| { echo "$$out" >&2; echo "benchmark-micro: $$s failed" >&2; exit 1; }; \
+		printf "%s\n" "$$out" | go run ./benchmarks/scripts/microbench -stack $$s -out "$(OUT_DIR)/microbench.json"; \
+	done'
 
 ## benchmark-report: regenerate the derived Markdown from OUT_DIR — the root
 ## README's `## Performance` block and summary.md. Markdown is generated, never
@@ -37,7 +56,7 @@ benchmark-report:
 	else echo "benchmark-report: no $(OUT_DIR)/results.json yet; skipping summary.md"; fi
 	go run ./benchmarks/scripts/report \
 		-results "$(OUT_DIR)/results.json" -footprint "$(OUT_DIR)/footprint.json" \
-		-metadata "$(OUT_DIR)/metadata.json"
+		-micro "$(OUT_DIR)/microbench.json" -metadata "$(OUT_DIR)/metadata.json"
 
 ## benchmark-report-check: fail if the committed README's Performance block no
 ## longer matches OUT_DIR (drift). Run before committing; wiring it into CI is
@@ -45,7 +64,7 @@ benchmark-report:
 benchmark-report-check:
 	go run ./benchmarks/scripts/report -check \
 		-results "$(OUT_DIR)/results.json" -footprint "$(OUT_DIR)/footprint.json" \
-		-metadata "$(OUT_DIR)/metadata.json"
+		-micro "$(OUT_DIR)/microbench.json" -metadata "$(OUT_DIR)/metadata.json"
 
 ## benchmark-footprint: measure the operational footprint (container-start cold
 ## start median/p95, idle memory, memory + CPU under load) of all six
