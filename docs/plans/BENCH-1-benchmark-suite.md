@@ -1400,7 +1400,19 @@ in:
   Puma. Verified end to end against a live container: db:create + migrate
   (second run a no-op), seed, `healthy` via `/livez`, Puma comes up in cluster
   mode with 2 workers on `0.0.0.0:8083`, canonical envelope, inspect-limits
-  `enforced`. laravel / nestjs are the next slices.
+  `enforced`.
+- `benchmarks/apps/laravel/Dockerfile` + `docker-entrypoint.sh` + `ensure_db.php`
+  (PHP/Laravel ecosystem app). `php:8.3-fpm` with PHP extensions
+  (`pdo_pgsql`/`mbstring`/`zip`) installed via `mlocati/php-extension-installer`,
+  `composer install --no-dev`, and **nginx + PHP-FPM in one container** (the
+  `deploy/` production configs; `pm=static` 20 workers = the pinned connection
+  ceiling), never `php artisan serve`. Three verbs; `migrate` provisions
+  `gombit_bench_laravel` via `ensure_db.php` (PDO, guarded `CREATE DATABASE`,
+  every bring-up); `APP_KEY` generated per boot. Verified end to end against a
+  live container: ensure_db creates the DB + `artisan migrate` (second run a
+  no-op), seed, `healthy` via `/livez`, `GET /api/projects` served through
+  nginx→php-fpm returns the canonical envelope, inspect-limits `enforced`.
+  nestjs is the last ecosystem slice.
 - `benchmarks/internal/reslimits` + `benchmarks/scripts/inspect-limits`: the
   issue's "detect and report rather than silently pretend limits were applied"
   requirement. A compose budget is only an *intention*; the tool reads the

@@ -1,7 +1,7 @@
 # PostgreSQL + the benchmark app services under test. App services are added
 # as each is containerized (Phase 6 compose loop): the two Go apps `gin-gorm`
 # (the reference control) and `gombit` (same API on the Gombit runtime) plus the
-# `django` and `rails` ecosystem apps are in; laravel / nestjs are the next slices.
+# `django`, `rails`, and `laravel` ecosystem apps are in; nestjs is the last.
 #
 # Version pin: issue #141 requires major.minor (or digest), not a
 # major-only floating tag. The pin lives once in
@@ -223,6 +223,48 @@ services:
     # logs — never the measured route. The slim image has ruby but no wget/curl.
     healthcheck:
       test: ["CMD-SHELL", "ruby -rnet/http -e \"exit(Net::HTTP.get_response(URI('http://127.0.0.1:8083/livez')).code == '200' ? 0 : 1)\""]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    deploy:
+      resources:
+        limits:
+          cpus: "${APP_CPUS:-2}"
+          memory: ${APP_MEMORY:-1g}
+
+  # The laravel app (issue #141 §7 app budget: 2 vCPU / 1 GiB) — PHP/Eloquent
+  # ecosystem context, run the traditional way: nginx + PHP-FPM in one container
+  # (pm=static, 20 workers = the pinned connection ceiling), re-bootstrapping per
+  # request (not a persistent worker). Self-contained build context. `migrate`
+  # ensures its own gombit_bench_laravel database (ensure_db.php); APP_KEY is
+  # generated per boot (no committed secret):
+  #
+  #   docker compose ... up -d postgres
+  #   docker compose ... run --rm laravel migrate
+  #   docker compose ... run --rm laravel seed
+  #   docker compose ... up -d laravel
+  laravel:
+    build:
+      context: apps/laravel
+    image: bench-laravel:local
+    command: ["serve"]
+    environment:
+      DATABASE_URL: postgres://gombit:gombit@postgres:5432/gombit_bench_laravel?sslmode=disable
+      ADMIN_DATABASE_URL: postgres://gombit:gombit@postgres:5432/gombit_bench?sslmode=disable
+      TARGET_DB: gombit_bench_laravel
+      DB_CONNECTION: pgsql
+      APP_ENV: production
+      APP_DEBUG: "false"
+      LOG_LEVEL: warning
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8084:8084"
+    # /livez -> Laravel's built-in health route (200, no DB), served by nginx ->
+    # php-fpm — never the measured route. The php image has php but no wget/curl.
+    healthcheck:
+      test: ["CMD-SHELL", "php -r \"exit(@file_get_contents('http://127.0.0.1:8084/livez') !== false ? 0 : 1);\""]
       interval: 3s
       timeout: 3s
       retries: 20
