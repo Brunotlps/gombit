@@ -1,0 +1,103 @@
+name: Benchmarks (manual)
+
+# Manual, on-demand benchmark runs (issue #141 §11 "Manual full benchmark
+# workflow"). Unlike the per-PR benchmark-smoke gate, this runs a full or
+# selected suite and uploads the structured outputs as artifacts. It is
+# workflow_dispatch ONLY — never on push/PR.
+#
+# It cannot touch the published README or the committed snapshot, by
+# construction: `full` runs the three MEASUREMENT targets plus summary, never
+# `make benchmark` (whose last stage rewrites the repo-root README.md), and every
+# suite writes to benchmarks/results/dispatch, never results/latest. Regenerating
+# the committed README ## Performance block stays the reviewed, manual local
+# `make benchmark` + commit.
+#
+# The workload pins default to a REDUCED, runner-survivable protocol (see
+# run-suite.sh), NOT the versions.env canonical 1/10/100/500/1000 x 5 x 30s sweep
+# this repo could not sustain on a stronger single host: a dispatch aimed at a
+# noisy 4-vCPU runner must not default to the dedicated-host recipe. Numbers here
+# are for inspection, not a performance gate (§11); for a citable canonical run,
+# use a dedicated host and set the pins explicitly.
+
+on:
+  workflow_dispatch:
+    inputs:
+      suite:
+        description: "Suite to run"
+        type: choice
+        options:
+          - full
+          - crud
+          - footprint
+          - micro
+        default: full
+      concurrency:
+        description: "CONCURRENCY; blank = reduced default 1,10,100 (set e.g. 1,10,100,500,1000 on a dedicated runner)"
+        type: string
+        default: ""
+      trials:
+        description: "TRIALS; blank = reduced default 3"
+        type: string
+        default: ""
+      duration_seconds:
+        description: "DURATION_SECONDS; blank = reduced default 10"
+        type: string
+        default: ""
+      warmup_seconds:
+        description: "WARMUP_SECONDS; blank = reduced default 3"
+        type: string
+        default: ""
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    name: Benchmark (${{ inputs.suite }})
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # A crud/full dispatch records gombit's framework version via
+          # `git describe --tags` into metadata.json; fetch full history + tags
+          # so the artifact carries the tag-relative version (e.g. v0.1.3-…) the
+          # committed snapshot uses, not the default depth-1 clone's bare SHA.
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Inputs are bound to the environment (never interpolated into the shell
+      # string) and consumed by the tested dispatcher, which forwards only the
+      # pins that are set. Docker + Compose v2 are preinstalled on ubuntu-latest;
+      # k6 and Postgres run as pinned images.
+      - name: Run suite
+        env:
+          SUITE: ${{ inputs.suite }}
+          CONCURRENCY: ${{ inputs.concurrency }}
+          TRIALS: ${{ inputs.trials }}
+          DURATION_SECONDS: ${{ inputs.duration_seconds }}
+          WARMUP_SECONDS: ${{ inputs.warmup_seconds }}
+        run: bash benchmarks/scripts/run-suite.sh
+
+      # Upload whatever the selected suite produced (a partial suite writes only
+      # some files); if:always so artifacts survive a later-step failure.
+      - name: Upload results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-${{ inputs.suite }}-${{ github.run_number }}
+          path: |
+            benchmarks/results/dispatch/results.json
+            benchmarks/results/dispatch/results.csv
+            benchmarks/results/dispatch/summary.md
+            benchmarks/results/dispatch/metadata.json
+            benchmarks/results/dispatch/footprint.json
+            benchmarks/results/dispatch/footprint.csv
+            benchmarks/results/dispatch/microbench.json
+            benchmarks/results/dispatch/raw/
+          if-no-files-found: ignore

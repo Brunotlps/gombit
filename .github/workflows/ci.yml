@@ -161,6 +161,38 @@ jobs:
       - name: Run benchmark smoke
         run: make benchmark-smoke
 
+  benchmark-scripts:
+    name: Benchmark script tests
+    # The benchmark orchestration/dispatch scripts carry Docker-free stub tests
+    # (they fake docker/compose/make and go seams), so run them in merge CI —
+    # without this, nothing in the pull_request graph exercises the run-suite /
+    # benchmark-smoke / crud-all / footprint mappings and a broken one merges
+    # green. Pure bash + make; no Docker, no real benchmark run.
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # run-crud-all_test.sh derives gombit's version via `git describe
+          # --tags` and asserts it is version-shaped. The default depth-1,
+          # tagless clone would make describe fall back to a bare SHA and fail
+          # that assertion, so fetch full history + tags.
+          fetch-depth: 0
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Run benchmark script tests
+        run: |
+          bash benchmarks/scripts/run-suite_test.sh
+          bash benchmarks/scripts/benchmark-target_test.sh
+          bash benchmarks/scripts/run-crud-all_test.sh
+          bash benchmarks/scripts/footprint-all_test.sh
+
   database-sqlite:
     name: Database (sqlite)
     needs: test

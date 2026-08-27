@@ -1776,22 +1776,71 @@ so the smoke now runs the container path for all six. `benchmark-target_test.sh`
 locks the target's contract without Docker (builds all six via `compose build`,
 runs all six with the tiny params, exports the small seed, and — the safety
 property — passes a throwaway `OUT_DIR`, never `results/latest`; regression-
-checked). **Still open in Phase 8:** the `benchmarks.yml` `workflow_dispatch` for
-the full/selected suites with artifact upload.
+checked).
+
+**Manual `benchmarks.yml` workflow — done. Phase 8 complete.**
+`.github/workflows/benchmarks.yml` is `workflow_dispatch`-only (never push/PR)
+with a `suite` choice (`full | crud | footprint | micro`) plus optional
+`concurrency` / `trials` / `duration_seconds` / `warmup_seconds` overrides. The
+dispatch mapping is a tested script (`benchmarks/scripts/run-suite.sh` +
+`run-suite_test.sh`), not inline YAML.
+
+Two things the review of the first cut got right and this fixes:
+
+- **`full` measures, it does not publish.** It runs the three measurement targets
+  plus `benchmark-summary` — deliberately NOT `make benchmark`, whose last stage
+  (`benchmark-report`) rewrites the repo-root `README.md` `## Performance` block
+  from `OUT_DIR`. Redirecting `OUT_DIR` to `dispatch/` protects `results/latest`
+  but NOT the README; *dropping the report writer* is the actual lock. (The first
+  cut mapped `full` → `make benchmark` and leaned on "the workflow never commits"
+  — true on Actions, but a local `run-suite.sh SUITE=full` would then rewrite
+  README and break `benchmark-report-drift`.) So the dispatch cannot touch the
+  published README by construction, not just by not-committing.
+- **Reduced, runner-survivable pin defaults.** Blank pins default to
+  `1,10,100 × 3 × 10s` (the protocol the committed snapshot already used on a
+  stronger host), NOT the `versions.env` canonical 1/10/100/500/1000 × 5 × 30s
+  sweep this repo could not sustain on a single host and which `run-crud`
+  fail-closes on. Aiming the dedicated-host recipe at a noisy 4-vCPU runner was
+  the other half of the first cut's problem. Override the pins explicitly for a
+  wider run on a dedicated runner.
+
+It writes to `benchmarks/results/dispatch/` — NOT `results/latest` (gitignored,
+so a local dispatch is never committed) — and uploads `results.{json,csv}`,
+`summary.md`, `metadata.json`, `footprint.{json,csv}`, `microbench.json`, and the
+raw per-trial summaries (`if-no-files-found: ignore`, since a selected suite
+writes only some). The `auth` / `techempower` suites are intentionally NOT
+offered: those workloads don't exist yet (Phase 5), and a choice mapping to a
+missing target would be a broken caption.
+
+**The benchmark script tests now run in merge CI.** A new `benchmark-scripts` job
+(needs: `build`) runs `run-suite_test.sh`, `benchmark-target_test.sh`,
+`run-crud-all_test.sh`, and `footprint-all_test.sh` — all Docker-free stub suites
+that were previously not on any `pull_request` path, so a broken mapping could
+merge green. The job checks out with `fetch-depth: 0`: `run-crud-all_test.sh`
+exercises the real `app_identity`, which derives gombit's version from
+`git describe --tags`, and the default depth-1 tagless clone would make describe
+fall back to a bare SHA that fails the version-shaped assertion (the dispatch
+workflow fetches full history for the same reason — so a run's recorded gombit
+version is the tag-relative string the committed snapshot uses). `run-suite_test.sh` asserts `full` never invokes `benchmark-report`
+/ bare `benchmark`, that the reduced pins default in (500/1000 never appear
+unless set), and injection-safety at the shell env→argv layer (an explicit note
+that this is not a claim about GNU make's own `$(shell …)` expansion, which the
+exposed inputs don't reach). Verified: `actionlint` clean on both workflows; the
+`micro` suite driven through `run-suite.sh` end to end wrote `microbench.json` to
+the dispatch dir and left `results/latest` and README untouched.
 
 - ~~`ci.yml`: add a `benchmark-smoke` job (needs: `test`) running
   `make benchmark-smoke` — small deterministic seed, 1 short trial, low
-  concurrency, correctness-only, all six apps, on every PR.~~ **Done** (see
-  above).
-- New `.github/workflows/benchmarks.yml`: `workflow_dispatch` with an input
-  to select `micro | crud | auth | techempower | footprint | full`; uploads
-  `metadata.json`, raw results, `results.json`, `results.csv`, `summary.md`
-  as artifacts. Explicitly does not overwrite committed README numbers
-  automatically — that stays a reviewed, manual step (Phase 7's local run).
-- **AC:** smoke job is green on PRs and fails clearly if any of the 6 apps'
-  Docker builds break, a route regresses, or the result parser breaks;
-  manual workflow completes and uploads artifacts without touching
-  `main`'s README.
+  concurrency, correctness-only, all six apps, on every PR.~~ **Done.**
+- ~~New `.github/workflows/benchmarks.yml`: `workflow_dispatch` with an input
+  to select the suite; uploads `metadata.json`, raw results, `results.json`,
+  `results.csv`, `summary.md` as artifacts; does not overwrite committed README
+  numbers.~~ **Done** (suite choices scoped to the workloads that exist —
+  `full | crud | footprint | micro`; `auth`/`techempower` land with Phase 5).
+- **AC — met:** the smoke job fails clearly on a broken build, endpoint,
+  schema/migration, orchestration, or parser across all six containerized apps
+  (§11); the manual workflow runs a selected suite and uploads artifacts without
+  committing to `main`.
 
 ---
 
