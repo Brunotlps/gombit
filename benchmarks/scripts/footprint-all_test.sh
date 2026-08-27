@@ -93,6 +93,24 @@ measure_container gin-gorm || rc=$?
 [ "$rc" -ne 0 ] || note "unhealthy app should fail"
 called "compose stop gin-gorm" || note "SUT not stopped after health failure"
 
+# ---- 6. main runs to a clean exit under set -u (the EXIT-trap bindir bug) ----
+# main is guarded, so drive the real script as a subprocess with docker/go
+# stubbed. APPS=" " (a single space) stays set — so ${APPS:-default} does not
+# re-expand to the six apps — but word-splits to nothing, so the measured loop
+# is empty and main still reaches the EXIT trap. A `local bindir` (unbound in the
+# trap's global scope) makes `set -u` abort with exit 1 there.
+shimdir="$(mktemp -d)"
+printf '#!/bin/sh\nexit 0\n' > "$shimdir/docker"
+printf '#!/bin/sh\nexit 0\n' > "$shimdir/go"
+chmod +x "$shimdir/docker" "$shimdir/go"
+if PATH="$shimdir:$PATH" APPS=" " OUT_DIR="$(mktemp -d)" \
+     bash benchmarks/scripts/footprint-all.sh >/dev/null 2>&1; then
+  : # exit 0 — trap cleaned up without an unbound-variable abort
+else
+  note "footprint-all.sh main did not exit 0 under set -u (EXIT-trap bindir regression)"
+fi
+rm -rf "$shimdir"
+
 if [ "$fail" -ne 0 ]; then
   echo "footprint-all_test: FAILED" >&2
   exit 1

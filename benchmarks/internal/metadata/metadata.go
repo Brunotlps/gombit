@@ -100,10 +100,14 @@ func Collect(ctx context.Context, opts Options) Metadata {
 	dockerVersion, _ := run(ctx, "docker", "version", "--format", "{{.Server.Version}}")
 	composeVersion, _ := run(ctx, "docker", "compose", "version", "--short")
 
-	// git_dirty is set only when the porcelain status actually succeeded;
-	// a failed check (or missing git) leaves it nil -> JSON null -> "unknown".
+	// git_dirty answers "what source code ran?", so it excludes
+	// benchmarks/results/ — a suite writes result files for earlier apps before
+	// Collect runs for a later one, which would otherwise flag every multi-app
+	// run dirty even on a clean source tree. It is set only when the porcelain
+	// status actually succeeded; a failed check (or missing git) leaves it nil
+	// -> JSON null -> "unknown".
 	var gitDirty *bool
-	if status, statusErr := run(ctx, "git", "status", "--porcelain"); statusErr == nil {
+	if status, statusErr := run(ctx, "git", "status", "--porcelain", "--", ".", ":(exclude)benchmarks/results"); statusErr == nil {
 		dirty := strings.TrimSpace(status) != ""
 		gitDirty = &dirty
 	}

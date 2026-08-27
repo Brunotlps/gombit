@@ -69,11 +69,13 @@ the root README's `## Performance` block (and `summary.md`) from those files, an
 `make benchmark-report-check` fails on drift — a CI job (`benchmark-report-drift`)
 runs the same regenerate-then-diff on every PR. The full method and the required
 "How not to interpret these results" caveats live in
-[docs/methodology.md](docs/methodology.md). Still scoped to later phases: the
-embedded-Gombit single-binary footprint variant, the other `make benchmark-*`
-workloads, extending `fairness_test.go` to all six, committing a canonical
-`results/latest/` snapshot from a dedicated-host run, the `benchmark-smoke` CI
-job that builds the six app images, and the `benchmarks.yml` manual workflow
+[docs/methodology.md](docs/methodology.md). A committed `results/latest/`
+snapshot already backs the README numbers, but from a **reduced run on a single
+dev host** (recorded in `metadata.json` and printed in the README block); still
+scoped to later phases: the embedded-Gombit single-binary footprint variant, the
+other `make benchmark-*` workloads, extending `fairness_test.go` to all six,
+re-running the full canonical sweep on dedicated hardware, the `benchmark-smoke`
+CI job that builds the six app images, and the `benchmarks.yml` manual workflow
 (Phase 8).
 
 ## Resource limits (§7): intention vs. reality

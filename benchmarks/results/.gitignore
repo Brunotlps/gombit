@@ -1,0 +1,4 @@
+# Per-run working directories are not committed; the canonical `latest/`
+# snapshot IS committed, including `latest/raw/` (the per-trial k6 summaries) so
+# a later parser fix can reconstruct the numbers from the same run.
+runs/

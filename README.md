@@ -212,21 +212,48 @@ Numbers are a same-host, closed-loop snapshot under fixed resource limits; read 
 
 Per-request overhead of each layer on the same machine for the **validated typed POST** (median ns/op, B/op, allocs/op; lower is better; `vs net/http` is the relative cost) — the same-language, same-runtime cost of adopting Gombit. The other four scenarios (plaintext, json, path-param, invalid-post) are in `benchmarks/results/latest/microbench.json`.
 
-_Not yet recorded — run `make benchmark-micro`._
+| stack | ns/op | B/op | allocs/op | vs net/http |
+| --- | ---: | ---: | ---: | ---: |
+| net/http | 1560 ⚠ | 2097 | 21 | 1.0× |
+| Gin | 3992 ⚠ | 2311 | 29 | 2.6× |
+| Huma + Gin | 3463 ⚠ | 2301 | 37 | 2.2× |
+| Gombit | 9546 | 7919 | 95 | 6.1× |
+
+⚠ marks a rung whose ns/op varied by more than 5% across samples — a noisy series (e.g. on a contended host); its median, and any ordering against a neighbouring rung, should be distrusted.
 
 ### PostgreSQL CRUD read — `GET /api/projects?page=1&limit=20`
 
-_Not yet recorded — run `make benchmark-crud-all`._
+At **100 concurrent clients**, median across trials: throughput (higher is better) and tail latency (lower is better). p50/p95/p99 are the median across trials of each per-trial percentile; ⚠ marks a group whose throughput varied by more than 5% across trials — read its row with care.
+
+| framework | req/s | p50 ms | p95 ms | p99 ms |
+| --- | ---: | ---: | ---: | ---: |
+| django | 357 | 268.3 | 350.6 | 387.6 |
+| gin-gorm | 363 | 213.0 | 500.2 | 690.6 |
+| gombit | 348 | 291.7 | 503.1 | 695.6 |
+| laravel | 115 ⚠ | 877.5 | 911.3 | 988.9 |
+| nestjs | 333 ⚠ | 295.9 | 391.7 | 403.8 |
+| rails | 455 | 212.3 | 260.5 | 274.0 |
 
 ### Operational footprint
 
 Container-start cold start (median) and memory — lower is better. CPU is the median percent one container drew during the closed-loop load (100 = one core); it is *not* a quality score — a faster app that does more work in the window can show higher CPU, so read it against the throughput row.
 
-_Not yet recorded — run `make benchmark-footprint`._
+| framework | cold start (ms) | idle (MB) | loaded (MB) | CPU (%) | image (MB) |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| django | 846 | 165.1 | 204.2 | 195 | 56.5 |
+| gin-gorm | 117 | 5.3 | 24.0 | 28 | 21.1 |
+| gombit | 62 | 6.4 | 30.4 | 30 | 87.6 |
+| laravel | 229 | 53.9 | 96.1 | 193 | 183.3 |
+| nestjs | 457 | 60.0 | 102.4 | 57 | 164.3 |
+| rails | 1018 | 95.0 | 213.4 | 128 | 106.7 |
 
 ### How these were measured
 
-_Run metadata not yet recorded._
+- **Host:** 12th Gen Intel(R) Core(TM) i7-12650H, 16 logical CPUs, 7.6 GiB RAM (linux/amd64, kernel 5.15.167.4-microsoft-standard-WSL2)
+- **Commit / date:** `c6051f20fb3f` (dirty), 2026-08-27T09:41:50Z
+- **PostgreSQL:** postgres:16.4-alpine. **Resource limits:** enforced: cpu 2.00 vCPU (intended 2.00 vCPU), memory 1 GiB (intended 1 GiB)
+- **Protocol:** concurrency 1/10/100 VUs, 3 trials × 10s each (warm-up 3s)
+- **Load generator:** grafana/k6:0.55.0. Full method: [benchmarks/docs/methodology.md](benchmarks/docs/methodology.md).
 <!-- benchmark-results:end -->
 
 ## Documentation

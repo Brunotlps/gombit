@@ -36,7 +36,9 @@ func TestRenderCRUDCarriesTailsAndCoVFlag(t *testing.T) {
 	meta := metadata.Metadata{
 		GitCommit: "abcdef1234567890", GitDirty: &dirty, Timestamp: "2026-08-27T00:00:00Z",
 		OS: "linux", Arch: "amd64", CPUModel: "Test CPU", LogicalCPUs: 8, RAMBytes: 16 << 30,
-		PostgresVersion: "postgres:16.4-alpine", ResourceLimits: "enforced", BenchmarkTool: "grafana/k6:0.55.0",
+		Kernel: "5.15-wsl", PostgresVersion: "postgres:16.4-alpine", ResourceLimits: "enforced",
+		BenchmarkTool: "grafana/k6:0.55.0", Concurrency: []int{1, 10, 100}, Trials: 3,
+		DurationSeconds: 10, WarmupSeconds: 3,
 	}
 
 	// All four rungs at the headline (valid-post) scenario, with samples so the
@@ -94,10 +96,37 @@ func TestRenderCRUDCarriesTailsAndCoVFlag(t *testing.T) {
 	if !strings.Contains(out, "not* a quality score") {
 		t.Errorf("footprint caption should not call CPU 'lower is better':\n%s", out)
 	}
-	for _, want := range []string{"Test CPU", "8 logical CPUs", "abcdef123456", "postgres:16.4-alpine", "methodology.md"} {
+	for _, want := range []string{
+		"Test CPU", "8 logical CPUs", "kernel 5.15-wsl", "abcdef123456", "postgres:16.4-alpine",
+		"methodology.md",
+		// The actual protocol must be printed so a reduced run can't wear the canonical sweep.
+		"concurrency 1/10/100 VUs, 3 trials × 10s each (warm-up 3s)",
+	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("methodology missing %q\n%s", want, out)
 		}
+	}
+}
+
+func TestFrameworkTaxFlagsNoisyRung(t *testing.T) {
+	// A non-stationary Gin series (the Huma<Gin inversion class) must be flagged.
+	micro := []microbench.Row{
+		{Stack: "nethttp", Scenario: "valid-post", NsPerOp: []float64{800, 810, 805}},
+		{Stack: "gin", Scenario: "valid-post", NsPerOp: []float64{5538, 2589, 4479, 3210}}, // ~30% CoV
+		{Stack: "huma", Scenario: "valid-post", NsPerOp: []float64{3450, 3460, 3455}},
+		{Stack: "gombit", Scenario: "valid-post", NsPerOp: []float64{9500, 9550, 9520}},
+	}
+	out := Render(nil, nil, micro, metadata.Metadata{})
+	gin := lineWith(out, "| Gin |")
+	if !strings.Contains(gin, "⚠") {
+		t.Errorf("noisy Gin rung should be flagged: %q", gin)
+	}
+	if !strings.Contains(out, "varied by more than 5%") {
+		t.Errorf("noise caption missing:\n%s", out)
+	}
+	// A stable rung must not be flagged.
+	if hu := lineWith(out, "| Huma + Gin |"); strings.Contains(hu, "⚠") {
+		t.Errorf("stable Huma rung should not be flagged: %q", hu)
 	}
 }
 

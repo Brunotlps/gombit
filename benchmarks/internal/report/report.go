@@ -14,6 +14,7 @@ package report
 import (
 	"fmt"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/gombit-dev/gombit/benchmarks/internal/footprint"
@@ -104,11 +105,22 @@ func writeFrameworkTaxTable(b *strings.Builder, micro []microbench.Row) {
 
 	b.WriteString("| stack | ns/op | B/op | allocs/op | vs net/http |\n")
 	b.WriteString("| --- | ---: | ---: | ---: | ---: |\n")
+	noisy := false
 	for _, s := range stackLadder {
 		r := byStack[s.key]
-		fmt.Fprintf(b, "| %s | %.0f | %d | %d | %s |\n",
-			s.name, r.MedianNsPerOp(), r.BytesPerOp, r.AllocsPerOp,
+		flag := ""
+		if r.CoVNsPerOp() > summary.DefaultCoVThreshold {
+			flag = " ⚠"
+			noisy = true
+		}
+		fmt.Fprintf(b, "| %s | %.0f%s | %d | %d | %s |\n",
+			s.name, r.MedianNsPerOp(), flag, r.BytesPerOp, r.AllocsPerOp,
 			microbench.Relative(r.MedianNsPerOp(), baseline))
+	}
+	if noisy {
+		fmt.Fprintf(b, "\n⚠ marks a rung whose ns/op varied by more than %.0f%% across samples — a "+
+			"noisy series (e.g. on a contended host); its median, and any ordering against a "+
+			"neighbouring rung, should be distrusted.\n", summary.DefaultCoVThreshold*100)
 	}
 	b.WriteString("\n")
 }
@@ -204,12 +216,44 @@ func writeMethodology(b *strings.Builder, meta metadata.Metadata) {
 		b.WriteString("_Run metadata not yet recorded._\n\n")
 		return
 	}
-	fmt.Fprintf(b, "- **Host:** %s, %d logical CPUs, %.1f GiB RAM (%s/%s)\n",
-		orDash(meta.CPUModel), meta.LogicalCPUs, gib(meta.RAMBytes), meta.OS, meta.Arch)
+	fmt.Fprintf(b, "- **Host:** %s, %d logical CPUs, %.1f GiB RAM (%s/%s, kernel %s)\n",
+		orDash(meta.CPUModel), meta.LogicalCPUs, gib(meta.RAMBytes), meta.OS, meta.Arch, orDash(meta.Kernel))
 	fmt.Fprintf(b, "- **Commit / date:** `%s`%s, %s\n", short(meta.GitCommit), dirtySuffix(meta.GitDirty), orDash(meta.Timestamp))
 	fmt.Fprintf(b, "- **PostgreSQL:** %s. **Resource limits:** %s\n", orDash(meta.PostgresVersion), orDash(meta.ResourceLimits))
+	// The actual protocol this snapshot ran, printed so a reduced/local run
+	// cannot silently wear the canonical 5×30s / 1..1000 sweep the methodology
+	// describes (issue #141 §13: the reader must not mistake the numbers for
+	// universal constants).
+	fmt.Fprintf(b, "- **Protocol:** concurrency %s VUs, %s × %s each (warm-up %s)\n",
+		concurrencyList(meta.Concurrency), plural(meta.Trials, "trial"),
+		seconds(meta.DurationSeconds), seconds(meta.WarmupSeconds))
 	fmt.Fprintf(b, "- **Load generator:** %s. Full method: [benchmarks/docs/methodology.md](benchmarks/docs/methodology.md).\n\n",
 		orDash(meta.BenchmarkTool))
+}
+
+func concurrencyList(cs []int) string {
+	if len(cs) == 0 {
+		return "—"
+	}
+	parts := make([]string, len(cs))
+	for i, c := range cs {
+		parts[i] = strconv.Itoa(c)
+	}
+	return strings.Join(parts, "/")
+}
+
+func plural(n int, unit string) string {
+	if n == 1 {
+		return "1 " + unit
+	}
+	return strconv.Itoa(n) + " " + unit + "s"
+}
+
+func seconds(s float64) string {
+	if s == 0 {
+		return "—"
+	}
+	return strconv.FormatFloat(s, 'f', -1, 64) + "s"
 }
 
 // ReplaceBlock returns readme with the content between the markers replaced by

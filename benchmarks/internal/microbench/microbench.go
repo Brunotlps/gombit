@@ -62,6 +62,32 @@ func (r Row) MedianNsPerOp() float64 {
 	return (s[n/2-1] + s[n/2]) / 2
 }
 
+// CoVNsPerOp is the coefficient of variation (sample stddev / mean) of the ns/op
+// samples — a stability signal. A high value means the run was noisy (a
+// non-stationary series on a contended host), so the median should be
+// distrusted: e.g. a layering-cost inversion (Huma cheaper than the Gin it sits
+// on) is only ever noise. Fewer than two samples or a zero mean → 0.
+func (r Row) CoVNsPerOp() float64 {
+	n := len(r.NsPerOp)
+	if n < 2 {
+		return 0
+	}
+	var sum float64
+	for _, x := range r.NsPerOp {
+		sum += x
+	}
+	mean := sum / float64(n)
+	if mean == 0 {
+		return 0
+	}
+	var ss float64
+	for _, x := range r.NsPerOp {
+		d := x - mean
+		ss += d * d
+	}
+	return math.Sqrt(ss/float64(n-1)) / mean
+}
+
 // ParseBenchOutput reads `go test -bench` text output for one stack and returns
 // a row per BenchmarkFrameworkTax/<scenario>, accumulating every iteration's
 // ns/op into NsPerOp. Non-benchmark lines are ignored. It errors unless every
