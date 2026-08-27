@@ -26,7 +26,18 @@ OUT_DIR ?= benchmarks/results/latest
 # applied verdict per app (via inspect-limits).
 INTENDED_LIMITS ?= intended (applied only under benchmark-crud-all): app $(APP_CPUS)cpu/$(APP_MEMORY); postgres $(POSTGRES_CPUS)cpu/$(POSTGRES_MEMORY)
 
-.PHONY: benchmark-crud benchmark-crud-all benchmark-summary benchmark-metadata
+.PHONY: benchmark-crud benchmark-crud-all benchmark-footprint benchmark-summary benchmark-metadata
+
+## benchmark-footprint: measure the operational footprint (container-start cold
+## start median/p95, idle memory, memory + CPU under load) of all six
+## containerized apps into OUT_DIR/footprint.{json,csv}. Reduce COLD_START_RUNS /
+## LOAD_SECONDS for a smoke; APPS="gin-gorm gombit" narrows the set. The
+## embedded-Gombit single-binary variant is a follow-up slice.
+##
+##   make benchmark-footprint
+##   make benchmark-footprint COLD_START_RUNS=3 APPS=gin-gorm   # smoke
+benchmark-footprint:
+	OUT_DIR="$(OUT_DIR)" bash benchmarks/scripts/footprint-all.sh
 
 ## benchmark-crud-all: bring every containerized implementation up under compose
 ## (with the §7 limits), migrate + seed it, classify + record the applied limit

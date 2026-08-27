@@ -1473,7 +1473,8 @@ in:
   Verified end to end too: a reduced-parameter run against `gin-gorm`
   builds/migrates/seeds/serves, reaches healthy, records
   `enforced: cpu 2.00 / memory 1 GiB`, runs k6 (errors=0), and merges the rows.
-  The remaining Phase 6 work is the per-app footprint capture below.
+  The per-app footprint capture below is done for the container variant
+  (`make benchmark-footprint`); the embedded-Gombit variant is the remaining bit.
   Two follow-up review rounds on PR #192 fixed the framework key (`gin-gorm`, not
   `gin`), the `|| true` blank-limit / no-trap bug, the Make override, weak tests,
   and — across the whole benchmarks tree, not just the named paragraphs — every
@@ -1555,13 +1556,28 @@ two code leftovers, all fixed.
   of the tree; the tree and scope notes already say the wiring is deferred.)
 
 - Cold-start (≥20 runs, median/p95), idle RSS, loaded RSS, CPU-under-load for
-  all 6 implementations.
+  all 6 implementations. **Container variant — done** (`make benchmark-footprint`,
+  `benchmarks/scripts/footprint-all.sh` + `benchmarks/internal/footprint` +
+  `benchmarks/scripts/footprint`): a dedicated `footprint.{json,csv}` schema
+  (separate from throughput; cold-start has no home in a rps row), cold-start =
+  container-start → first 200 on `/livez` over `COLD_START_RUNS` restarts
+  (median/p95), idle/loaded memory from `docker stats` cgroup working set, peak
+  CPU while the crud-list workload drives it, and image size. The
+  median/p95/merge/encoding are unit-tested in Go; the shell `to_bytes` parser
+  has its own test; verified live against `gin-gorm` (cold-start ~117ms median,
+  idle ~8 MB, image ~22 MB).
 - Gombit-specific: build via `gombit build --embed`, verify the embedded
   binary serves API + admin + frontend assets, measure its binary size,
   container image size, cold start, and idle RSS as the headline
-  single-binary-deployment number.
+  single-binary-deployment number. **Follow-up slice.** The footprint schema and
+  CLI already carry it (`variant: embedded`, `binary_size_bytes`); the blocker is
+  only the `gombit build --embed` frontend build, which failed to run in the dev
+  environment used here (pnpm 11 refuses esbuild's build script,
+  `ERR_PNPM_IGNORED_BUILDS`; the npm fallback hit WSL/Windows interop). That is a
+  `gombit build --embed` / toolchain issue outside this suite, so the variant is
+  deferred rather than faked or shipped untested.
 - **AC:** `make benchmark-footprint` produces footprint rows for all 6 apps
-  plus the embedded-Gombit variant.
+  (container variant); the embedded-Gombit variant lands with the follow-up.
 
 ### Phase 7 — Reporting, README integration, drift detection
 

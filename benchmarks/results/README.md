@@ -11,9 +11,11 @@ results/
 └── latest/
     ├── metadata.json   reproducibility metadata (benchmarks/internal/metadata)
     ├── raw/            per-trial raw load-generator output (k6 JSON, ...)
-    ├── results.json    the canonical structured results (benchmarks/internal/result)
+    ├── results.json    the canonical structured throughput results (benchmarks/internal/result)
     ├── results.csv     flat CSV derived from results.json
-    └── summary.md      human-readable tables derived from results.json
+    ├── summary.md      human-readable tables derived from results.json
+    ├── footprint.json  operational-footprint rows (benchmarks/internal/footprint)
+    └── footprint.csv   flat CSV derived from footprint.json
 ```
 
 `results.json` / `results.csv` are the machine-readable schema defined in
