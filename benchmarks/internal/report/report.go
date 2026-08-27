@@ -3,8 +3,8 @@
 // replaces the content between the benchmark-results markers. Generation is
 // one-directional (issue #141 §9: Markdown is derived, never hand-authored), so
 // `make benchmark-report` writes it and `make benchmark-report-check` (InSync)
-// reports drift when the committed README no longer matches the data. Wiring
-// that check into CI is Phase 8.
+// reports drift when the committed README no longer matches the data. CI runs
+// that check (the `benchmark-report-drift` job in .github/workflows/ci.yml).
 //
 // The CRUD table reuses benchmarks/internal/summary for the per-(framework,
 // concurrency) median, so the headline figure here and in summary.md come from

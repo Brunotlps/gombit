@@ -9,7 +9,7 @@ on:
 permissions:
   contents: read
 
-# Pipeline: lint → build → test → (database ∥ migrations ∥ conformance ∥ contract-drift)
+# Pipeline: lint → build → test → (database ∥ migrations ∥ conformance ∥ contract-drift ∥ benchmark-report-drift)
 jobs:
   lint:
     name: Lint
@@ -106,6 +106,33 @@ jobs:
 
       - name: Fail on contract drift
         run: git diff --exit-code -- examples/client/openapi.json examples/client/frontend/src/api/generated
+
+  benchmark-report-drift:
+    name: Benchmark report drift
+    # Only needs the Go toolchain + the committed README/results; it does not
+    # consume `test`'s output, so it gates on build for faster time-to-signal.
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Setup Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      # Pure-Go, no Docker: regenerate the README ## Performance block from the
+      # committed benchmarks/results/latest/ and fail if it changed (issue #141
+      # §9: Markdown is derived, never hand-edited). Regenerate-then-diff mirrors
+      # the contract-drift job, so a failure shows the exact hunk in the log. The
+      # heavier benchmark-smoke job that builds the six app images is separate.
+      - name: Regenerate the README performance block
+        run: make benchmark-report
+
+      - name: Fail on benchmark report drift
+        run: git diff --exit-code -- README.md
 
   database-sqlite:
     name: Database (sqlite)
