@@ -1413,6 +1413,24 @@ in:
   no-op), seed, `healthy` via `/livez`, `GET /api/projects` served through
   nginx→php-fpm returns the canonical envelope, inspect-limits `enforced`.
   nestjs is the last ecosystem slice.
+
+  **Post-landing correction (review on PR #190,
+  github.com/gombit-dev/gombit/pull/190#pullrequestreview-5037122520):** the
+  FPM pool the image installed was not the runtime pool. PHP-FPM glob-merges
+  every `php-fpm.d/*.conf` into the one `[www]` pool; the base `php:8.3-fpm`
+  ships `docker.conf` with `access.log = /proc/self/fd/2` (per-request logging,
+  violating §19) and `clear_env = no`. Overwriting `www.conf` restated
+  listen/pm/user but not those two, so the base values leaked into the measured
+  SUT — and the app only saw `DATABASE_URL`/`APP_KEY` at all because of that
+  inherited `clear_env = no`. Fixed by making `deploy/php-fpm.conf` a complete
+  contract (explicit `access.log = /dev/null` and `clear_env = no`) and
+  installing it as `zzz-bench.conf` so it sorts after `docker.conf`/
+  `zz-docker.conf` and wins. Verified from `php-fpm -tt` (not the COPY line):
+  the merged pool shows `access.log = /dev/null`, `clear_env = no`; the app
+  still serves seeded data (env inheritance intact) and 3 requests produce zero
+  FPM access lines. Also pinned `mlocati/php-extension-installer` to `2.9.0`
+  (was the floating `:2`) and reconciled the gin-gorm/gombit README Status
+  lines that still called the ecosystem services open.
 - `benchmarks/internal/reslimits` + `benchmarks/scripts/inspect-limits`: the
   issue's "detect and report rather than silently pretend limits were applied"
   requirement. A compose budget is only an *intention*; the tool reads the

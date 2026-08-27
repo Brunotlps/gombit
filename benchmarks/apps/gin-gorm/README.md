@@ -107,7 +107,8 @@ comparison caught. This app is now containerized with a `benchmarks/compose.yml`
 `gin-gorm` service carrying the §7 budget (see [Run](#run) above); the `gombit`
 app has its own service too. Still open: wiring the fairness check into automated
 CI (it needs both databases at the full canonical 1,000/100,000 scale, deferred
-to Phase 8's lighter-seed CI work); the four ecosystem apps' compose services and
-the six-app bring-up loop (later Phase 6 slices); and consuming the
+to Phase 8's lighter-seed CI work); the last ecosystem app's compose service
+(`nestjs`; django/rails/laravel are in) and the six-app bring-up loop (later
+Phase 6 slices); and consuming the
 `inspect-limits` verdict into a run's recorded `metadata.resource_limits` (today
 it is printed, not yet recorded).

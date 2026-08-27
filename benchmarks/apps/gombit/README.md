@@ -157,5 +157,5 @@ above). Still open (tracked in
 [docs/plans/BENCH-1-benchmark-suite.md](../../../docs/plans/BENCH-1-benchmark-suite.md)
 Phase 3b/6): wiring the cross-implementation fairness check into CI (needs a
 lighter seed-size mechanism than the canonical 1,000/100,000, which is
-Phase 8's concern), the four ecosystem apps' compose services, and the six-app
-bring-up/`run-crud` loop.
+Phase 8's concern), the last ecosystem app's compose service (`nestjs`;
+django/rails/laravel are in), and the six-app bring-up/`run-crud` loop.

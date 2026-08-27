@@ -14,7 +14,7 @@ FROM php:8.3-fpm
 # install-php-extensions pulls each extension's system libs (libpq for
 # pdo_pgsql, oniguruma for mbstring) and cleans up — far less error-prone than
 # hand-managing apt build deps. nginx is the web server in front of FPM.
-COPY --from=mlocati/php-extension-installer:2 /usr/bin/install-php-extensions /usr/local/bin/
+COPY --from=mlocati/php-extension-installer:2.9.0 /usr/bin/install-php-extensions /usr/local/bin/
 RUN install-php-extensions pdo_pgsql mbstring zip \
     && apt-get update \
     && apt-get install -y --no-install-recommends nginx \
@@ -29,10 +29,13 @@ RUN APP_KEY=base64:$(head -c 32 /dev/urandom | base64) \
       composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist \
     && chmod -R 0777 storage bootstrap/cache
 
-# Production configs: replace the default FPM pool (same [www] name, so it is a
-# replacement not a duplicate listener) and install the nginx vhost; drop the
-# stock :80 default site.
-COPY deploy/php-fpm.conf /usr/local/etc/php-fpm.d/www.conf
+# Production configs. The FPM pool is installed as zzz-bench.conf, NOT over
+# www.conf: PHP-FPM glob-merges all php-fpm.d/*.conf into the one [www] pool,
+# and only a file sorting AFTER the base image's docker.conf / zz-docker.conf
+# wins the keys they set (access.log, clear_env). deploy/php-fpm.conf restates
+# every such key explicitly; installing it last makes the runtime pool the
+# committed pool. Also install the nginx vhost and drop the stock :80 site.
+COPY deploy/php-fpm.conf /usr/local/etc/php-fpm.d/zzz-bench.conf
 COPY deploy/nginx.conf /etc/nginx/conf.d/default.conf
 RUN rm -f /etc/nginx/sites-enabled/default
 
