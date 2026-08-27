@@ -44,20 +44,18 @@ benchmarks/
 └── results/             generated output (issue §9); results/README.md documents the layout
 ```
 
-All six canonical CRUD implementations exist, the result schema / metadata
-collector / run-config pins are in place, and the headline CRUD-read workload
 All six canonical CRUD implementations run end to end under one command: **all
 six** (`gin-gorm`, `gombit`, `django`, `rails`, `laravel`, `nestjs`) are
 containerized with `compose.yml` services carrying the §7 resource budget —
 `gombit` also applies its real Atlas migrations in-container (pinned `atlas`
 image), and every migration-bearing app creates its own database idempotently on
 every bring-up (no fresh-volume init scripts) — and `make benchmark-crud-all`
-brings each up, seeds it, verifies the applied §7 ceiling on the live container
-(`internal/reslimits` + `scripts/inspect-limits`, issue #141's "detect/report
-rather than silently pretend"), runs the workload, and merges all six into one
-`results.json`. Still scoped to later phases: `docs/methodology.md`, per-app
-resource/RSS capture (Phase 6 footprint), the other `make benchmark-*`
-workloads, and extending `fairness_test.go` to all six.
+brings each up, seeds it, classifies the applied §7 ceiling on the live
+container and records it (`internal/reslimits` + `scripts/inspect-limits`, issue
+#141's "detect/report rather than silently pretend"), runs the workload, and
+merges all six into one `results.json`. Still scoped to later phases:
+`docs/methodology.md`, per-app resource/RSS capture (Phase 6 footprint), the
+other `make benchmark-*` workloads, and extending `fairness_test.go` to all six.
 
 ## Resource limits (§7): intention vs. reality
 
@@ -73,12 +71,13 @@ which the daemon zeroes or rejects when it can't apply them, an honest signal of
 a dropped ceiling) via `internal/reslimits` and classifies them against the
 intended budget — `enforced`, `partial`, or `not applied`.
 
-Today the command **prints** that verdict; nothing yet consumes it. Wiring it
-into what a run records as `metadata.resource_limits` — automatically in the
-six-app compose loop, or by hand via
-`run-crud -resource-limits "$(inspect-limits …)"` — is a later slice. Until
-then `benchmark-crud` records `run-crud`'s own honest default: it starts and
-constrains nothing, so it says "not applied" unless you pass the flag.
+`make benchmark-crud-all` records that verdict as `metadata.resource_limits`:
+for each app it classifies the live container and passes the result to
+`run-crud -resource-limits`, so the recorded limit is the one actually applied
+(and if `inspect-limits` cannot classify the container at all, that app's row is
+not published rather than recorded blank). The standalone `make benchmark-crud`
+starts and constrains nothing, so it records `run-crud`'s honest "not applied"
+default unless you pass `-resource-limits "$(inspect-limits …)"` yourself.
 
 ## Result schema and run metadata
 

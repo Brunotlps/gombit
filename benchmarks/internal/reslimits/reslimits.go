@@ -17,8 +17,8 @@
 // `/sys/fs/cgroup`, but the daemon zeroes or rejects a limit it cannot apply,
 // so reading them back is an honest signal that an intended ceiling was
 // dropped. It classifies them against the intended budget, producing the honest
-// string a run can record as metadata.resource_limits (that wiring is a later
-// slice; today the string is produced and printed, not yet auto-recorded).
+// string a run records as metadata.resource_limits (the `make benchmark-crud-all`
+// loop wires it per app; standalone run-crud records its own honest default).
 package reslimits
 
 import (

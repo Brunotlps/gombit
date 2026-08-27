@@ -19,22 +19,25 @@ TARGET_URL ?=
 # Where the snapshot is written.
 OUT_DIR ?= benchmarks/results/latest
 
-# The pinned intended limits (issue #141 §7). run-crud does NOT apply these —
-# it starts nothing — so it records an honest "not applied" string instead;
-# these are only surfaced by benchmark-metadata, labelled as intended. The
-# compose loop (next slice) is what will actually enforce and record them.
-INTENDED_LIMITS ?= intended (not yet enforced): app $(APP_CPUS)cpu/$(APP_MEMORY); postgres $(POSTGRES_CPUS)cpu/$(POSTGRES_MEMORY)
+# The pinned intended limits (issue #141 §7). Standalone run-crud does NOT apply
+# these — it starts nothing — so it records an honest "not applied" string
+# instead; these are only surfaced by benchmark-metadata, labelled as intended.
+# benchmark-crud-all is what actually enforces them (compose) and records the
+# applied verdict per app (via inspect-limits).
+INTENDED_LIMITS ?= intended (applied only under benchmark-crud-all): app $(APP_CPUS)cpu/$(APP_MEMORY); postgres $(POSTGRES_CPUS)cpu/$(POSTGRES_MEMORY)
 
 .PHONY: benchmark-crud benchmark-crud-all benchmark-summary benchmark-metadata
 
 ## benchmark-crud-all: bring every containerized implementation up under compose
-## (with the §7 limits), migrate + seed it, verify the applied limit, run the
-## CRUD-read workload against it, and merge all six into OUT_DIR/results.json.
-## Each app is measured alone (stopped before the next) since the load generator
-## shares the host. Run `make benchmark-summary` afterwards. Override the set
-## with APPS="gin-gorm gombit".
+## (with the §7 limits), migrate + seed it, classify + record the applied limit
+## off the live container, run the CRUD-read workload against it, and merge all
+## six into OUT_DIR/results.json. Each app is measured alone (stopped before the
+## next) since the load generator shares the host. Run `make benchmark-summary`
+## afterwards. Override the set with APPS="gin-gorm gombit"; the workload pins
+## (CONCURRENCY/TRIALS/DURATION_SECONDS/...) are overridable on the command line.
 ##
 ##   make benchmark-crud-all
+##   make benchmark-crud-all CONCURRENCY=1 TRIALS=1 DURATION_SECONDS=3   # smoke
 benchmark-crud-all:
 	OUT_DIR="$(OUT_DIR)" bash benchmarks/scripts/run-crud-all.sh
 

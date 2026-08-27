@@ -163,8 +163,9 @@ SQLite/PostgreSQL/MySQL matrix green throughout (AGENTS.md §5.1).
 - Add the BENCH-1 backlog entry (§2). — **done**
 - Create the `benchmarks/` directory tree (§5); `micro/` landed in Phase 2,
   `apps/` in Phase 3-4, and `internal/`, `scripts/`, `config/`, `results/`,
-  `docs/` now exist (`workloads/` and the `make benchmark-*` orchestration are
-  still open, next slice).
+  `docs/` now exist; `workloads/crud-list.js` and the
+  `benchmark-crud`/`-crud-all`/`-summary`/`-metadata` targets exist too (the
+  remaining `benchmark-*` workloads are later slices).
 - Implement the result schema + metadata collector in `benchmarks/internal/`
   — **done.** `benchmarks/internal/result` is the `results.json` schema (issue
   §9's recommended shape plus a `schema_version`), with JSON and CSV encoders
@@ -190,7 +191,8 @@ SQLite/PostgreSQL/MySQL matrix green throughout (AGENTS.md §5.1).
 - **AC:** `go build ./benchmarks/...` succeeds (it does, including the new
   packages, and `go test ./...` covers their unit tests); `docs/GOMBIT_BUILD_PLAN.md`
   has the new entry. Satisfied for the schema/collector/config; the
-  `make benchmark-*` orchestration that consumes them is the next slice.
+  `benchmark-crud`/`-crud-all`/`-summary`/`-metadata` orchestration that consumes
+  them now exists (the remaining `benchmark-*` workloads are later slices).
 
 **Post-landing correction, round 2 (review on PR #183,
 github.com/gombit-dev/gombit/pull/183#pullrequestreview-5034497111):** the
@@ -1453,12 +1455,22 @@ in:
   host with k6. `run-crud` merges by framework, so the six iterations accumulate
   into one `results.json` for `make benchmark-summary`. Every app's
   framework/runtime version is **derived** from its own source-of-truth (manifest
-  file, Dockerfile base image), fail-closed on empty, so nothing is hand-copied;
-  `gin-gorm` gained a no-op `migrate` verb so the uniform migrate/seed/serve
-  drive works (it AutoMigrates). The script guards its main loop so it is
-  sourceable, and `run-crud-all_test.sh` asserts all six identities resolve to
-  version-shaped strings. Verified end to end: a reduced-parameter `run_one
-  gin-gorm` builds/migrates/seeds/serves, reaches healthy, records
+  file, Dockerfile base image), fail-closed on empty, so nothing is hand-copied.
+  The framework key is the compose **service name** (`gin-gorm`, not `gin`), the
+  same merge key the rest of the harness uses. §7 is detect/report, so the loop
+  records the honest classification (enforced/partial/not-applied) — but an
+  `inspect-limits` *tool* failure does not publish a blank row (that app is
+  skipped and the run fails), and the SUT is always stopped before the next app
+  even when a step fails. Workload pins (`CONCURRENCY`/`TRIALS`/…) are
+  overridable on the command line (the script loads `versions.env` only for vars
+  not already in the environment). `gin-gorm` gained a no-op `migrate` verb so
+  the uniform migrate/seed/serve drive works (it AutoMigrates). The script guards
+  its main loop so it is sourceable, and `run-crud-all_test.sh` drives `run_one`
+  with fake compose/inspect/run-crud to assert the merge key, that the inspect
+  verdict is what gets recorded, stop-before-next, and that a failed inspect
+  publishes no row — plus the six exact `(framework, port, runtime)` tuples.
+  Verified end to end too: a reduced-parameter run against `gin-gorm`
+  builds/migrates/seeds/serves, reaches healthy, records
   `enforced: cpu 2.00 / memory 1 GiB`, runs k6 (errors=0), and merges the rows.
   The remaining Phase 6 work is the per-app footprint capture below.
 - `benchmarks/internal/reslimits` + `benchmarks/scripts/inspect-limits`: the
@@ -1474,10 +1486,10 @@ in:
   and the CLI's `-strict` fail-closed exit + output formats via the
   `-inspect-file` seam. Verified end to end against a live container (enforced
   `NanoCpus=2e9`/`Memory=1GiB`; a genuinely unlimited `docker run` reads `not
-  applied`). **Not yet wired:** nothing consumes the string — `run-crud` still
-  records its own honest "not applied" default. Recording the verdict into
-  `metadata.resource_limits` (the six-app loop, or `run-crud -resource-limits`)
-  is a later slice.
+  applied`). At the time of this correction nothing consumed the string; the
+  `make benchmark-crud-all` loop later closed that — it passes each app's verdict
+  to `run-crud -resource-limits`, so a run records the applied limit (standalone
+  `run-crud` still records its own honest "not applied" default).
 - **Empirical correction to the plan's own assumption:** the `compose.yml`
   comment (and this plan's earlier framing) claimed a plain `docker compose up`
   "silently ignores" `deploy.resources.limits` and that `--compatibility` or
