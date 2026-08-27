@@ -1,7 +1,8 @@
 # PostgreSQL + the benchmark app services under test. App services are added
 # as each is containerized (Phase 6 compose loop): the two Go apps `gin-gorm`
-# (the reference control) and `gombit` (same API on the Gombit runtime) plus the
-# `django`, `rails`, and `laravel` ecosystem apps are in; nestjs is the last.
+# (the reference control) and `gombit` (same API on the Gombit runtime) plus all
+# four ecosystem apps (`django`, `rails`, `laravel`, `nestjs`) — all six are in.
+# Next is the loop that brings them up and runs run-crud over each.
 #
 # Version pin: issue #141 requires major.minor (or digest), not a
 # major-only floating tag. The pin lives once in
@@ -265,6 +266,47 @@ services:
     # php-fpm — never the measured route. The php image has php but no wget/curl.
     healthcheck:
       test: ["CMD-SHELL", "php -r \"exit(@file_get_contents('http://127.0.0.1:8084/livez') !== false ? 0 : 1);\""]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    deploy:
+      resources:
+        limits:
+          cpus: "${APP_CPUS:-2}"
+          memory: ${APP_MEMORY:-1g}
+
+  # The nestjs app (issue #141 §7 app budget: 2 vCPU / 1 GiB) — Node/TypeORM
+  # ecosystem context. Self-contained build context. `serve` runs the compiled
+  # output (node dist/main); migrate/seed use the committed ts-node npm scripts,
+  # so the image keeps devDependencies (NODE_ENV=production is set here at run
+  # time, not at build, or npm ci would drop them). `migrate` ensures its own
+  # gombit_bench_nestjs database (ensure_db.js):
+  #
+  #   docker compose ... up -d postgres
+  #   docker compose ... run --rm nestjs migrate
+  #   docker compose ... run --rm nestjs seed
+  #   docker compose ... up -d nestjs
+  nestjs:
+    build:
+      context: apps/nestjs
+    image: bench-nestjs:local
+    command: ["serve"]
+    environment:
+      DATABASE_URL: postgres://gombit:gombit@postgres:5432/gombit_bench_nestjs?sslmode=disable
+      ADMIN_DATABASE_URL: postgres://gombit:gombit@postgres:5432/gombit_bench?sslmode=disable
+      TARGET_DB: gombit_bench_nestjs
+      NODE_ENV: production
+      PORT: "8085"
+      POOL_MAX_OPEN: "${POOL_MAX_OPEN:-20}"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:8085:8085"
+    # /livez -> HealthController (200, no DB), excluded from the /api prefix —
+    # never the measured route. The slim node image has node but no wget/curl.
+    healthcheck:
+      test: ["CMD-SHELL", "node -e \"require('http').get('http://127.0.0.1:8085/livez',r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))\""]
       interval: 3s
       timeout: 3s
       retries: 20

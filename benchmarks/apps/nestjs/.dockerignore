@@ -1,0 +1,6 @@
+# Build context is this directory; node_modules and dist are regenerated in the
+# image (npm ci + npm run build), so keep the local copies out of the context.
+.git
+node_modules
+dist
+*.log
