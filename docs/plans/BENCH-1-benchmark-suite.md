@@ -533,18 +533,19 @@ same misread again.
     the framework default, this app's route surface would not have
     matched its own control's. Fixed by setting `cfg.API.Prefix = "/api"`
     explicitly in `main.go`.
-- **One discovered, deliberately unpatched framework gap:**
-  `database.MapPersistError` only special-cases unique-constraint
-  violations, so `POST /api/projects` with a nonexistent `owner_id` (a
-  foreign-key violation) falls through to 500 `internal`, unlike
-  `gin-gorm`'s 422. Not fixed here — issue #141 requires using Gombit's
-  normal public APIs as-is, and this app's whole point is measuring what a
-  real Gombit user gets today, warts included. Pinned by
-  `TestCreateInvalidOwnerIDReturnsInternalError` so a future framework fix
-  (or regression) shows up as an expected test change; see
-  `benchmarks/apps/gombit/README.md` for the full writeup. Fixing
-  `database.MapPersistError` is out of scope for BENCH-1 — worth its own
-  follow-up issue against the `database` package.
+- **One discovered framework gap, deliberately unpatched here at the time —
+  since fixed as issue #202:** `database.MapPersistError` only
+  special-cased unique-constraint violations, so `POST /api/projects` with a
+  nonexistent `owner_id` (a foreign-key violation) fell through to 500
+  `internal`, unlike `gin-gorm`'s 422. Not fixed as part of BENCH-1 — issue
+  #141 requires using Gombit's normal public APIs as-is, and this app's
+  whole point is measuring what a real Gombit user gets, warts included.
+  Pinned by `TestCreateInvalidOwnerIDReturnsInternalError` (later renamed
+  `...ReturnsValidationError`) so a future framework fix would show up as an
+  expected test change; see `benchmarks/apps/gombit/README.md` for the full
+  writeup. `database.MapPersistError` was fixed by issue #202 (foreign-key
+  and NOT NULL violations now map to a D10 validation error), closing this
+  gap and the test rename/update that went with it.
 - `internal/project`'s own integration suite (`TestCRUDRoundTrip`,
   blank-name rejection on create and update, pagination/ordering, the
   3-query/2-query N+1 guard via mutating `app.DB().Logger` — `gorm.DB`
@@ -608,15 +609,17 @@ one claim checked and found incorrect, three real gaps fixed:
   the relative comparison runs.
 - `createProjectBody.OwnerID` had no lower bound, so `{"owner_id":0,...}`
   — a present, well-typed field, not the "nonexistent id" case
-  `TestCreateInvalidOwnerIDReturnsInternalError` documents — passed Huma
-  validation and hit the same FK-violation 500. gin-gorm's
-  `binding:"required"` already rejects this input (Gin's `required`
-  treats a non-pointer `uint` zero value as absent), so this was a real,
-  fixable asymmetry, not another instance of the discovered
+  `TestCreateInvalidOwnerIDReturnsInternalError` (later renamed
+  `...ReturnsValidationError` when issue #202 fixed the underlying gap)
+  documents — passed Huma validation and hit the same FK-violation error.
+  gin-gorm's `binding:"required"` already rejects this input (Gin's
+  `required` treats a non-pointer `uint` zero value as absent), so this was
+  a real, fixable asymmetry, not another instance of the discovered
   `database.MapPersistError` gap. Fixed with `minimum:"1"` on `OwnerID`;
   verified live that `owner_id:0` now 422s while `owner_id:999999` still
-  500s — two different inputs, two different (and now each individually
-  correct) outcomes. Added `TestCreateRejectsZeroOwnerID`.
+  500s at the time (both are 422 since issue #202) — two different inputs,
+  two different (and each individually correct) outcomes. Added
+  `TestCreateRejectsZeroOwnerID`.
 - `benchmarks/apps/gombit`'s `seedDatabaseN` was copied from `gin-gorm`
   without the idempotency test an earlier review round added specifically
   because the seed contract had no automated coverage
@@ -731,9 +734,10 @@ app service deferred, same as Phase 3a/3b's own still-open items).**
   from the start (`min_value=1` in the serializer; the FK violation mapped
   by SQLSTATE via `_map_integrity_error`, the same policy as `gin-gorm`'s
   `mapPersistError`) — this is a from-scratch app, not a framework
-  exercising Gombit's own real (and deliberately unpatched, see Phase 3b)
-  gap, so there's no reason to reproduce a bug that only exists because of
-  how Gombit's `database.MapPersistError` works today.
+  exercising Gombit's own real (and, at the time, deliberately unpatched —
+  see Phase 3b — since fixed by issue #202) gap, so there was no reason to
+  reproduce a bug that only existed because of how Gombit's
+  `database.MapPersistError` worked at the time.
 - The list endpoint's N+1 guard is **2 queries** (`COUNT` + one
   `select_related("owner")` JOIN), not `gin-gorm`/`gombit`'s pinned 3 —
   `benchmarks/docs/schema.md` explicitly allows a different fixed-count
