@@ -56,7 +56,12 @@ func Open(cfg config.DatabaseConfig) (*DB, error) {
 		return nil, err
 	}
 
-	gormDB, err := gorm.Open(dialector, &gorm.Config{})
+	// TranslateError lets each dialector map its own structured error codes
+	// (Postgres SQLSTATE, MySQL error numbers, SQLite extended result codes)
+	// to portable gorm.ErrXxx sentinels, so database/errors.go can classify
+	// unique/foreign-key violations by errors.Is instead of driver-specific
+	// message text.
+	gormDB, err := gorm.Open(dialector, &gorm.Config{TranslateError: true})
 	if err != nil {
 		return nil, fmt.Errorf("database: open %s: %w", driver, err)
 	}

@@ -596,6 +596,111 @@ func TestResourceBelongsToStoresFK(t *testing.T) {
 	}
 }
 
+func TestResourceCreateForeignKeyViolationIsValidationError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	type FKCategory struct {
+		ID uint `gorm:"primaryKey" json:"id"`
+	}
+	type FKItem struct {
+		ID         uint       `gorm:"primaryKey" json:"id"`
+		Name       string     `json:"name"`
+		CategoryID uint       `json:"category_id"`
+		Category   FKCategory `gorm:"constraint:OnUpdate:CASCADE,OnDelete:RESTRICT;" json:"-"`
+	}
+	app := newCookieApp(t)
+	if err := app.DB().AutoMigrate(&FKCategory{}, &FKItem{}); err != nil {
+		t.Fatalf("AutoMigrate: %v", err)
+	}
+	if err := admin.Register(app, FKItem{}, admin.Options{
+		Slug: "fk-items",
+		Fields: []admin.Field{
+			{Name: "id", Type: admin.TypeInteger, ReadOnly: true},
+			{Name: "name", Type: admin.TypeString},
+			{
+				Name:    "category_id",
+				Type:    admin.TypeRelation,
+				Related: &admin.Relation{Slug: "fk-categories", Kind: admin.RelBelongsTo, LabelField: "id"},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	jar := loginSuperuser(t, app)
+
+	// Unlike TestResourceBelongsToStoresFK, FKItem.Category is a real GORM
+	// association with a DB-level constraint, so a nonexistent category_id
+	// reaches the database as an actual foreign-key violation, not just
+	// stored as an opaque integer.
+	rec := doRequest(app, jar, http.MethodPost, "/api/v1/admin/resources/fk-items", `{"name":"Nail","category_id":999}`)
+	assertError(t, rec, http.StatusUnprocessableEntity, contract.CodeValidationError)
+}
+
+func TestResourceCreateNotNullViolationIsValidationError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	type StrictWidget struct {
+		ID   uint    `gorm:"primaryKey" json:"id"`
+		Name *string `gorm:"not null" json:"name"`
+	}
+	app := newCookieApp(t)
+	if err := app.DB().AutoMigrate(&StrictWidget{}); err != nil {
+		t.Fatalf("AutoMigrate: %v", err)
+	}
+	// "name" is intentionally not marked Required in the admin metadata, to
+	// reproduce the issue's actual scenario: the DB schema enforces NOT
+	// NULL even where the admin Field options do not.
+	if err := admin.Register(app, StrictWidget{}, admin.Options{
+		Slug: "strict-widgets",
+		Fields: []admin.Field{
+			{Name: "id", Type: admin.TypeInteger, ReadOnly: true},
+			{Name: "name", Type: admin.TypeString},
+		},
+	}); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	jar := loginSuperuser(t, app)
+
+	rec := doRequest(app, jar, http.MethodPost, "/api/v1/admin/resources/strict-widgets", `{}`)
+	assertError(t, rec, http.StatusUnprocessableEntity, contract.CodeValidationError)
+}
+
+func TestResourceDeleteForeignKeyViolationIsConflict(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	type DelCategory struct {
+		ID uint `gorm:"primaryKey" json:"id"`
+	}
+	type DelItem struct {
+		ID         uint        `gorm:"primaryKey" json:"id"`
+		CategoryID uint        `json:"category_id"`
+		Category   DelCategory `gorm:"constraint:OnUpdate:CASCADE,OnDelete:RESTRICT;" json:"-"`
+	}
+	app := newCookieApp(t)
+	if err := app.DB().AutoMigrate(&DelCategory{}, &DelItem{}); err != nil {
+		t.Fatalf("AutoMigrate: %v", err)
+	}
+	category := DelCategory{}
+	if err := app.DB().Create(&category).Error; err != nil {
+		t.Fatalf("create fixture category: %v", err)
+	}
+	if err := app.DB().Create(&DelItem{CategoryID: category.ID}).Error; err != nil {
+		t.Fatalf("create fixture item: %v", err)
+	}
+	if err := admin.Register(app, DelCategory{}, admin.Options{
+		Slug: "del-categories",
+		Fields: []admin.Field{
+			{Name: "id", Type: admin.TypeInteger, ReadOnly: true},
+		},
+	}); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	jar := loginSuperuser(t, app)
+
+	// The category is still referenced by DelItem (ON DELETE RESTRICT), so
+	// this must be a 409 conflict, not the 422 validation error a bad
+	// foreign key on create/update would produce, and not a 500.
+	rec := doRequest(app, jar, http.MethodDelete, fmt.Sprintf("/api/v1/admin/resources/del-categories/%d", category.ID), "")
+	assertError(t, rec, http.StatusConflict, "conflict")
+}
+
 func TestJWTModeDoesNotMountAdmin(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	app := newJWTApp(t)
