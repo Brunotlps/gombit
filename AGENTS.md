@@ -6,7 +6,8 @@ a generated React+TypeScript frontend, Atlas-backed migrations. Module path
 
 ## Current state
 
-This repo has completed M0–M5 and **ADMIN-1 through ADMIN-3**. It has typed
+This repo has completed M0–M5, **ADMIN-1 through ADMIN-3**, the **REL-1..9**
+release-readiness track, and **BENCH-1** (the benchmark suite). It has typed
 `config.Config`, `framework.App` lifecycle and routing, Huma contract/OpenAPI/
 TypeScript client generation, Atlas-backed migrations, a Cobra `gombit`
 command tree (`new`, `dev`, `build --embed`, `make resource`, `make command`,
@@ -15,10 +16,19 @@ command tree (`new`, `dev`, `build --embed`, `make resource`, `make command`,
 (M5-3), the MUI preset (M5-4, `--ui mui`), and optional `gombit build --embed`
 (M5-5) are in. **ADMIN-0 (ADR-013) is accepted**, **ADMIN-1** ships
 `admin.Register`, `GET /api/v1/admin/meta`, and the generic
-`/api/v1/admin/resources/{slug}` data plane, and **ADMIN-2** ships the
-framework-owned SPA under `/admin/` (`internal/adminui`, cookie-only embed).
-ADMIN-3 adds direct/group permission enforcement with a superuser bypass.
-Other M6 batteries are not here yet.
+`/api/v1/admin/resources/{slug}` data plane, **ADMIN-2** ships the
+framework-owned SPA under `/admin/` (`internal/adminui`, cookie-only embed),
+and **ADMIN-3** adds direct/group permission enforcement with a superuser
+bypass. **REL-1..9** covers release readiness: the README rewrite with badges
+and quickstart, contributor and community-health files, issue templates,
+`gombit version` plus the release workflow, the installation guide, the
+tutorial and its example app, the docs index/changelog/release runbook, and
+scaffolded apps resolving a published framework version. **BENCH-1** adds the
+`benchmarks/` tree — Go micro-benchmarks (`benchmarks/micro`), the operational
+footprint/cold-start harness, k6 load workloads, the canonical results
+snapshot behind the README performance table, and a manual `benchmarks.yml`
+workflow — plus the per-PR `benchmark-report-drift` and `benchmark-smoke`
+gates in `ci.yml`. Other M6 batteries are not here yet.
 Don't assume generated apps are committed in-tree; `gombit new` writes them
 on demand. Check `git log` / `ls` before describing "how the code works."
 
