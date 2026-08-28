@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -372,6 +373,61 @@ func TestDefaultRouterMetricsUsesBoundedLabelForUnmatchedRoutes(t *testing.T) {
 		if strings.Contains(body, rawPath) {
 			t.Fatalf("GET /metrics body = %q, want no raw unmatched path %q", body, rawPath)
 		}
+	}
+}
+
+// TestMetricsMiddlewareBoundsMethodLabelCardinality is the regression test for
+// issue #197: the metrics `method` label is derived from the client-supplied
+// HTTP method, which is an unbounded RFC 7230 token. Recording it verbatim
+// into the never-evicted metrics maps let an unauthenticated remote caller
+// mint unlimited distinct series (a slow OOM). Arbitrary methods must collapse
+// to a single "other" bucket, keeping cardinality bounded.
+func TestMetricsMiddlewareBoundsMethodLabelCardinality(t *testing.T) {
+	metrics := newHTTPMetrics()
+	engine := gin.New()
+	engine.Use(metricsMiddleware(metrics))
+	engine.GET("/livez", func(c *gin.Context) { c.Status(http.StatusOK) })
+
+	// Global middleware runs on 404s too, so unregistered methods still reach
+	// observe — exactly the attack path in the issue.
+	for i := 0; i < 1000; i++ {
+		req := httptest.NewRequest(fmt.Sprintf("EVILMETHOD%d", i), "/livez", nil)
+		engine.ServeHTTP(httptest.NewRecorder(), req)
+	}
+
+	if got := len(metrics.requests); got != 1 {
+		t.Fatalf("distinct metric series after 1000 arbitrary methods = %d, want 1 (bounded)", got)
+	}
+
+	body := metrics.render()
+	if !strings.Contains(body, `method="other"`) {
+		t.Fatalf("metrics body = %q, want non-standard methods bucketed as method=\"other\"", body)
+	}
+	if strings.Contains(body, "EVILMETHOD") {
+		t.Fatalf("metrics body = %q, want no raw client method token recorded", body)
+	}
+}
+
+// TestMetricsMiddlewareKeepsStandardMethodLabels confirms the bounding does not
+// flatten legitimate, standard methods into the "other" bucket.
+func TestMetricsMiddlewareKeepsStandardMethodLabels(t *testing.T) {
+	metrics := newHTTPMetrics()
+	engine := gin.New()
+	engine.Use(metricsMiddleware(metrics))
+	engine.Any("/thing", func(c *gin.Context) { c.Status(http.StatusOK) })
+
+	for _, method := range []string{http.MethodGet, http.MethodPost, http.MethodPut, http.MethodPatch, http.MethodDelete} {
+		engine.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(method, "/thing", nil))
+	}
+
+	body := metrics.render()
+	for _, method := range []string{"GET", "POST", "PUT", "PATCH", "DELETE"} {
+		if !strings.Contains(body, fmt.Sprintf(`method=%q`, method)) {
+			t.Fatalf("metrics body = %q, want standard method label %q preserved", body, method)
+		}
+	}
+	if strings.Contains(body, `method="other"`) {
+		t.Fatalf("metrics body = %q, want no \"other\" bucket for standard methods", body)
 	}
 }
 

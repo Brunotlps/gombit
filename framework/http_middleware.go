@@ -119,6 +119,37 @@ type metricsKey struct {
 	status int
 }
 
+// knownHTTPMethods bounds the cardinality of the metrics `method` label. The
+// raw request method is an arbitrary RFC 7230 token that an unauthenticated
+// client can vary without limit, and the metrics maps are never evicted, so
+// recording it verbatim lets a remote caller mint unbounded distinct series
+// and exhaust memory (issue #197). The metrics middleware runs on every
+// request — including unmatched routes and unregistered methods — so any
+// method outside this set collapses to metricsMethodOther.
+var knownHTTPMethods = map[string]struct{}{
+	http.MethodGet:     {},
+	http.MethodHead:    {},
+	http.MethodPost:    {},
+	http.MethodPut:     {},
+	http.MethodPatch:   {},
+	http.MethodDelete:  {},
+	http.MethodOptions: {},
+	http.MethodConnect: {},
+	http.MethodTrace:   {},
+}
+
+const metricsMethodOther = "other"
+
+// normalizeMetricsMethod maps any non-standard HTTP method to a single bucket
+// so the metrics `method` label stays bounded by a small constant. See
+// knownHTTPMethods.
+func normalizeMetricsMethod(method string) string {
+	if _, ok := knownHTTPMethods[method]; ok {
+		return method
+	}
+	return metricsMethodOther
+}
+
 func newHTTPMetrics() *httpMetrics {
 	return &httpMetrics{
 		requests: make(map[metricsKey]int64),
@@ -139,7 +170,7 @@ func metricsMiddleware(metrics *httpMetrics) gin.HandlerFunc {
 			route = "unmatched"
 		}
 		metrics.observe(metricsKey{
-			method: c.Request.Method,
+			method: normalizeMetricsMethod(c.Request.Method),
 			route:  route,
 			status: c.Writer.Status(),
 		}, time.Since(start))
