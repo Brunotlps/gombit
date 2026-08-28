@@ -24,8 +24,6 @@ const TraceIDHeader = "X-Trace-Id"
 
 const traceIDGinKey = "trace_id"
 
-type traceIDContextKey struct{}
-
 var traceparentPattern = regexp.MustCompile(`^[0-9a-f]{2}-([0-9a-f]{32})-[0-9a-f]{16}-[0-9a-f]{2}$`)
 
 func requestTimeoutMiddleware(timeout time.Duration) gin.HandlerFunc {
@@ -39,24 +37,6 @@ func requestTimeoutMiddleware(timeout time.Duration) gin.HandlerFunc {
 		ctx, cancel := context.WithTimeout(c.Request.Context(), timeout)
 		defer cancel()
 		c.Request = c.Request.WithContext(ctx)
-		c.Next()
-	}
-}
-
-func traceContextMiddleware() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		traceID := traceIDFromTraceparent(c.GetHeader(TraceparentHeader))
-		if traceID == "" {
-			traceID = newTraceID()
-		}
-		if traceID == "" {
-			traceID = "unknown"
-		}
-
-		c.Set(traceIDGinKey, traceID)
-		c.Header(TraceIDHeader, traceID)
-		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), traceIDContextKey{}, traceID))
-
 		c.Next()
 	}
 }
@@ -79,21 +59,49 @@ func GetTraceIDFromContext(ctx context.Context) string {
 	if ctx == nil {
 		return ""
 	}
-	traceID, _ := ctx.Value(traceIDContextKey{}).(string)
-	return traceID
+	meta, _ := ctx.Value(requestMetaKey{}).(requestMeta)
+	return meta.traceID
 }
+
+// Security-header values are request-invariant. Rather than allocate a fresh
+// []string per header on every response (what http.Header.Set does), the
+// middleware assigns these shared, read-only backing slices directly into the
+// response header map (keys are already in canonical MIME form). That saves
+// six allocations per response on the hot path.
+//
+// http.Header is a mutable map of mutable slices, so sharing is safe only
+// under its documented mutation APIs, and that constraint is load-bearing:
+//   - Set and Del replace or delete the map entry, never writing through the
+//     shared slice.
+//   - Add appends, but these slices have len == cap == 1, so it must
+//     reallocate rather than grow one in place.
+//
+// These slices MUST be treated as read-only. An in-place write —
+// Header.Values(k)[0] = ... or append(h[k][:0], ...) — writes straight through
+// to the process-global value, corrupting it for every other request and
+// racing with them. Override a security header with Set (as
+// applySPAContentSecurityPolicy does), never an in-place slice write.
+// TestSecurityHeaderSharedValueContract locks all three paths.
+var (
+	cspHeaderValue          = []string{"default-src 'self'"}
+	referrerPolicyValue     = []string{"strict-origin-when-cross-origin"}
+	hstsHeaderValue         = []string{"max-age=315360000; includeSubDomains"}
+	contentTypeOptionsValue = []string{"nosniff"}
+	downloadOptionsValue    = []string{"noopen"}
+	frameOptionsValue       = []string{"DENY"}
+)
 
 func securityHeadersMiddleware(includeHSTS bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		header := c.Writer.Header()
-		header.Set("Content-Security-Policy", "default-src 'self'")
-		header.Set("Referrer-Policy", "strict-origin-when-cross-origin")
+		header["Content-Security-Policy"] = cspHeaderValue
+		header["Referrer-Policy"] = referrerPolicyValue
 		if includeHSTS {
-			header.Set("Strict-Transport-Security", "max-age=315360000; includeSubDomains")
+			header["Strict-Transport-Security"] = hstsHeaderValue
 		}
-		header.Set("X-Content-Type-Options", "nosniff")
-		header.Set("X-Download-Options", "noopen")
-		header.Set("X-Frame-Options", "DENY")
+		header["X-Content-Type-Options"] = contentTypeOptionsValue
+		header["X-Download-Options"] = downloadOptionsValue
+		header["X-Frame-Options"] = frameOptionsValue
 		c.Next()
 	}
 }
