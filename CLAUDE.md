@@ -7,8 +7,9 @@
   docs/GOMBIT_BUILD_PLAN.md §5 and the change's claimed contract. Invoke with
   `/code-review` or ask to review a PR/diff; it overrides the bundled
   `/code-review` for this repo.
-- This repo has completed M0–M3 and started M4 CLI (see AGENTS.md
-  "Current state").
+- For what has shipped, defer to AGENTS.md "Current state" (kept current
+  there) rather than a milestone number duplicated here that drifts out of
+  date — as of this writing that is M0–M5, ADMIN-1..3, REL-1..9, and BENCH-1.
   Prefer a direct `Read` of `docs/GOMBIT_BUILD_PLAN.md` over spawning an
   Explore subagent for backlog/dependency lookups. Runtime packages and the
   Cobra `gombit` tree (`new`, `db`, `openapi`, `client`) exist; generated
