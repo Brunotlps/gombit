@@ -422,6 +422,56 @@ func TestResourceValidation(t *testing.T) {
 	assertError(t, unknown, http.StatusUnprocessableEntity, contract.CodeValidationError)
 }
 
+func TestResourceCreateInvalidRequiredFieldReportsCoercionError(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	app := newCookieApp(t)
+	registerWidgets(t, app, func(o *admin.Options) {
+		for i := range o.Fields {
+			if o.Fields[i].Name == "price" {
+				o.Fields[i].Required = true
+			}
+		}
+	})
+	jar := loginSuperuser(t, app)
+
+	rec := doRequest(app, jar, http.MethodPost, "/api/v1/admin/resources/widgets",
+		`{"name":"X","price":"not-a-number"}`)
+	assertError(t, rec, http.StatusUnprocessableEntity, contract.CodeValidationError)
+
+	env := decodeError(t, rec)
+	got := env.Fields["price"]
+	if len(got) != 1 || got[0] != "must be an integer" {
+		t.Fatalf("fields.price = %#v, want [\"must be an integer\"]", got)
+	}
+}
+
+func TestResourceCreateMixedMissingAndInvalidRequiredFields(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	app := newCookieApp(t)
+	registerWidgets(t, app, func(o *admin.Options) {
+		for i := range o.Fields {
+			if o.Fields[i].Name == "price" {
+				o.Fields[i].Required = true
+			}
+		}
+	})
+	jar := loginSuperuser(t, app)
+
+	// "name" is required and absent; "price" is required and present but
+	// invalid. Each must keep its own distinct message.
+	rec := doRequest(app, jar, http.MethodPost, "/api/v1/admin/resources/widgets",
+		`{"price":"not-a-number"}`)
+	assertError(t, rec, http.StatusUnprocessableEntity, contract.CodeValidationError)
+
+	env := decodeError(t, rec)
+	if got := env.Fields["name"]; len(got) != 1 || got[0] != "is required" {
+		t.Fatalf("fields.name = %#v, want [\"is required\"]", got)
+	}
+	if got := env.Fields["price"]; len(got) != 1 || got[0] != "must be an integer" {
+		t.Fatalf("fields.price = %#v, want [\"must be an integer\"]", got)
+	}
+}
+
 func TestResourceListPaginationSearchOrderFilter(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	app := newCookieApp(t)
