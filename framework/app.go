@@ -524,8 +524,7 @@ func configureTrustedProxies(engine *gin.Engine, proxies []string) error {
 func runtimeMiddlewareStack(cfg config.Config, metrics *httpMetrics) []namedMiddleware {
 	stack := []namedMiddleware{
 		{name: "recovery", handler: gin.Recovery()},
-		{name: "request_id", handler: requestIDMiddleware()},
-		{name: "trace_context", handler: traceContextMiddleware()},
+		{name: "request_context", handler: requestContextMiddleware()},
 		{name: "metrics", handler: metricsMiddleware(metrics)},
 		{
 			name:    "security_headers",

@@ -25,8 +25,7 @@ func TestDefaultRuntimeMiddlewareOrder(t *testing.T) {
 
 	want := []string{
 		"recovery",
-		"request_id",
-		"trace_context",
+		"request_context",
 		"metrics",
 		"security_headers",
 		"xss",
@@ -142,6 +141,40 @@ func TestDefaultRouterAddsSecurityHeaders(t *testing.T) {
 	}
 	if got := rec.Header().Get("X-XSS-Protection"); got != "" {
 		t.Fatalf("X-XSS-Protection = %q, want empty deprecated header", got)
+	}
+}
+
+// TestSecurityHeaderSharedValuesNotCorrupted guards the allocation
+// optimization in securityHeadersMiddleware: the header values are shared
+// package-level slices assigned directly to each response's header map. A
+// downstream handler that appends to one of those headers must not corrupt
+// the shared slice for subsequent requests. Append on a len==cap==1 slice
+// reallocates, so this is safe — this test locks that invariant in.
+func TestSecurityHeaderSharedValuesNotCorrupted(t *testing.T) {
+	app := newTestApp(t)
+	app.Router().GET("/mutate-header", func(c *gin.Context) {
+		// A handler legitimately tightening the policy for its own response.
+		c.Writer.Header().Add("X-Frame-Options", "SAMEORIGIN")
+		c.Status(http.StatusOK)
+	})
+
+	// First request mutates the (shared) X-Frame-Options slice for its response.
+	mut := httptest.NewRecorder()
+	app.Router().ServeHTTP(mut, httptest.NewRequest(http.MethodGet, "/mutate-header", nil))
+	if got := mut.Header().Values("X-Frame-Options"); len(got) != 2 || got[0] != "DENY" || got[1] != "SAMEORIGIN" {
+		t.Fatalf("mutated response X-Frame-Options = %v, want [DENY SAMEORIGIN]", got)
+	}
+
+	// A subsequent unrelated request must still see the pristine single value.
+	next := httptest.NewRecorder()
+	app.Router().ServeHTTP(next, httptest.NewRequest(http.MethodGet, "/livez", nil))
+	if got := next.Header().Values("X-Frame-Options"); len(got) != 1 || got[0] != "DENY" {
+		t.Fatalf("later response X-Frame-Options = %v, want [DENY] — shared slice was corrupted", got)
+	}
+
+	// And the package-level backing slice itself is untouched.
+	if len(frameOptionsValue) != 1 || frameOptionsValue[0] != "DENY" {
+		t.Fatalf("frameOptionsValue = %v, want [DENY]", frameOptionsValue)
 	}
 }
 

@@ -14,9 +14,27 @@ const RequestIDHeader = "X-Request-Id"
 
 const requestIDGinKey = "request_id"
 
-type requestIDContextKey struct{}
+// requestMeta carries the per-request correlation IDs propagated through the
+// request context by requestContextMiddleware. Keeping both under one context
+// key costs a single context.WithValue and a single Request.WithContext per
+// request; the previously separate request_id and trace_context middlewares
+// each ran their own pair.
+type requestMeta struct {
+	requestID string
+	traceID   string
+}
 
-func requestIDMiddleware() gin.HandlerFunc {
+type requestMetaKey struct{}
+
+// requestContextMiddleware assigns the request and trace correlation IDs
+// (honoring an inbound X-Request-Id and W3C traceparent when present), exposes
+// them on the response headers and the Gin context, and propagates both
+// through the request context under a single key. It replaces the previously
+// separate request_id and trace_context middlewares: splitting them cost an
+// extra context.WithValue and Request.WithContext allocation per request for
+// no behavioral difference (the two IDs are independent and both must land
+// before the metrics/handler stages either way).
+func requestContextMiddleware() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		requestID := strings.TrimSpace(c.GetHeader(RequestIDHeader))
 		if requestID == "" {
@@ -26,9 +44,24 @@ func requestIDMiddleware() gin.HandlerFunc {
 			requestID = "unknown"
 		}
 
+		traceID := traceIDFromTraceparent(c.GetHeader(TraceparentHeader))
+		if traceID == "" {
+			traceID = newTraceID()
+		}
+		if traceID == "" {
+			traceID = "unknown"
+		}
+
 		c.Set(requestIDGinKey, requestID)
+		c.Set(traceIDGinKey, traceID)
 		c.Header(RequestIDHeader, requestID)
-		c.Request = c.Request.WithContext(context.WithValue(c.Request.Context(), requestIDContextKey{}, requestID))
+		c.Header(TraceIDHeader, traceID)
+		c.Request = c.Request.WithContext(
+			context.WithValue(c.Request.Context(), requestMetaKey{}, requestMeta{
+				requestID: requestID,
+				traceID:   traceID,
+			}),
+		)
 
 		c.Next()
 	}
@@ -52,8 +85,8 @@ func GetRequestIDFromContext(ctx context.Context) string {
 	if ctx == nil {
 		return ""
 	}
-	requestID, _ := ctx.Value(requestIDContextKey{}).(string)
-	return requestID
+	meta, _ := ctx.Value(requestMetaKey{}).(requestMeta)
+	return meta.requestID
 }
 
 func newRequestID() string {

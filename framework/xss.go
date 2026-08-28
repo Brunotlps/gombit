@@ -78,6 +78,11 @@ func writeXSSError(c *gin.Context, env *contract.ErrorEnvelope) {
 }
 
 func sanitizeQuery(c *gin.Context) {
+	// No query string: skip the url.ParseQuery allocation entirely. The common
+	// case for API/admin traffic and every bodyless GET without parameters.
+	if c.Request.URL.RawQuery == "" {
+		return
+	}
 	query := c.Request.URL.Query()
 	changed := false
 	for key, values := range query {
