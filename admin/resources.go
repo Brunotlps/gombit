@@ -286,9 +286,13 @@ func applyWrite(ctx context.Context, m *registered, inst any, body map[string]an
 			if !f.Required || f.ReadOnly {
 				continue
 			}
-			if _, ok := seen[f.Name]; !ok {
-				fields[f.Name] = []string{"is required"}
+			if _, ok := seen[f.Name]; ok {
+				continue
 			}
+			if _, ok := fields[f.Name]; ok {
+				continue
+			}
+			fields[f.Name] = []string{"is required"}
 		}
 	}
 	if len(fields) > 0 {
