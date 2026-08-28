@@ -63,12 +63,25 @@ func GetTraceIDFromContext(ctx context.Context) string {
 	return meta.traceID
 }
 
-// Security-header values are request-invariant constants. Sharing one backing
-// slice per header and assigning it directly to the response header map (keys
-// are already in canonical MIME form) avoids the fresh []string allocation
-// that http.Header.Set makes on every request — six per response on the hot
-// path. net/http only reads these slices, so sharing the backing array across
-// requests is safe.
+// Security-header values are request-invariant. Rather than allocate a fresh
+// []string per header on every response (what http.Header.Set does), the
+// middleware assigns these shared, read-only backing slices directly into the
+// response header map (keys are already in canonical MIME form). That saves
+// six allocations per response on the hot path.
+//
+// http.Header is a mutable map of mutable slices, so sharing is safe only
+// under its documented mutation APIs, and that constraint is load-bearing:
+//   - Set and Del replace or delete the map entry, never writing through the
+//     shared slice.
+//   - Add appends, but these slices have len == cap == 1, so it must
+//     reallocate rather than grow one in place.
+//
+// These slices MUST be treated as read-only. An in-place write —
+// Header.Values(k)[0] = ... or append(h[k][:0], ...) — writes straight through
+// to the process-global value, corrupting it for every other request and
+// racing with them. Override a security header with Set (as
+// applySPAContentSecurityPolicy does), never an in-place slice write.
+// TestSecurityHeaderSharedValueContract locks all three paths.
 var (
 	cspHeaderValue          = []string{"default-src 'self'"}
 	referrerPolicyValue     = []string{"strict-origin-when-cross-origin"}

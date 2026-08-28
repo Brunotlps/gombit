@@ -144,38 +144,87 @@ func TestDefaultRouterAddsSecurityHeaders(t *testing.T) {
 	}
 }
 
-// TestSecurityHeaderSharedValuesNotCorrupted guards the allocation
-// optimization in securityHeadersMiddleware: the header values are shared
-// package-level slices assigned directly to each response's header map. A
-// downstream handler that appends to one of those headers must not corrupt
-// the shared slice for subsequent requests. Append on a len==cap==1 slice
-// reallocates, so this is safe — this test locks that invariant in.
-func TestSecurityHeaderSharedValuesNotCorrupted(t *testing.T) {
-	app := newTestApp(t)
-	app.Router().GET("/mutate-header", func(c *gin.Context) {
-		// A handler legitimately tightening the policy for its own response.
-		c.Writer.Header().Add("X-Frame-Options", "SAMEORIGIN")
-		c.Status(http.StatusOK)
+// TestSecurityHeaderSharedValueContract locks the invariant behind the
+// allocation optimization in securityHeadersMiddleware: the header values are
+// shared, read-only package-level slices assigned straight into each
+// response's header map. Sharing is safe only under http.Header's mutation
+// APIs (Set/Del replace the entry; Add reallocates a len==cap==1 slice); an
+// in-place slice write leaks into the process-global value. All three paths
+// are exercised so the contract is proven, not merely self-consistent.
+func TestSecurityHeaderSharedValueContract(t *testing.T) {
+	const key = "X-Frame-Options"
+
+	// Set is the supported override API — applySPAContentSecurityPolicy uses
+	// it. It replaces the map entry, so the shared value stays request-local.
+	t.Run("set override stays request-local", func(t *testing.T) {
+		app := newTestApp(t)
+		app.Router().GET("/set-header", func(c *gin.Context) {
+			c.Header(key, "SAMEORIGIN")
+			c.Status(http.StatusOK)
+		})
+
+		overridden := httptest.NewRecorder()
+		app.Router().ServeHTTP(overridden, httptest.NewRequest(http.MethodGet, "/set-header", nil))
+		if got := overridden.Header().Get(key); got != "SAMEORIGIN" {
+			t.Fatalf("overridden %s = %q, want SAMEORIGIN", key, got)
+		}
+
+		next := httptest.NewRecorder()
+		app.Router().ServeHTTP(next, httptest.NewRequest(http.MethodGet, "/livez", nil))
+		if got := next.Header().Get(key); got != "DENY" {
+			t.Fatalf("later %s = %q, want DENY — Set must not touch the shared value", key, got)
+		}
+		if frameOptionsValue[0] != "DENY" {
+			t.Fatalf("frameOptionsValue = %v, want [DENY]", frameOptionsValue)
+		}
 	})
 
-	// First request mutates the (shared) X-Frame-Options slice for its response.
-	mut := httptest.NewRecorder()
-	app.Router().ServeHTTP(mut, httptest.NewRequest(http.MethodGet, "/mutate-header", nil))
-	if got := mut.Header().Values("X-Frame-Options"); len(got) != 2 || got[0] != "DENY" || got[1] != "SAMEORIGIN" {
-		t.Fatalf("mutated response X-Frame-Options = %v, want [DENY SAMEORIGIN]", got)
-	}
+	// Add appends; on a len==cap==1 slice it must reallocate, so it too stays
+	// request-local. That reallocation is the load-bearing reason Add is safe.
+	t.Run("add reallocates and stays request-local", func(t *testing.T) {
+		app := newTestApp(t)
+		app.Router().GET("/add-header", func(c *gin.Context) {
+			c.Writer.Header().Add(key, "SAMEORIGIN")
+			c.Status(http.StatusOK)
+		})
 
-	// A subsequent unrelated request must still see the pristine single value.
-	next := httptest.NewRecorder()
-	app.Router().ServeHTTP(next, httptest.NewRequest(http.MethodGet, "/livez", nil))
-	if got := next.Header().Values("X-Frame-Options"); len(got) != 1 || got[0] != "DENY" {
-		t.Fatalf("later response X-Frame-Options = %v, want [DENY] — shared slice was corrupted", got)
-	}
+		added := httptest.NewRecorder()
+		app.Router().ServeHTTP(added, httptest.NewRequest(http.MethodGet, "/add-header", nil))
+		if got := added.Header().Values(key); len(got) != 2 || got[0] != "DENY" || got[1] != "SAMEORIGIN" {
+			t.Fatalf("added %s = %v, want [DENY SAMEORIGIN]", key, got)
+		}
 
-	// And the package-level backing slice itself is untouched.
-	if len(frameOptionsValue) != 1 || frameOptionsValue[0] != "DENY" {
-		t.Fatalf("frameOptionsValue = %v, want [DENY]", frameOptionsValue)
-	}
+		next := httptest.NewRecorder()
+		app.Router().ServeHTTP(next, httptest.NewRequest(http.MethodGet, "/livez", nil))
+		if got := next.Header().Values(key); len(got) != 1 || got[0] != "DENY" {
+			t.Fatalf("later %s = %v, want [DENY]", key, got)
+		}
+		if frameOptionsValue[0] != "DENY" {
+			t.Fatalf("frameOptionsValue = %v, want [DENY]", frameOptionsValue)
+		}
+	})
+
+	// The hazard the sharing depends on callers avoiding: an in-place write
+	// through the live slice Header.Values returns corrupts the process-global
+	// value for every subsequent request. Demonstrated here (and restored via
+	// Cleanup) so the read-only constraint in securityHeadersMiddleware is
+	// executable, not just prose. Real handlers MUST NOT do this — use Set.
+	t.Run("in-place mutation leaks into the shared value (unsupported)", func(t *testing.T) {
+		t.Cleanup(func() { frameOptionsValue = []string{"DENY"} })
+
+		app := newTestApp(t)
+		app.Router().GET("/mutate-in-place", func(c *gin.Context) {
+			c.Writer.Header().Values(key)[0] = "ALLOWALL"
+			c.Status(http.StatusOK)
+		})
+		app.Router().ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/mutate-in-place", nil))
+
+		if frameOptionsValue[0] != "ALLOWALL" {
+			t.Fatalf("frameOptionsValue = %v; an in-place Values() write was expected to leak into the "+
+				"shared value. If it no longer does, in-place mutation became safe and the middleware "+
+				"comment must be updated to match", frameOptionsValue)
+		}
+	})
 }
 
 func TestProductionRouterAddsHSTS(t *testing.T) {
