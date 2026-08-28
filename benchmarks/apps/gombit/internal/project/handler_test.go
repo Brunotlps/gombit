@@ -212,40 +212,50 @@ func TestUpdateRejectsBlankName(t *testing.T) {
 	}
 }
 
-// TestCreateInvalidOwnerIDReturnsInternalError documents, rather than hides,
-// a real Gombit framework gap discovered while building this app:
-// database.MapPersistError (github.com/gombit-dev/gombit/database) only
-// special-cases unique-constraint violations, so a foreign-key violation —
-// exactly what a nonexistent owner_id produces — falls through to internal
-// (500). benchmarks/apps/gin-gorm's control implementation does not use
-// that framework helper and maps the same input to 422 (see its
-// TestCreateRejectsInvalidOwnerID); this app uses Gombit's normal public
-// APIs unmodified (issue #141: "do not bypass ... normal Gombit response
-// handling"), so it inherits the gap. This test pins the framework's actual
-// current behavior so a silent fix (or regression) shows up here, not just
-// as an unexplained fairness-check failure when Phase 3b's
-// cross-implementation checks run. See
-// docs/plans/BENCH-1-benchmark-suite.md Phase 3b for the discovered-gap
-// writeup and why it's out of scope to fix as part of BENCH-1.
-func TestCreateInvalidOwnerIDReturnsInternalError(t *testing.T) {
+// TestCreateInvalidOwnerIDReturnsValidationError used to pin a real Gombit
+// framework gap discovered while building this app: database.MapPersistError
+// (github.com/gombit-dev/gombit/database) only special-cased
+// unique-constraint violations, so a foreign-key violation — exactly what a
+// nonexistent owner_id produces — fell through to internal (500), while
+// benchmarks/apps/gin-gorm's control implementation (which doesn't use that
+// framework helper) already mapped the same input to 422. That gap is fixed
+// (github.com/gombit-dev/gombit issue #202: MapPersistError now maps
+// foreign-key and NOT NULL violations to a D10 validation error), so this
+// app now gets the same 422 through Gombit's normal public APIs, unmodified
+// — no special-casing needed here. This test now asserts parity with
+// gin-gorm's TestCreateRejectsInvalidOwnerID instead of pinning the gap. See
+// docs/plans/BENCH-1-benchmark-suite.md Phase 3b for the original
+// discovered-gap writeup.
+func TestCreateInvalidOwnerIDReturnsValidationError(t *testing.T) {
 	app := newProjectApp(t)
 
 	response := doJSON(t, app, http.MethodPost, "/api/projects", `{"owner_id":999999,"name":"Orphan","description":"no such owner"}`)
-	if response.Code != http.StatusInternalServerError {
-		t.Fatalf("POST with nonexistent owner_id status = %d, want %d (see test doc comment); body: %s",
-			response.Code, http.StatusInternalServerError, response.Body.String())
+	if response.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("POST with nonexistent owner_id status = %d, want %d; body: %s",
+			response.Code, http.StatusUnprocessableEntity, response.Body.String())
+	}
+	var envelope struct {
+		Error struct {
+			Code string `json:"code"`
+		} `json:"error"`
+	}
+	if err := json.Unmarshal(response.Body.Bytes(), &envelope); err != nil {
+		t.Fatalf("decode error envelope: %v; body: %s", err, response.Body.String())
+	}
+	if envelope.Error.Code != "validation_error" {
+		t.Fatalf("error code = %q, want %q", envelope.Error.Code, "validation_error")
 	}
 }
 
 // TestCreateRejectsZeroOwnerID checks a different input than
-// TestCreateInvalidOwnerIDReturnsInternalError above: owner_id:0 is not "a
+// TestCreateInvalidOwnerIDReturnsValidationError above: owner_id:0 is not "a
 // nonexistent but well-formed id" (999999), it's the zero value — the same
 // thing gin-gorm's binding:"required" on OwnerID rejects at the validation
 // layer before it ever reaches GORM. Without minimum:"1" on
 // createProjectBody.OwnerID, this case fell through to the same
-// FK-violation 500 as the nonexistent-id case, conflating a validation gap
-// this app can close with the discovered framework gap it deliberately
-// doesn't.
+// FK-violation error as the nonexistent-id case — both are now 422 (see
+// issue #202), but they were a real, independently-fixable validation gap
+// on this app's side, distinct from the framework-level classification gap.
 func TestCreateRejectsZeroOwnerID(t *testing.T) {
 	app := newProjectApp(t)
 

@@ -127,25 +127,28 @@ blank-name rejection on both create and update, pagination/ordering, and the
 3-query / 2-query (empty page) N+1 guard — plus one difference documented
 below.
 
-## A discovered framework gap, not a benchmark bug
+## A discovered framework gap — fixed (issue #202)
 
-`POST /api/projects` with a nonexistent `owner_id` returns **500 internal**,
-not a 4xx client error. This app uses Gombit's normal
+`POST /api/projects` with a nonexistent `owner_id` used to return **500
+internal** instead of a 4xx client error. This app uses Gombit's normal
 `database.MapPersistError` (`github.com/gombit-dev/gombit/database`)
-unmodified, and that function only special-cases unique-constraint
-violations — a foreign-key violation falls through to `internal`.
+unmodified, and that function only special-cased unique-constraint
+violations — a foreign-key violation fell through to `internal`.
 `gin-gorm`'s control implementation doesn't use that framework helper (see
-its README) and correctly maps the same input to 422.
+its README) and already mapped the same input to 422, so the two
+implementations disagreed on equivalent input.
 
-This is deliberately **not patched here**: issue #141 requires using
-Gombit's normal public APIs as-is ("do not bypass ... normal Gombit response
-handling"), and the entire point of this app is measuring what a real
-Gombit user gets today. `TestCreateInvalidOwnerIDReturnsInternalError` pins
-this actual behavior so a future framework fix (or regression) shows up
-here as an expected test change, not a mysterious fairness-check failure.
-Fixing `database.MapPersistError` itself is out of scope for BENCH-1 — see
-docs/plans/BENCH-1-benchmark-suite.md Phase 3b for the writeup and a
-pointer to file it as its own issue.
+This was deliberately **not patched here** while it was open: issue #141
+requires using Gombit's normal public APIs as-is ("do not bypass ... normal
+Gombit response handling"), and the entire point of this app is measuring
+what a real Gombit user gets. `TestCreateInvalidOwnerIDReturnsValidationError`
+(renamed from `...ReturnsInternalError`) used to pin the gap so a framework
+fix would show up here as an expected test change rather than a mysterious
+fairness-check failure; see docs/plans/BENCH-1-benchmark-suite.md Phase 3b
+for that original writeup. `database.MapPersistError` was fixed in issue
+#202 (foreign-key and NOT NULL violations now map to a D10 validation
+error), so this app now gets the same 422 as `gin-gorm` through Gombit's
+normal public APIs, unmodified — no special-casing needed.
 
 ## Status
 

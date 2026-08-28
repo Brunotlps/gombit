@@ -206,7 +206,7 @@ func (h *handlers) deleteResource(ctx context.Context, input *itemInput) (*delet
 		return nil, contract.WithContext(ctx, contract.Internal("admin database is not attached"))
 	}
 	if err := db.WithContext(ctx).Delete(inst).Error; err != nil {
-		return nil, database.MapPersistError(ctx, err, "resource already exists", "persist resource")
+		return nil, database.MapDeleteError(ctx, err, "resource is still referenced by other records", "delete resource")
 	}
 	return &deleteOutput{Body: contract.Data[deleteResult]{Data: deleteResult{OK: true}}}, nil
 }

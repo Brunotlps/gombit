@@ -35,6 +35,53 @@ func TestIsUniqueViolation(t *testing.T) {
 	}
 }
 
+func TestIsForeignKeyViolation(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "nil", err: nil, want: false},
+		{name: "ErrForeignKeyViolated", err: gorm.ErrForeignKeyViolated, want: true},
+		{name: "wrapped ErrForeignKeyViolated", err: errors.Join(errors.New("wrap"), gorm.ErrForeignKeyViolated), want: true},
+		{name: "sqlite foreign key", err: errors.New("FOREIGN KEY constraint failed"), want: true},
+		{name: "postgres foreign key", err: errors.New("ERROR: insert or update on table \"widgets\" violates foreign key constraint \"fk_widgets_category\" (SQLSTATE 23503)"), want: true},
+		{name: "mysql foreign key", err: errors.New("Error 1452 (23000): Cannot add or update a child row: a foreign key constraint fails"), want: true},
+		{name: "unique, not foreign key", err: errors.New("UNIQUE constraint failed: widgets.sku"), want: false},
+		{name: "generic", err: errors.New("connection refused"), want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsForeignKeyViolation(tt.err); got != tt.want {
+				t.Fatalf("IsForeignKeyViolation(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestIsNotNullViolation(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		want bool
+	}{
+		{name: "nil", err: nil, want: false},
+		{name: "sqlite not null", err: errors.New("NOT NULL constraint failed: widgets.name"), want: true},
+		{name: "postgres not null", err: errors.New("ERROR: null value in column \"name\" of relation \"widgets\" violates not-null constraint (SQLSTATE 23502)"), want: true},
+		{name: "mysql not null", err: errors.New("Error 1048 (23000): Column 'name' cannot be null"), want: true},
+		{name: "unique, not null-related", err: errors.New("UNIQUE constraint failed: widgets.sku"), want: false},
+		{name: "foreign key, not null-related", err: errors.New("FOREIGN KEY constraint failed"), want: false},
+		{name: "generic", err: errors.New("connection refused"), want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := IsNotNullViolation(tt.err); got != tt.want {
+				t.Fatalf("IsNotNullViolation(%v) = %v, want %v", tt.err, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestMapLoadError(t *testing.T) {
 	ctx := context.Background()
 	tests := []struct {
@@ -68,6 +115,9 @@ func TestMapPersistError(t *testing.T) {
 		{name: "nil", err: nil, wantStatus: 0, wantCode: ""},
 		{name: "sqlite unique", err: errors.New("UNIQUE constraint failed: widgets.sku"), wantStatus: http.StatusConflict, wantCode: "conflict"},
 		{name: "ErrDuplicatedKey", err: gorm.ErrDuplicatedKey, wantStatus: http.StatusConflict, wantCode: "conflict"},
+		{name: "sqlite foreign key", err: errors.New("FOREIGN KEY constraint failed"), wantStatus: http.StatusUnprocessableEntity, wantCode: contract.CodeValidationError},
+		{name: "ErrForeignKeyViolated", err: gorm.ErrForeignKeyViolated, wantStatus: http.StatusUnprocessableEntity, wantCode: contract.CodeValidationError},
+		{name: "sqlite not null", err: errors.New("NOT NULL constraint failed: widgets.name"), wantStatus: http.StatusUnprocessableEntity, wantCode: contract.CodeValidationError},
 		{name: "no such table", err: errors.New("no such table: widgets"), wantStatus: http.StatusInternalServerError, wantCode: "internal"},
 		{name: "not found", err: gorm.ErrRecordNotFound, wantStatus: http.StatusInternalServerError, wantCode: "internal"},
 	}
@@ -100,6 +150,104 @@ func TestMapPersistErrorSQLiteUniqueConstraint(t *testing.T) {
 	}
 	mapped := MapPersistError(context.Background(), err, "resource already exists", "persist widget")
 	assertMapped(t, mapped, err, http.StatusConflict, "conflict")
+}
+
+func TestMapDeleteError(t *testing.T) {
+	ctx := context.Background()
+	tests := []struct {
+		name       string
+		err        error
+		wantStatus int
+		wantCode   string
+	}{
+		{name: "nil", err: nil, wantStatus: 0, wantCode: ""},
+		{name: "sqlite foreign key", err: errors.New("FOREIGN KEY constraint failed"), wantStatus: http.StatusConflict, wantCode: "conflict"},
+		{name: "ErrForeignKeyViolated", err: gorm.ErrForeignKeyViolated, wantStatus: http.StatusConflict, wantCode: "conflict"},
+		{name: "unique is not a delete conflict here", err: errors.New("UNIQUE constraint failed: widgets.sku"), wantStatus: http.StatusInternalServerError, wantCode: "internal"},
+		{name: "generic", err: errors.New("connection refused"), wantStatus: http.StatusInternalServerError, wantCode: "internal"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := MapDeleteError(ctx, tt.err, "resource is still referenced by other records", "delete widget")
+			assertMapped(t, got, tt.err, tt.wantStatus, tt.wantCode)
+		})
+	}
+}
+
+func TestMapDeleteErrorSQLiteForeignKeyConstraint(t *testing.T) {
+	db := openSQLite(t)
+	type deleteFKParent struct {
+		ID uint `gorm:"primaryKey"`
+	}
+	type deleteFKChild struct {
+		ID       uint `gorm:"primaryKey"`
+		ParentID uint
+		Parent   deleteFKParent `gorm:"constraint:OnUpdate:CASCADE,OnDelete:RESTRICT;"`
+	}
+	if err := db.AutoMigrate(&deleteFKParent{}, &deleteFKChild{}); err != nil {
+		t.Fatalf("AutoMigrate() error = %v", err)
+	}
+	parent := deleteFKParent{}
+	if err := db.Create(&parent).Error; err != nil {
+		t.Fatalf("create parent: %v", err)
+	}
+	if err := db.Create(&deleteFKChild{ParentID: parent.ID}).Error; err != nil {
+		t.Fatalf("create child: %v", err)
+	}
+
+	err := db.Delete(&parent).Error
+	if err == nil {
+		t.Fatal("Delete() error = nil, want foreign key violation (parent still referenced)")
+	}
+	if !IsForeignKeyViolation(err) {
+		t.Fatalf("IsForeignKeyViolation(%v) = false, want true", err)
+	}
+	mapped := MapDeleteError(context.Background(), err, "resource is still referenced by other records", "delete widget")
+	assertMapped(t, mapped, err, http.StatusConflict, "conflict")
+}
+
+func TestMapPersistErrorSQLiteForeignKeyConstraint(t *testing.T) {
+	db := openSQLite(t)
+	type fkCategory struct {
+		ID uint `gorm:"primaryKey"`
+	}
+	type fkWidget struct {
+		ID         uint `gorm:"primaryKey"`
+		CategoryID uint
+		Category   fkCategory `gorm:"constraint:OnUpdate:CASCADE,OnDelete:RESTRICT;"`
+	}
+	if err := db.AutoMigrate(&fkCategory{}, &fkWidget{}); err != nil {
+		t.Fatalf("AutoMigrate() error = %v", err)
+	}
+	err := db.Create(&fkWidget{CategoryID: 999}).Error
+	if err == nil {
+		t.Fatal("Create() error = nil, want foreign key violation")
+	}
+	if !IsForeignKeyViolation(err) {
+		t.Fatalf("IsForeignKeyViolation(%v) = false, want true", err)
+	}
+	mapped := MapPersistError(context.Background(), err, "resource already exists", "persist widget")
+	assertMapped(t, mapped, err, http.StatusUnprocessableEntity, contract.CodeValidationError)
+}
+
+func TestMapPersistErrorSQLiteNotNullConstraint(t *testing.T) {
+	db := openSQLite(t)
+	type notNullWidget struct {
+		ID   uint    `gorm:"primaryKey"`
+		Name *string `gorm:"not null"`
+	}
+	if err := db.AutoMigrate(&notNullWidget{}); err != nil {
+		t.Fatalf("AutoMigrate() error = %v", err)
+	}
+	err := db.Create(&notNullWidget{Name: nil}).Error
+	if err == nil {
+		t.Fatal("Create() error = nil, want NOT NULL violation")
+	}
+	if !IsNotNullViolation(err) {
+		t.Fatalf("IsNotNullViolation(%v) = false, want true", err)
+	}
+	mapped := MapPersistError(context.Background(), err, "resource already exists", "persist widget")
+	assertMapped(t, mapped, err, http.StatusUnprocessableEntity, contract.CodeValidationError)
 }
 
 func assertMapped(t *testing.T, got error, original error, wantStatus int, wantCode string) {
