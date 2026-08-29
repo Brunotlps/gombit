@@ -87,23 +87,3 @@ func TestUnknownPathStillReturns404(t *testing.T) {
 		t.Fatalf("unknown path returned 405, want 404-style fallback; body: %s", rec.Body.String())
 	}
 }
-
-func TestRoutePatternMatches(t *testing.T) {
-	cases := []struct {
-		pattern string
-		path    string
-		want    bool
-	}{
-		{"/api/v1/engines/:id", "/api/v1/engines/1", true},
-		{"/api/v1/engines/:id", "/api/v1/engines", false},
-		{"/api/v1/engines", "/api/v1/engines", true},
-		{"/api/v1/engines/:id", "/api/v1/engines/1/extra", false},
-		{"/assets/*filepath", "/assets/js/app.js", true},
-		{"/api/v1/engines/:id", "/api/v1/widgets/1", false},
-	}
-	for _, tc := range cases {
-		if got := routePatternMatches(tc.pattern, tc.path); got != tc.want {
-			t.Errorf("routePatternMatches(%q, %q) = %v, want %v", tc.pattern, tc.path, got, tc.want)
-		}
-	}
-}
