@@ -89,8 +89,13 @@ detail is disabled, the edit screen is hidden rather than PATCHing empty
 boolean defaults (`false`) over stored `true` values.
 Field widgets cover the closed field types; `belongs_to` is a single-select
 picker (storing the foreign key); `has_many` is read-only; `many_to_many` is a
-multi-select. The relation pickers are backed by the related model's list
-endpoint and show its label field.
+multi-select. The relation pickers are searchable Autocompletes backed by the
+related model's list endpoint, showing its label field. When the related model
+supports search, typing issues a debounced server-side `search` (surfacing rows
+beyond the first page) and the local filter is off; otherwise it filters the
+loaded page client-side. A model registered without a `Search` defaults it to
+its text columns (an explicit empty `Search` opts out), so pickers search out of
+the box.
 `datetime-local` values are converted to RFC3339 before POST/PATCH.
 Empty optional (non-boolean) inputs — string, text, date, datetime, json,
 number, relation — are sent as JSON `null` so a partial PATCH can clear

@@ -292,6 +292,103 @@ func TestManyToManyReadOnlyRejectsWrite(t *testing.T) {
 	}
 }
 
+// TestAutoDerivedModelIsSearchable verifies a purely auto-registered model gets
+// a default Search over its text columns, so the list endpoint (which the
+// relation picker uses for server-side search) can filter by name.
+func TestAutoDerivedModelIsSearchable(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	app := newCookieApp(t)
+	if err := app.DB().AutoMigrate(&relWarehouse{}); err != nil {
+		t.Fatalf("AutoMigrate: %v", err)
+	}
+	if err := admin.Register(app, relWarehouse{}, admin.Options{Slug: "warehouses"}); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	jar := loginSuperuser(t, app)
+	createWarehouse(t, app, jar, "North")
+	createWarehouse(t, app, jar, "South")
+
+	// Meta advertises the default search field.
+	meta := doRequest(app, jar, http.MethodGet, "/api/v1/admin/meta/warehouses", "")
+	if !strings.Contains(meta.Body.String(), `"search":["name"]`) {
+		t.Fatalf("warehouses meta missing default search on name: %s", meta.Body.String())
+	}
+
+	list := doRequest(app, jar, http.MethodGet, "/api/v1/admin/resources/warehouses?search=North", "")
+	if list.Code != http.StatusOK {
+		t.Fatalf("list status = %d; body: %s", list.Code, list.Body.String())
+	}
+	var env listEnvelope
+	if err := json.Unmarshal(list.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if len(env.Data) != 1 || fmt.Sprint(env.Data[0]["name"]) != "North" {
+		t.Fatalf("search=North returned %v, want exactly [North]", env.Data)
+	}
+}
+
+// TestExplicitFieldsModelIsSearchable verifies the documented registration path
+// (explicit Fields, no Search) also gets the default Search — the picker's
+// server-side search reaches past the first page there too, not only for
+// auto-derived models.
+func TestExplicitFieldsModelIsSearchable(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	app := newCookieApp(t)
+	if err := app.DB().AutoMigrate(&relWarehouse{}); err != nil {
+		t.Fatalf("AutoMigrate: %v", err)
+	}
+	if err := admin.Register(app, relWarehouse{}, admin.Options{
+		Slug: "warehouses",
+		Fields: []admin.Field{
+			{Name: "id", Type: admin.TypeInteger, ReadOnly: true},
+			{Name: "name", Type: admin.TypeString, Required: true},
+		},
+		// No Search set.
+	}); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	jar := loginSuperuser(t, app)
+	createWarehouse(t, app, jar, "North")
+	createWarehouse(t, app, jar, "South")
+
+	list := doRequest(app, jar, http.MethodGet, "/api/v1/admin/resources/warehouses?search=South", "")
+	var env listEnvelope
+	if err := json.Unmarshal(list.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if len(env.Data) != 1 || fmt.Sprint(env.Data[0]["name"]) != "South" {
+		t.Fatalf("search=South returned %v, want exactly [South] (explicit-Fields model must be searchable)", env.Data)
+	}
+}
+
+// TestEmptySearchOptsOut verifies an explicit empty (non-nil) Search disables
+// search — the picker then filters client-side only.
+func TestEmptySearchOptsOut(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	app := newCookieApp(t)
+	if err := app.DB().AutoMigrate(&relWarehouse{}); err != nil {
+		t.Fatalf("AutoMigrate: %v", err)
+	}
+	if err := admin.Register(app, relWarehouse{}, admin.Options{
+		Slug:   "warehouses",
+		Search: []string{}, // explicit opt-out
+	}); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	jar := loginSuperuser(t, app)
+	createWarehouse(t, app, jar, "North")
+	createWarehouse(t, app, jar, "South")
+
+	list := doRequest(app, jar, http.MethodGet, "/api/v1/admin/resources/warehouses?search=South", "")
+	var env listEnvelope
+	if err := json.Unmarshal(list.Body.Bytes(), &env); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if len(env.Data) != 2 {
+		t.Fatalf("with empty Search, search=South returned %d rows, want 2 (search opted out)", len(env.Data))
+	}
+}
+
 func createWarehouse(t *testing.T, app *framework.App, jar *cookieJar, name string) int64 {
 	t.Helper()
 	rec := doRequest(app, jar, http.MethodPost, "/api/v1/admin/resources/warehouses",

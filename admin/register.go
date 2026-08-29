@@ -56,6 +56,13 @@ func registerModel(host Host, model any, opts Options) error {
 		}
 		opts.Fields = derived
 	}
+	// Default Search to the model's text columns when the caller left it unset
+	// (nil), so the admin — and the relation pickers, which search server-side —
+	// can filter by name out of the box. A caller who wants no search opts out
+	// explicitly with an empty (non-nil) slice.
+	if opts.Search == nil {
+		opts.Search = defaultSearchFields(opts.Fields)
+	}
 
 	if opts.Actions.zero() {
 		opts.Actions = defaultActions()
@@ -137,6 +144,21 @@ func registerModel(host Host, model any, opts Options) error {
 		}
 	}
 	return reg.add(m)
+}
+
+// defaultSearchFields returns the writable string/text field names of a model,
+// the sensible default Search set for a purely auto-registered model.
+func defaultSearchFields(fields []Field) []string {
+	var out []string
+	for _, f := range fields {
+		if f.ReadOnly {
+			continue
+		}
+		if f.Type == TypeString || f.Type == TypeText {
+			out = append(out, f.Name)
+		}
+	}
+	return out
 }
 
 func defaultPermissions(slug string, p Permissions) Permissions {
