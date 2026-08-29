@@ -85,7 +85,12 @@ Other behavior notes:
   path is JSON/Huma. Form/multipart coverage can land before browser/admin
   session work if needed.
 - Sanitization re-marshals JSON, so key order and whitespace may change.
-  Callers that hash the raw body must hash the bytes handlers actually see.
+  Callers that hash the raw body must hash the bytes handlers actually see —
+  which a webhook can't, since it verifies a signature over the *original*
+  bytes. Mark such paths with
+  [`framework.WithRawBodyPaths`](auth-cookie.md#exempting-non-browser-endpoints-webhooks):
+  they skip sanitization entirely (and the 8MiB cap below), so the body reaches
+  the handler byte-for-byte, and they are CSRF-exempt too.
 - Unclosed dangerous elements (for example a truncated `<script>...`) discard
   the remainder of the string (fail-closed).
 - Incomplete angle brackets that are not a complete HTML tag (no closing

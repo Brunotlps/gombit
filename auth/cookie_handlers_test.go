@@ -405,6 +405,12 @@ func TestRawBodyPathThroughNew(t *testing.T) {
 	if got != raw {
 		t.Fatalf("handler received %q, want the body unmodified %q", got, raw)
 	}
+
+	// A neighbor path is not raw-body: CSRF is still enforced. Guards against a
+	// regression that disables CSRF globally whenever any raw-body path is set.
+	app.Router().POST("/api/v1/other", func(c *gin.Context) { c.Status(http.StatusOK) })
+	rec = doRequest(app, nil, http.MethodPost, "/api/v1/other", raw)
+	assertCSRFRejected(t, rec)
 }
 
 func TestCSRFSafeMethodsAreExempt(t *testing.T) {
