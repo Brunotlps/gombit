@@ -141,10 +141,7 @@ func (h *handlers) createResource(ctx context.Context, input *writeInput) (*rowO
 	if err := applyWrite(ctx, m, inst, body, true); err != nil {
 		return nil, err
 	}
-	if err := db.WithContext(ctx).Create(inst).Error; err != nil {
-		return nil, database.MapPersistError(ctx, err, "resource already exists", "persist resource")
-	}
-	if err := syncM2M(ctx, db, m, inst, m2mIDs); err != nil {
+	if err := persistWithM2M(ctx, db, m, inst, m2mIDs, true); err != nil {
 		return nil, err
 	}
 	return &rowOutput{Body: contract.Data[row]{Data: rowWithM2M(m, inst, m2mIDs)}}, nil
@@ -192,10 +189,7 @@ func (h *handlers) updateResource(ctx context.Context, input *patchInput) (*rowO
 	if err != nil {
 		return nil, contract.WithContext(ctx, contract.Internal("admin database is not attached"))
 	}
-	if err := db.WithContext(ctx).Save(inst).Error; err != nil {
-		return nil, database.MapPersistError(ctx, err, "resource already exists", "persist resource")
-	}
-	if err := syncM2M(ctx, db, m, inst, m2mIDs); err != nil {
+	if err := persistWithM2M(ctx, db, m, inst, m2mIDs, false); err != nil {
 		return nil, err
 	}
 	return &rowOutput{Body: contract.Data[row]{Data: rowWithM2M(m, inst, m2mIDs)}}, nil
@@ -299,6 +293,29 @@ func splitM2M(ctx context.Context, m *registered, body map[string]any) (ids map[
 		ids[k] = coerced
 	}
 	return ids, rest, nil
+}
+
+// persistWithM2M writes the base row and syncs the many-to-many join tables in
+// a single transaction, so a bad related id (a 422 from the sync) rolls back the
+// parent insert/update instead of leaving an orphan row. A model with no m2m
+// fields writes directly (no transaction needed).
+func persistWithM2M(ctx context.Context, db *gorm.DB, m *registered, inst any, ids map[string][]any, creating bool) error {
+	write := func(tx *gorm.DB) error {
+		var perr error
+		if creating {
+			perr = tx.WithContext(ctx).Create(inst).Error
+		} else {
+			perr = tx.WithContext(ctx).Save(inst).Error
+		}
+		if perr != nil {
+			return database.MapPersistError(ctx, perr, "resource already exists", "persist resource")
+		}
+		return syncM2M(ctx, tx, m, inst, ids)
+	}
+	if len(m.m2m) == 0 {
+		return write(db)
+	}
+	return db.WithContext(ctx).Transaction(write)
 }
 
 // syncM2M syncs each submitted many-to-many association's join table. Fields

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/gin-gonic/gin"
@@ -113,9 +114,17 @@ func TestResourceManyToMany(t *testing.T) {
 		t.Fatalf("patched warehouses = %v, want [%d]", ids, w1)
 	}
 
-	// A non-existent related id is a 422, not a silent no-op.
-	bad := doRequest(app, jar, http.MethodPatch, path, `{"warehouses":[999999]}`)
+	// A non-existent related id is a 422, and the scalar in the same PATCH must
+	// NOT commit (persist + sync share a transaction).
+	bad := doRequest(app, jar, http.MethodPatch, path, `{"name":"should-not-stick","warehouses":[999999]}`)
 	assertError(t, bad, http.StatusUnprocessableEntity, "validation_error")
+	var afterBad relEngine
+	if err := app.DB().First(&afterBad, engineID).Error; err != nil {
+		t.Fatalf("reload after bad patch: %v", err)
+	}
+	if afterBad.Name != "V8" {
+		t.Fatalf("name = %q after failed patch, want unchanged V8 (scalar must roll back)", afterBad.Name)
+	}
 
 	// Omitting the relation on PATCH leaves it unchanged (partial update).
 	rename := doRequest(app, jar, http.MethodPatch, path, `{"name":"V8-b"}`)
@@ -137,6 +146,66 @@ func TestResourceManyToMany(t *testing.T) {
 	_ = json.Unmarshal(clear.Body.Bytes(), &cleared)
 	if ids := idsOf(t, cleared.Data["warehouses"]); len(ids) != 0 {
 		t.Fatalf("cleared warehouses = %v, want empty", ids)
+	}
+}
+
+// TestManyToManyCreateBadIDLeavesNoOrphan verifies that a POST naming a
+// non-existent related id fails with 422 and does NOT insert the parent row
+// (persist + join sync share one transaction).
+func TestManyToManyCreateBadIDLeavesNoOrphan(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	app := newCookieApp(t)
+	if err := app.DB().AutoMigrate(&relWarehouse{}, &relEngine{}); err != nil {
+		t.Fatalf("AutoMigrate: %v", err)
+	}
+	if err := admin.Register(app, relWarehouse{}, admin.Options{
+		Slug:   "warehouses",
+		Fields: []admin.Field{{Name: "id", Type: admin.TypeInteger, ReadOnly: true}, {Name: "name", Type: admin.TypeString, Required: true}},
+	}); err != nil {
+		t.Fatalf("Register warehouse: %v", err)
+	}
+	if err := admin.Register(app, relEngine{}, admin.Options{
+		Slug: "engines",
+		Fields: []admin.Field{
+			{Name: "id", Type: admin.TypeInteger, ReadOnly: true},
+			{Name: "name", Type: admin.TypeString, Required: true},
+			{Name: "warehouses", Type: admin.TypeRelation, Related: &admin.Relation{Kind: admin.RelManyToMany, Slug: "warehouses", LabelField: "name"}},
+		},
+	}); err != nil {
+		t.Fatalf("Register engine: %v", err)
+	}
+	jar := loginSuperuser(t, app)
+
+	create := doRequest(app, jar, http.MethodPost, "/api/v1/admin/resources/engines", `{"name":"Orphan","warehouses":[999999]}`)
+	assertError(t, create, http.StatusUnprocessableEntity, "validation_error")
+
+	var count int64
+	if err := app.DB().Model(&relEngine{}).Where("name = ?", "Orphan").Count(&count).Error; err != nil {
+		t.Fatalf("count: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("engine count = %d, want 0 (a bad related id must not leave an orphan parent)", count)
+	}
+}
+
+// TestManyToManyRejectsRequired verifies Register refuses a Required m2m field,
+// which applyWrite's required check can never see (the id list is split out).
+func TestManyToManyRejectsRequired(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	app := newCookieApp(t)
+	if err := app.DB().AutoMigrate(&relWarehouse{}, &relEngine{}); err != nil {
+		t.Fatalf("AutoMigrate: %v", err)
+	}
+	err := admin.Register(app, relEngine{}, admin.Options{
+		Slug: "engines",
+		Fields: []admin.Field{
+			{Name: "id", Type: admin.TypeInteger, ReadOnly: true},
+			{Name: "name", Type: admin.TypeString, Required: true},
+			{Name: "warehouses", Type: admin.TypeRelation, Required: true, Related: &admin.Relation{Kind: admin.RelManyToMany, Slug: "warehouses"}},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "cannot be Required") {
+		t.Fatalf("Register error = %v, want a many_to_many-cannot-be-Required rejection", err)
 	}
 }
 

@@ -103,8 +103,14 @@ describe("many_to_many fields", () => {
     expect(body.warehouses).toEqual([]);
   });
 
-  it("ignores non-numeric junk in the list", () => {
-    const { body } = formValuesToBody({ warehouses: ["4", "x", 5] }, [rel()]);
+  it("preserves string / uuid ids instead of dropping them", () => {
+    const uuid = "6f9619ff-8b86-d011-b42d-00c04fc964ff";
+    const { body } = formValuesToBody({ warehouses: [uuid, "abc"] }, [rel()]);
+    expect(body.warehouses).toEqual([uuid, "abc"]);
+  });
+
+  it("drops only null / undefined / empty entries", () => {
+    const { body } = formValuesToBody({ warehouses: ["4", "", null, 5] }, [rel()]);
     expect(body.warehouses).toEqual([4, 5]);
   });
 });

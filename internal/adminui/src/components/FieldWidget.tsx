@@ -4,9 +4,10 @@ import { Controller, type Control, type FieldValues } from "react-hook-form";
 import { Checkbox, FormControlLabel, MenuItem, TextField } from "@mui/material";
 
 import { useApiClient } from "../api/client";
+import { useCatalog } from "../app/providers";
 import { apiResourcePath } from "../api/paths";
 import type { FieldMeta, Row } from "../api/types";
-import { isHasMany, isManyToMany } from "../fields";
+import { isHasMany, isManyToMany, toIdList } from "../fields";
 
 type Props = {
   field: FieldMeta;
@@ -14,7 +15,13 @@ type Props = {
   disabled?: boolean;
 };
 
-type Option = { id: number; label: string };
+type Option = { value: string; label: string };
+
+// relationPageSize is the related-model page fetched for the picker. It is
+// contract.MaxPerPage; related rows beyond it are not selectable from the
+// dropdown yet (a searchable/paged picker is a follow-up). The widget flags
+// when the list is truncated.
+const relationPageSize = 100;
 
 export function FieldWidget({ field, control, disabled }: Props) {
   const readOnly = disabled || field.readonly || isHasMany(field);
@@ -83,9 +90,13 @@ export function FieldWidget({ field, control, disabled }: Props) {
  */
 function RelationMultiSelect({ field, control, disabled }: Props) {
   const client = useApiClient();
+  const { bySlug } = useCatalog();
   const slug = field.related?.slug ?? "";
   const labelField = field.related?.label_field ?? "";
+  // The related model's primary key field (may be a uuid / string, not "id").
+  const pkField = bySlug.get(slug)?.pk ?? "id";
   const [options, setOptions] = useState<Option[]>([]);
+  const [truncated, setTruncated] = useState(false);
   const [loadError, setLoadError] = useState("");
 
   useEffect(() => {
@@ -95,16 +106,22 @@ function RelationMultiSelect({ field, control, disabled }: Props) {
     let cancelled = false;
     void (async () => {
       try {
-        const env = await client.get<Row[]>(apiResourcePath(slug), { per_page: 100 });
+        const env = await client.get<Row[]>(apiResourcePath(slug), { per_page: relationPageSize });
         if (cancelled) {
           return;
         }
         const rows = Array.isArray(env.data) ? env.data : [];
+        setTruncated(rows.length >= relationPageSize);
         setOptions(
-          rows.map((r) => ({
-            id: Number(r.id),
-            label: labelField && r[labelField] != null ? String(r[labelField]) : `#${String(r.id)}`,
-          })),
+          rows
+            .filter((r) => r[pkField] != null)
+            .map((r) => {
+              const value = String(r[pkField]);
+              return {
+                value,
+                label: labelField && r[labelField] != null ? String(r[labelField]) : value,
+              };
+            }),
         );
       } catch (err: unknown) {
         if (!cancelled) {
@@ -115,7 +132,13 @@ function RelationMultiSelect({ field, control, disabled }: Props) {
     return () => {
       cancelled = true;
     };
-  }, [client, slug, labelField]);
+  }, [client, slug, labelField, pkField]);
+
+  const helper = loadError
+    ? loadError
+    : truncated
+      ? `Showing first ${relationPageSize} ${slug}; not all rows are selectable yet`
+      : `Select related ${slug}`;
 
   return (
     <Controller
@@ -133,14 +156,15 @@ function RelationMultiSelect({ field, control, disabled }: Props) {
             onChange={(event) => {
               const raw = event.target.value as unknown as string[] | string;
               const list = Array.isArray(raw) ? raw : [raw];
-              rhf.onChange(list.map((v) => Number(v)));
+              // Preserve the related PK type (number vs uuid/string) via toIdList.
+              rhf.onChange(toIdList(list));
             }}
-            helperText={loadError || `Select related ${slug}`}
+            helperText={helper}
             error={!!loadError}
             slotProps={{ select: { multiple: true } }}
           >
             {options.map((option) => (
-              <MenuItem key={option.id} value={String(option.id)}>
+              <MenuItem key={option.value} value={option.value}>
                 {option.label}
               </MenuItem>
             ))}

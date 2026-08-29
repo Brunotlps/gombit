@@ -8,17 +8,38 @@ export function isManyToMany(field: FieldMeta): boolean {
   return field.type === "relation" && field.related?.kind === "many_to_many";
 }
 
-/** toIdList coerces a form value into the numeric id list a m2m field submits. */
-export function toIdList(raw: unknown): number[] {
+/** RelId is a related primary key: a number (integer PK) or a string (uuid /
+ * string PK). */
+export type RelId = number | string;
+
+/**
+ * toIdList coerces a form value into the id list a many_to_many field submits.
+ * It preserves the related primary key type: a numeric id stays a number, a
+ * non-numeric id (uuid / string PK) stays a string. Only null / undefined /
+ * empty entries are dropped — a string id is never silently coerced away (which
+ * would wipe the join table for string-keyed related models).
+ */
+export function toIdList(raw: unknown): RelId[] {
   if (!Array.isArray(raw)) {
     return [];
   }
-  const out: number[] = [];
+  const out: RelId[] = [];
   for (const v of raw) {
-    const n = Number(v);
-    if (!Number.isNaN(n)) {
-      out.push(Math.trunc(n));
+    if (v === null || v === undefined) {
+      continue;
     }
+    if (typeof v === "number") {
+      if (!Number.isNaN(v)) {
+        out.push(v);
+      }
+      continue;
+    }
+    const s = String(v).trim();
+    if (s === "") {
+      continue;
+    }
+    const n = Number(s);
+    out.push(Number.isNaN(n) ? s : n);
   }
   return out;
 }

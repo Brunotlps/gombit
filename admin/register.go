@@ -178,6 +178,12 @@ func validateFieldRefs(opts Options, implicit map[string]implicitColumn) error {
 			if strings.TrimSpace(f.Related.Slug) == "" {
 				return fmt.Errorf("admin: field %q relation is missing slug", f.Name)
 			}
+			// A many_to_many id list is split out before applyWrite, so the
+			// required-field check there can never see it. Rather than mis-report
+			// a submitted list as missing, reject Required on m2m at registration.
+			if f.Related.Kind == RelManyToMany && f.Required {
+				return fmt.Errorf("admin: many_to_many field %q cannot be Required", f.Name)
+			}
 		}
 		known[f.Name] = true
 	}
