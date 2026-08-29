@@ -281,10 +281,10 @@ func validateQueryableColumns(opts Options, resolved []resolvedField) error {
 	return nil
 }
 
-func resolveFields(fields []Field, sch *schema.Schema) ([]resolvedField, []*m2mBinding, []*m2mBinding, error) {
+func resolveFields(fields []Field, sch *schema.Schema) ([]resolvedField, []*m2mBinding, []*relationRead, error) {
 	out := make([]resolvedField, 0, len(fields))
-	var bindings []*m2mBinding // many_to_many (read + write)
-	var hasMany []*m2mBinding  // has_many (read only)
+	var bindings []*m2mBinding  // many_to_many (read + write)
+	var hasMany []*relationRead // has_many (read only)
 	seen := map[string]struct{}{}
 	for _, f := range fields {
 		if _, ok := seen[f.Name]; ok {

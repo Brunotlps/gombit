@@ -201,11 +201,12 @@ renders the FK column as a relation field (target `slug` = the related table,
 label = the field name of its `name` column when present) so the SPA shows a
 picker instead of a
 bare integer, and the picker submits the selected primary key. **`has_many` is
-read-only**: auto-derivation emits it, the list/detail responses preload the
-association and return the related children's primary keys, and the SPA shows
-them as read-only chips. Writes to a `has_many` field are rejected, and
-`Register` rejects `has_many` (and any field with no SQL column) in Search,
-Filter, or Ordering.
+read-only**: auto-derivation emits it, and when it maps to a real GORM has_many
+association the list/detail responses preload it and return the related
+children's primary keys (the SPA shows them as read-only chips); a `has_many`
+field declared without a matching association is meta-only and reads empty.
+Writes to a `has_many` field are rejected, and `Register` rejects `has_many`
+(and any field with no SQL column) in Search, Filter, or Ordering.
 
 **`many_to_many`** round-trips as a list of related primary keys (#223): the
 list/detail responses read the related ids (the association is preloaded), and
