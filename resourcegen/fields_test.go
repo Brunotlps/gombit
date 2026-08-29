@@ -45,9 +45,44 @@ func TestParseFields(t *testing.T) {
 			want: Field{JSONName: "price", GoName: "Price", Type: FieldInt64, GoType: "int64"},
 		},
 		{
+			name: "decimal required (default precision)",
+			spec: "amount:decimal:required",
+			want: Field{JSONName: "amount", GoName: "Amount", Type: FieldDecimal, GoType: "types.Decimal", Required: true},
+		},
+		{
+			name: "decimal with precision (optional -> pointer)",
+			spec: "price:decimal(10,2)",
+			want: Field{JSONName: "price", GoName: "Price", Type: FieldDecimal, GoType: "*types.Decimal"},
+		},
+		{
+			name: "optional time is a pointer",
+			spec: "starts_at:time",
+			want: Field{JSONName: "starts_at", GoName: "StartsAt", Type: FieldTime, GoType: "*time.Time"},
+		},
+		{
+			name: "required time is a value",
+			spec: "ends_at:time:required",
+			want: Field{JSONName: "ends_at", GoName: "EndsAt", Type: FieldTime, GoType: "time.Time", Required: true},
+		},
+		{
+			name: "enum",
+			spec: "status:enum(requested,confirmed,active)",
+			want: Field{JSONName: "status", GoName: "Status", Type: FieldEnum, GoType: "string"},
+		},
+		{
 			name:    "unknown type",
-			spec:    "amount:decimal:required",
+			spec:    "amount:blob:required",
 			wantErr: "unknown type",
+		},
+		{
+			name:    "enum without values",
+			spec:    "status:enum",
+			wantErr: "needs values",
+		},
+		{
+			name:    "decimal bad precision",
+			spec:    "price:decimal(2,5)",
+			wantErr: "invalid decimal",
 		},
 		{
 			name:    "reserved gorm field",
@@ -100,6 +135,54 @@ func TestParseFieldsDuplicate(t *testing.T) {
 	_, err := parseFields([]string{"title:string", "title:int"})
 	if err == nil || !strings.Contains(err.Error(), "duplicate") {
 		t.Fatalf("error = %v, want duplicate", err)
+	}
+}
+
+func TestParseEnumFieldDetails(t *testing.T) {
+	t.Parallel()
+	// Enum values are case-sensitive and preserve declared order.
+	fields, err := parseFields([]string{"status:enum(Draft,Published,Archived)"})
+	if err != nil {
+		t.Fatalf("parseFields() error = %v", err)
+	}
+	f := fields[0]
+	want := []string{"Draft", "Published", "Archived"}
+	if strings.Join(f.EnumValues, ",") != strings.Join(want, ",") {
+		t.Fatalf("EnumValues = %v, want %v", f.EnumValues, want)
+	}
+	if got := f.humaTags(); !strings.Contains(got, `enum:"Draft,Published,Archived"`) {
+		t.Fatalf("humaTags = %q, want enum tag", got)
+	}
+	if got := f.gormTag(); !strings.Contains(got, "size:") {
+		t.Fatalf("gormTag = %q, want a sized varchar column", got)
+	}
+}
+
+func TestParseDecimalPrecision(t *testing.T) {
+	t.Parallel()
+	fields, err := parseFields([]string{"amount:decimal", "price:decimal(10,2):required"})
+	if err != nil {
+		t.Fatalf("parseFields() error = %v", err)
+	}
+	if fields[0].Precision != 19 || fields[0].Scale != 4 {
+		t.Fatalf("default decimal = (%d,%d), want (19,4)", fields[0].Precision, fields[0].Scale)
+	}
+	if got := fields[0].gormTag(); !strings.Contains(got, "type:decimal(19,4)") {
+		t.Fatalf("gormTag = %q, want type:decimal(19,4)", got)
+	}
+	if fields[1].Precision != 10 || fields[1].Scale != 2 {
+		t.Fatalf("decimal(10,2) = (%d,%d)", fields[1].Precision, fields[1].Scale)
+	}
+	if got := fields[1].gormTag(); !strings.Contains(got, "type:decimal(10,2)") || !strings.Contains(got, "not null") {
+		t.Fatalf("gormTag = %q, want type:decimal(10,2);not null", got)
+	}
+}
+
+func TestParseDuplicateEnumValueRejected(t *testing.T) {
+	t.Parallel()
+	_, err := parseFields([]string{"status:enum(a,b,a)"})
+	if err == nil || !strings.Contains(err.Error(), "duplicate enum value") {
+		t.Fatalf("error = %v, want duplicate enum value", err)
 	}
 }
 

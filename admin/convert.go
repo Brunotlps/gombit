@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/shopspring/decimal"
 )
 
 func coerceValue(raw any, ft FieldType) (any, error) {
@@ -25,8 +27,12 @@ func coerceValue(raw any, ft FieldType) (any, error) {
 		return s, nil
 	case TypeInteger:
 		return asInt64(raw)
-	case TypeFloat, TypeDecimal:
+	case TypeFloat:
 		return asFloat64(raw)
+	case TypeDecimal:
+		// Keep the exact textual value — coercing money through float64 would
+		// lose precision. The setter feeds it to decimal.UnmarshalText.
+		return asDecimalString(raw)
 	case TypeBoolean:
 		return asBool(raw)
 	case TypeDateTime:
@@ -80,6 +86,30 @@ func asString(raw any) (string, error) {
 	default:
 		return "", fmt.Errorf("must be a string")
 	}
+}
+
+// asDecimalString returns raw as an exact decimal string. A JSON float64 is
+// rejected: JSON bodies decode numbers to float64, which cannot represent a
+// decimal exactly, so a decimal must be sent as a JSON string (or json.Number)
+// to preserve precision. This is why the admin SPA submits decimals as strings.
+func asDecimalString(raw any) (string, error) {
+	var s string
+	switch v := raw.(type) {
+	case json.Number:
+		s = v.String()
+	case string:
+		s = strings.TrimSpace(v)
+	case fmt.Stringer:
+		s = v.String()
+	case float64, float32:
+		return "", fmt.Errorf("must be a decimal string, not a JSON number (float precision)")
+	default:
+		return "", fmt.Errorf("must be a decimal")
+	}
+	if _, err := decimal.NewFromString(s); err != nil {
+		return "", fmt.Errorf("must be a decimal")
+	}
+	return s, nil
 }
 
 func asInt64(raw any) (int64, error) {

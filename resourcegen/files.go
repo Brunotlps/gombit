@@ -93,12 +93,64 @@ func tsBanner() string {
 	return "/**\n * " + GeneratedBanner + "\n */\n"
 }
 
+// fieldsUse reports whether any field has the given type.
+func fieldsUse(fields []Field, t FieldType) bool {
+	for _, f := range fields {
+		if f.Type == t {
+			return true
+		}
+	}
+	return false
+}
+
+// importBlock renders a grouped Go import block: standard library first, a
+// blank line, then third-party. Empty groups are omitted. A lone import keeps
+// the idiomatic single-line form.
+func importBlock(std, third []string) string {
+	if len(std)+len(third) == 1 {
+		only := append(append([]string{}, std...), third...)[0]
+		return "import \"" + only + "\"\n\n"
+	}
+	var groups []string
+	if len(std) > 0 {
+		groups = append(groups, strings.Join(quoteImports(std), "\n"))
+	}
+	if len(third) > 0 {
+		groups = append(groups, strings.Join(quoteImports(third), "\n"))
+	}
+	if len(groups) == 0 {
+		return ""
+	}
+	return "import (\n" + strings.Join(groups, "\n\n") + "\n)\n\n"
+}
+
+func quoteImports(paths []string) []string {
+	out := make([]string, 0, len(paths))
+	for _, p := range paths {
+		out = append(out, "\t\""+p+"\"")
+	}
+	return out
+}
+
+// gombitTypesImport is the framework value-types package used for decimal.
+const gombitTypesImport = "github.com/gombit-dev/gombit/types"
+
 func renderModel(ctx renderContext) string {
 	var b strings.Builder
 	b.WriteString(goBanner())
 	b.WriteString("package ")
 	b.WriteString(ctx.Resource.Package)
-	b.WriteString("\n\nimport \"gorm.io/gorm\"\n\n")
+	b.WriteString("\n\n")
+
+	var std, third []string
+	if fieldsUse(ctx.Fields, FieldTime) {
+		std = append(std, "time")
+	}
+	third = append(third, "gorm.io/gorm")
+	if fieldsUse(ctx.Fields, FieldDecimal) {
+		third = append(third, gombitTypesImport)
+	}
+	b.WriteString(importBlock(std, third))
 	b.WriteString("// ")
 	b.WriteString(ctx.Resource.TypeName)
 	b.WriteString(" is the feature-package GORM model.\n")
@@ -131,10 +183,20 @@ func renderHandler(ctx renderContext) string {
 	b.WriteString(goBanner())
 	b.WriteString("package ")
 	b.WriteString(pkg)
-	b.WriteString("\n\nimport (\n\t\"context\"\n\t\"strconv\"\n\n")
-	b.WriteString("\t\"github.com/gombit-dev/gombit/contract\"\n")
-	b.WriteString("\t\"github.com/gombit-dev/gombit/database\"\n")
-	b.WriteString("\t\"gorm.io/gorm\"\n)\n\n")
+	b.WriteString("\n\n")
+	std := []string{"context", "strconv"}
+	if fieldsUse(ctx.Fields, FieldTime) {
+		std = append(std, "time")
+	}
+	third := []string{
+		"github.com/gombit-dev/gombit/contract",
+		"github.com/gombit-dev/gombit/database",
+	}
+	if fieldsUse(ctx.Fields, FieldDecimal) {
+		third = append(third, gombitTypesImport)
+	}
+	third = append(third, "gorm.io/gorm")
+	b.WriteString(importBlock(std, third))
 	b.WriteString("// Handler serves " + pkg + " HTTP operations over GORM.\n")
 	b.WriteString("type Handler struct {\n\tDB *gorm.DB\n}\n\n")
 	b.WriteString("type " + data + " struct {\n")
@@ -491,15 +553,36 @@ func renderMinimalFormTSX(ctx renderContext) string {
 	return b.String()
 }
 
+// tsStringArray renders a TS array literal of double-quoted strings.
+func tsStringArray(names []string) string {
+	quoted := make([]string, 0, len(names))
+	for _, n := range names {
+		quoted = append(quoted, `"`+n+`"`)
+	}
+	return "[" + strings.Join(quoted, ", ") + "]"
+}
+
 func tsFormType(field Field) string {
 	switch field.Type {
 	case FieldBool:
 		return "boolean"
 	case FieldInt, FieldInt64, FieldUint:
 		return "number"
+	case FieldEnum:
+		return tsEnumUnion(field)
 	default:
+		// decimal + time are carried as strings (JSON string / RFC3339).
 		return "string"
 	}
+}
+
+// tsEnumUnion renders a TypeScript string-literal union for an enum field.
+func tsEnumUnion(field Field) string {
+	quoted := make([]string, 0, len(field.EnumValues))
+	for _, v := range field.EnumValues {
+		quoted = append(quoted, `"`+v+`"`)
+	}
+	return strings.Join(quoted, " | ")
 }
 
 func tsDefaultValue(field Field) string {
@@ -508,6 +591,11 @@ func tsDefaultValue(field Field) string {
 		return "false"
 	case FieldInt, FieldInt64, FieldUint:
 		return "0"
+	case FieldEnum:
+		if len(field.EnumValues) > 0 {
+			return `"` + field.EnumValues[0] + `"`
+		}
+		return `""`
 	default:
 		return `""`
 	}
@@ -529,6 +617,30 @@ func renderFormField(field Field) string {
 		b.WriteString("          <input type=\"checkbox\" {...register(\"" + field.JSONName + "\")} />\n")
 	case FieldInt, FieldInt64, FieldUint:
 		b.WriteString("          <input type=\"number\" {...register(\"" + field.JSONName + "\", { setValueAs: (value) => (value === \"\" ? 0 : Number(value)) })} />\n")
+	case FieldEnum:
+		b.WriteString("          <select {...register(\"" + field.JSONName + "\")}>\n")
+		for _, v := range field.EnumValues {
+			b.WriteString("            <option value=\"" + v + "\">" + v + "</option>\n")
+		}
+		b.WriteString("          </select>\n")
+	case FieldTime:
+		// datetime-local yields "YYYY-MM-DDTHH:mm" (local wall time); the input
+		// displays the raw typed value, and setValueAs converts to RFC3339 UTC on
+		// submit — empty becomes null so an optional (*time.Time) field can be
+		// left blank.
+		b.WriteString("          <input type=\"datetime-local\" {...register(\"" + field.JSONName + "\", { setValueAs: (value) => (value === \"\" ? null : new Date(value).toISOString())")
+		if field.Required {
+			b.WriteString(", required: \"" + field.GoName + " is required\"")
+		}
+		b.WriteString(" })} />\n")
+	case FieldDecimal:
+		// Empty becomes null so an optional (*types.Decimal) field round-trips; a
+		// non-empty value is sent as the exact decimal string.
+		b.WriteString("          <input type=\"text\" inputMode=\"decimal\" {...register(\"" + field.JSONName + "\", { setValueAs: (value) => (value === \"\" ? null : value)")
+		if field.Required {
+			b.WriteString(", required: \"" + field.GoName + " is required\"")
+		}
+		b.WriteString(" })} />\n")
 	default:
 		b.WriteString("          <input type=\"text\" {...register(\"" + field.JSONName + "\"")
 		if field.Required {
@@ -665,13 +777,8 @@ func renderMUIListTSX(ctx renderContext) string {
 
 func renderMUIFormTSX(ctx renderContext) string {
 	createPath := defaultAPIPrefix + ctx.Resource.HTTPPath
-	needsCheckbox := false
-	for _, field := range ctx.Fields {
-		if field.Type == FieldBool {
-			needsCheckbox = true
-			break
-		}
-	}
+	needsCheckbox := fieldsUse(ctx.Fields, FieldBool)
+	needsSelect := fieldsUse(ctx.Fields, FieldEnum)
 
 	var b strings.Builder
 	b.WriteString(tsBanner())
@@ -681,6 +788,9 @@ func renderMUIFormTSX(ctx renderContext) string {
 	b.WriteString("import { Alert, Box, Button, Paper, TextField, Typography")
 	if needsCheckbox {
 		b.WriteString(", Checkbox, FormControlLabel")
+	}
+	if needsSelect {
+		b.WriteString(", MenuItem")
 	}
 	b.WriteString(" } from \"@mui/material\";\n\n")
 	b.WriteString("import { useApiClient } from \"../api/client\";\n")
@@ -717,10 +827,37 @@ func renderMUIFormTSX(ctx renderContext) string {
 	}
 	b.WriteString(" },\n")
 	b.WriteString("  });\n\n")
+	var timeNames, decimalNames []string
+	for _, field := range ctx.Fields {
+		switch field.Type {
+		case FieldTime:
+			timeNames = append(timeNames, field.JSONName)
+		case FieldDecimal:
+			decimalNames = append(decimalNames, field.JSONName)
+		}
+	}
 	b.WriteString("  async function onSubmit(values: FormValues) {\n")
 	b.WriteString("    setStatus(\"\");\n")
+	bodyExpr := "values as CreateBody"
+	if len(timeNames) > 0 || len(decimalNames) > 0 {
+		b.WriteString("    const body: Record<string, unknown> = { ...values };\n")
+		if len(timeNames) > 0 {
+			// Local datetime-local -> RFC3339 UTC; empty -> null (optional field).
+			b.WriteString("    " + tsStringArray(timeNames) + ".forEach((key) => {\n")
+			b.WriteString("      const v = body[key];\n")
+			b.WriteString("      body[key] = v == null || v === \"\" ? null : new Date(String(v)).toISOString();\n")
+			b.WriteString("    });\n")
+		}
+		if len(decimalNames) > 0 {
+			// Empty decimal string -> null (optional *types.Decimal).
+			b.WriteString("    " + tsStringArray(decimalNames) + ".forEach((key) => {\n")
+			b.WriteString("      if (body[key] == null || body[key] === \"\") body[key] = null;\n")
+			b.WriteString("    });\n")
+		}
+		bodyExpr = "body as CreateBody"
+	}
 	b.WriteString("    try {\n")
-	b.WriteString("      await unwrap(await client.POST(createPath, { body: values as CreateBody }));\n")
+	b.WriteString("      await unwrap(await client.POST(createPath, { body: " + bodyExpr + " }));\n")
 	b.WriteString("      navigate(\"/" + ctx.Resource.Kebab + "\");\n")
 	b.WriteString("    } catch (err: unknown) {\n")
 	b.WriteString("      if (!applyContractErrors(setError, err)) {\n")
@@ -806,6 +943,48 @@ func renderMUIFormField(field Field) string {
 		b.WriteString("                  const raw = event.target.value;\n")
 		b.WriteString("                  field.onChange(raw === \"\" ? 0 : Number(raw));\n")
 		b.WriteString("                }}\n")
+		b.WriteString("              />\n")
+	case FieldEnum:
+		b.WriteString("              <TextField\n")
+		b.WriteString("                {...field}\n")
+		b.WriteString("                select\n")
+		b.WriteString("                label=\"" + field.GoName + "\"\n")
+		b.WriteString("                fullWidth\n")
+		b.WriteString("                error={!!fieldState.error}\n")
+		b.WriteString("                helperText={fieldState.error?.message}\n")
+		b.WriteString("                disabled={isSubmitting}\n")
+		b.WriteString("              >\n")
+		for _, v := range field.EnumValues {
+			b.WriteString("                <MenuItem value=\"" + v + "\">" + v + "</MenuItem>\n")
+		}
+		b.WriteString("              </TextField>\n")
+	case FieldTime:
+		// Store the raw datetime-local (local wall time) so the picker shows what
+		// the user chose; onSubmit converts it to RFC3339 UTC. Storing UTC ISO
+		// here and slicing it back into a local input shifts the displayed time.
+		b.WriteString("              <TextField\n")
+		b.WriteString("                {...field}\n")
+		b.WriteString("                value={field.value ?? \"\"}\n")
+		b.WriteString("                type=\"datetime-local\"\n")
+		b.WriteString("                label=\"" + field.GoName + "\"\n")
+		b.WriteString("                fullWidth\n")
+		b.WriteString("                slotProps={{ inputLabel: { shrink: true } }}\n")
+		b.WriteString("                error={!!fieldState.error}\n")
+		b.WriteString("                helperText={fieldState.error?.message}\n")
+		b.WriteString("                disabled={isSubmitting}\n")
+		b.WriteString("              />\n")
+	case FieldDecimal:
+		// The exact decimal string is submitted as-is; onSubmit nulls an empty
+		// optional (*types.Decimal) value.
+		b.WriteString("              <TextField\n")
+		b.WriteString("                {...field}\n")
+		b.WriteString("                value={field.value ?? \"\"}\n")
+		b.WriteString("                label=\"" + field.GoName + "\"\n")
+		b.WriteString("                fullWidth\n")
+		b.WriteString("                slotProps={{ htmlInput: { inputMode: \"decimal\" } }}\n")
+		b.WriteString("                error={!!fieldState.error}\n")
+		b.WriteString("                helperText={fieldState.error?.message}\n")
+		b.WriteString("                disabled={isSubmitting}\n")
 		b.WriteString("              />\n")
 	default:
 		b.WriteString("              <TextField\n")

@@ -81,8 +81,9 @@ function inputTypeFor(field: FieldMeta): string {
   switch (field.type) {
     case "integer":
     case "float":
-    case "decimal":
       return "number";
+    // decimal stays a text input: it is submitted as an exact string, and a
+    // number input would coerce it to a float.
     case "datetime":
       return "datetime-local";
     case "date":

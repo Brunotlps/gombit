@@ -51,9 +51,21 @@ describe("formValuesToBody", () => {
     expect(cleared.jsonErrors).toEqual({});
     expect(cleared.body).toEqual({ price: null, weight: null, qty: null });
 
+    // integer/float stay JSON numbers; decimal is an exact string (never a
+    // float, which the data plane rejects for a decimal column).
     const zeros = formValuesToBody({ price: 0, weight: "0", qty: 0 }, fields);
     expect(zeros.jsonErrors).toEqual({});
-    expect(zeros.body).toEqual({ price: 0, weight: 0, qty: 0 });
+    expect(zeros.body).toEqual({ price: 0, weight: 0, qty: "0" });
+  });
+
+  it("sends decimal as an exact string and rejects non-numeric text", () => {
+    const fields: FieldMeta[] = [field({ name: "amount", type: "decimal" })];
+    const ok = formValuesToBody({ amount: "19.9999" }, fields);
+    expect(ok.jsonErrors).toEqual({});
+    expect(ok.body).toEqual({ amount: "19.9999" });
+
+    const bad = formValuesToBody({ amount: "1.2.3" }, fields);
+    expect(bad.jsonErrors).toHaveProperty("amount");
   });
 
   it("always sends booleans, including false", () => {

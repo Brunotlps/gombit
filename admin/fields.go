@@ -13,8 +13,11 @@ import (
 	"unicode"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 	"gorm.io/gorm/schema"
+
+	"github.com/gombit-dev/gombit/types"
 )
 
 // FieldsFrom derives a default []Field from model at registration time.
@@ -104,6 +107,8 @@ func inferFieldType(sf *schema.Field) FieldType {
 		return TypeJSON
 	case reflect.TypeOf(uuid.UUID{}):
 		return TypeUUID
+	case reflect.TypeOf(decimal.Decimal{}), reflect.TypeOf(types.Decimal{}):
+		return TypeDecimal
 	}
 	switch t.Kind() {
 	case reflect.String:

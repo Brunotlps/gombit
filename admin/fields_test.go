@@ -7,6 +7,9 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/shopspring/decimal"
+
+	"github.com/gombit-dev/gombit/types"
 )
 
 type setterRow struct {
@@ -227,6 +230,55 @@ func TestMakeSetterJSONObjectAndUUID(t *testing.T) {
 	}
 	if inst.Token.String() != s {
 		t.Fatalf("Token = %s, want %s", inst.Token, s)
+	}
+}
+
+// TestDecimalFieldInferenceAndCoercion covers #222: decimal columns (both the
+// bare shopspring type and the framework types.Decimal wrapper) infer as
+// TypeDecimal, and admin write coercion keeps the exact textual value instead of
+// routing money through float64.
+func TestDecimalFieldInferenceAndCoercion(t *testing.T) {
+	type priced struct {
+		ID    uint            `json:"id"`
+		Price decimal.Decimal `json:"price" gorm:"type:decimal(19,4)"`
+		Fee   types.Decimal   `json:"fee" gorm:"type:decimal(19,4)"`
+	}
+	fields, err := FieldsFrom(priced{})
+	if err != nil {
+		t.Fatalf("FieldsFrom: %v", err)
+	}
+	byName := map[string]Field{}
+	for _, f := range fields {
+		byName[f.Name] = f
+	}
+	if byName["price"].Type != TypeDecimal {
+		t.Fatalf("price type = %q, want decimal", byName["price"].Type)
+	}
+	if byName["fee"].Type != TypeDecimal {
+		t.Fatalf("fee type = %q, want decimal", byName["fee"].Type)
+	}
+
+	// A high-precision value must survive coercion exactly (no float rounding).
+	got, err := coerceValue("19.9999", TypeDecimal)
+	if err != nil {
+		t.Fatalf("coerceValue: %v", err)
+	}
+	if got != "19.9999" {
+		t.Fatalf("coerceValue = %#v, want exact string 19.9999", got)
+	}
+	if _, err := coerceValue("not-a-number", TypeDecimal); err == nil {
+		t.Fatal("coerceValue(non-numeric) error = nil, want error")
+	}
+	// A JSON body decodes numbers to float64, which cannot represent a decimal
+	// exactly; decimals must arrive as strings. A float64 must be rejected, not
+	// silently rounded.
+	if _, err := coerceValue(float64(19.99), TypeDecimal); err == nil {
+		t.Fatal("coerceValue(float64) error = nil, want rejection (decimals must be strings)")
+	}
+	// A json.Number keeps its exact literal.
+	num, err := coerceValue(json.Number("19.9999"), TypeDecimal)
+	if err != nil || num != "19.9999" {
+		t.Fatalf("coerceValue(json.Number) = %#v, %v; want 19.9999", num, err)
 	}
 }
 

@@ -9,6 +9,7 @@ import (
 
 	"github.com/gombit-dev/gombit/database"
 	"github.com/gombit-dev/gombit/database/conformance/models"
+	"github.com/gombit-dev/gombit/types"
 	"github.com/shopspring/decimal"
 	"gorm.io/gorm"
 )
@@ -149,10 +150,12 @@ func TestConformanceSuite(t *testing.T) {
 
 	t.Run("decimal", func(t *testing.T) {
 		want := decimal.RequireFromString("19.9900")
+		wantDiscount := types.Decimal{Decimal: decimal.RequireFromString("2.5000")}
 		item := models.Item{
-			Code:  "dec-1",
-			Name:  "decimal",
-			Price: want,
+			Code:     "dec-1",
+			Name:     "decimal",
+			Price:    want,
+			Discount: wantDiscount,
 		}
 		if err := db.Create(&item).Error; err != nil {
 			t.Fatalf("Create: %v", err)
@@ -163,6 +166,11 @@ func TestConformanceSuite(t *testing.T) {
 		}
 		if !loaded.Price.Equal(want) {
 			t.Fatalf("Price = %s, want %s", loaded.Price.StringFixed(4), want.StringFixed(4))
+		}
+		// types.Decimal (#222) must round-trip through the driver like the bare
+		// shopspring decimal does.
+		if !loaded.Discount.Equal(wantDiscount.Decimal) {
+			t.Fatalf("Discount = %s, want %s", loaded.Discount.StringFixed(4), wantDiscount.StringFixed(4))
 		}
 	})
 
