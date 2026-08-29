@@ -242,6 +242,56 @@ func TestManyToManyWithVersionRejectedAtRegister(t *testing.T) {
 	}
 }
 
+// TestManyToManyReadOnlyRejectsWrite guards that a read-only m2m field cannot be
+// written: the id list is split out before applyWrite, so the read-only 422 must
+// be enforced in splitM2M (meta and the SPA already honor readonly).
+func TestManyToManyReadOnlyRejectsWrite(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	app := newCookieApp(t)
+	if err := app.DB().AutoMigrate(&relWarehouse{}, &relEngine{}); err != nil {
+		t.Fatalf("AutoMigrate: %v", err)
+	}
+	if err := admin.Register(app, relWarehouse{}, admin.Options{
+		Slug:   "warehouses",
+		Fields: []admin.Field{{Name: "id", Type: admin.TypeInteger, ReadOnly: true}, {Name: "name", Type: admin.TypeString, Required: true}},
+	}); err != nil {
+		t.Fatalf("Register warehouse: %v", err)
+	}
+	if err := admin.Register(app, relEngine{}, admin.Options{
+		Slug: "engines",
+		Fields: []admin.Field{
+			{Name: "id", Type: admin.TypeInteger, ReadOnly: true},
+			{Name: "name", Type: admin.TypeString, Required: true},
+			{Name: "warehouses", Type: admin.TypeRelation, ReadOnly: true, Related: &admin.Relation{Kind: admin.RelManyToMany, Slug: "warehouses"}},
+		},
+	}); err != nil {
+		t.Fatalf("Register engine: %v", err)
+	}
+	jar := loginSuperuser(t, app)
+	w1 := createWarehouse(t, app, jar, "North")
+
+	create := doRequest(app, jar, http.MethodPost, "/api/v1/admin/resources/engines", `{"name":"V8"}`)
+	if create.Code != http.StatusOK {
+		t.Fatalf("create engine status = %d; body: %s", create.Code, create.Body.String())
+	}
+	var created rowEnvelope
+	_ = json.Unmarshal(create.Body.Bytes(), &created)
+	engineID := asInt(created.Data["id"])
+	path := fmt.Sprintf("/api/v1/admin/resources/engines/%d", engineID)
+
+	patch := doRequest(app, jar, http.MethodPatch, path, fmt.Sprintf(`{"warehouses":[%d]}`, w1))
+	assertError(t, patch, http.StatusUnprocessableEntity, "validation_error")
+
+	// The read-only write must not have applied.
+	var count int64
+	if err := app.DB().Table("engine_warehouses").Count(&count).Error; err != nil {
+		t.Fatalf("count join rows: %v", err)
+	}
+	if count != 0 {
+		t.Fatalf("join rows = %d, want 0 (read-only m2m must not write)", count)
+	}
+}
+
 func createWarehouse(t *testing.T, app *framework.App, jar *cookieJar, name string) int64 {
 	t.Helper()
 	rec := doRequest(app, jar, http.MethodPost, "/api/v1/admin/resources/warehouses",

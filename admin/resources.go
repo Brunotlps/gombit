@@ -340,6 +340,15 @@ func splitM2M(ctx context.Context, m *registered, body map[string]any) (ids map[
 			rest[k] = v
 			continue
 		}
+		// A read-only m2m field is not writable — enforce it here, because the
+		// id list is split out before applyWrite (which is where the read-only
+		// 422 normally happens for scalar fields).
+		if f, ok := m.field(k); ok && f.ReadOnly {
+			return nil, nil, contract.WithContext(ctx, contract.Validation(
+				"The request contains invalid fields.",
+				map[string][]string{k: {"field is read-only"}},
+			))
+		}
 		coerced, cerr := coerceM2MIDs(v, b.relatedPKType)
 		if cerr != nil {
 			return nil, nil, contract.WithContext(ctx, contract.Validation(
