@@ -355,7 +355,10 @@ accepted as the opposite of `required`.
 `types.Decimal` is the framework money/decimal type. Because a single Go type
 flows through the model, the handler DTO, the OpenAPI/TS contract, and GORM,
 adding one of these types does not reproduce the model/DTO drift of
-[#218](https://github.com/gombit-dev/gombit/issues/218). Enum values are
+[#218](https://github.com/gombit-dev/gombit/issues/218). A `time` or `decimal`
+field **without** `:required` becomes a pointer (`*time.Time` / `*types.Decimal`)
+on the model and DTO, because those value types cannot be submitted empty — the
+generated forms send `null` for a blank optional value. Enum values are
 case-sensitive and validated at the API layer; no database CHECK constraint is
 added (portable across SQLite/PostgreSQL/MySQL). Relationships
 (`belongs_to`/`has_many`/`many_to_many`) are tracked separately in

@@ -88,8 +88,10 @@ func asString(raw any) (string, error) {
 	}
 }
 
-// asDecimalString returns raw as an exact decimal string. JSON numbers keep
-// their literal text (no float rounding); strings are validated to be numeric.
+// asDecimalString returns raw as an exact decimal string. A JSON float64 is
+// rejected: JSON bodies decode numbers to float64, which cannot represent a
+// decimal exactly, so a decimal must be sent as a JSON string (or json.Number)
+// to preserve precision. This is why the admin SPA submits decimals as strings.
 func asDecimalString(raw any) (string, error) {
 	var s string
 	switch v := raw.(type) {
@@ -99,10 +101,8 @@ func asDecimalString(raw any) (string, error) {
 		s = strings.TrimSpace(v)
 	case fmt.Stringer:
 		s = v.String()
-	case float64:
-		s = strconv.FormatFloat(v, 'f', -1, 64)
-	case float32:
-		s = strconv.FormatFloat(float64(v), 'f', -1, 32)
+	case float64, float32:
+		return "", fmt.Errorf("must be a decimal string, not a JSON number (float precision)")
 	default:
 		return "", fmt.Errorf("must be a decimal")
 	}

@@ -553,6 +553,15 @@ func renderMinimalFormTSX(ctx renderContext) string {
 	return b.String()
 }
 
+// tsStringArray renders a TS array literal of double-quoted strings.
+func tsStringArray(names []string) string {
+	quoted := make([]string, 0, len(names))
+	for _, n := range names {
+		quoted = append(quoted, `"`+n+`"`)
+	}
+	return "[" + strings.Join(quoted, ", ") + "]"
+}
+
 func tsFormType(field Field) string {
 	switch field.Type {
 	case FieldBool:
@@ -615,19 +624,23 @@ func renderFormField(field Field) string {
 		}
 		b.WriteString("          </select>\n")
 	case FieldTime:
-		// datetime-local yields "YYYY-MM-DDTHH:mm"; convert to RFC3339 UTC so
-		// the Go time.Time DTO parses it.
-		b.WriteString("          <input type=\"datetime-local\" {...register(\"" + field.JSONName + "\", { setValueAs: (value) => (value === \"\" ? \"\" : new Date(value).toISOString())")
+		// datetime-local yields "YYYY-MM-DDTHH:mm" (local wall time); the input
+		// displays the raw typed value, and setValueAs converts to RFC3339 UTC on
+		// submit — empty becomes null so an optional (*time.Time) field can be
+		// left blank.
+		b.WriteString("          <input type=\"datetime-local\" {...register(\"" + field.JSONName + "\", { setValueAs: (value) => (value === \"\" ? null : new Date(value).toISOString())")
 		if field.Required {
 			b.WriteString(", required: \"" + field.GoName + " is required\"")
 		}
 		b.WriteString(" })} />\n")
 	case FieldDecimal:
-		b.WriteString("          <input type=\"text\" inputMode=\"decimal\" {...register(\"" + field.JSONName + "\"")
+		// Empty becomes null so an optional (*types.Decimal) field round-trips; a
+		// non-empty value is sent as the exact decimal string.
+		b.WriteString("          <input type=\"text\" inputMode=\"decimal\" {...register(\"" + field.JSONName + "\", { setValueAs: (value) => (value === \"\" ? null : value)")
 		if field.Required {
-			b.WriteString(", { required: \"" + field.GoName + " is required\" }")
+			b.WriteString(", required: \"" + field.GoName + " is required\"")
 		}
-		b.WriteString(")} />\n")
+		b.WriteString(" })} />\n")
 	default:
 		b.WriteString("          <input type=\"text\" {...register(\"" + field.JSONName + "\"")
 		if field.Required {
@@ -814,10 +827,37 @@ func renderMUIFormTSX(ctx renderContext) string {
 	}
 	b.WriteString(" },\n")
 	b.WriteString("  });\n\n")
+	var timeNames, decimalNames []string
+	for _, field := range ctx.Fields {
+		switch field.Type {
+		case FieldTime:
+			timeNames = append(timeNames, field.JSONName)
+		case FieldDecimal:
+			decimalNames = append(decimalNames, field.JSONName)
+		}
+	}
 	b.WriteString("  async function onSubmit(values: FormValues) {\n")
 	b.WriteString("    setStatus(\"\");\n")
+	bodyExpr := "values as CreateBody"
+	if len(timeNames) > 0 || len(decimalNames) > 0 {
+		b.WriteString("    const body: Record<string, unknown> = { ...values };\n")
+		if len(timeNames) > 0 {
+			// Local datetime-local -> RFC3339 UTC; empty -> null (optional field).
+			b.WriteString("    " + tsStringArray(timeNames) + ".forEach((key) => {\n")
+			b.WriteString("      const v = body[key];\n")
+			b.WriteString("      body[key] = v == null || v === \"\" ? null : new Date(String(v)).toISOString();\n")
+			b.WriteString("    });\n")
+		}
+		if len(decimalNames) > 0 {
+			// Empty decimal string -> null (optional *types.Decimal).
+			b.WriteString("    " + tsStringArray(decimalNames) + ".forEach((key) => {\n")
+			b.WriteString("      if (body[key] == null || body[key] === \"\") body[key] = null;\n")
+			b.WriteString("    });\n")
+		}
+		bodyExpr = "body as CreateBody"
+	}
 	b.WriteString("    try {\n")
-	b.WriteString("      await unwrap(await client.POST(createPath, { body: values as CreateBody }));\n")
+	b.WriteString("      await unwrap(await client.POST(createPath, { body: " + bodyExpr + " }));\n")
 	b.WriteString("      navigate(\"/" + ctx.Resource.Kebab + "\");\n")
 	b.WriteString("    } catch (err: unknown) {\n")
 	b.WriteString("      if (!applyContractErrors(setError, err)) {\n")
@@ -919,8 +959,12 @@ func renderMUIFormField(field Field) string {
 		}
 		b.WriteString("              </TextField>\n")
 	case FieldTime:
+		// Store the raw datetime-local (local wall time) so the picker shows what
+		// the user chose; onSubmit converts it to RFC3339 UTC. Storing UTC ISO
+		// here and slicing it back into a local input shifts the displayed time.
 		b.WriteString("              <TextField\n")
 		b.WriteString("                {...field}\n")
+		b.WriteString("                value={field.value ?? \"\"}\n")
 		b.WriteString("                type=\"datetime-local\"\n")
 		b.WriteString("                label=\"" + field.GoName + "\"\n")
 		b.WriteString("                fullWidth\n")
@@ -928,15 +972,13 @@ func renderMUIFormField(field Field) string {
 		b.WriteString("                error={!!fieldState.error}\n")
 		b.WriteString("                helperText={fieldState.error?.message}\n")
 		b.WriteString("                disabled={isSubmitting}\n")
-		b.WriteString("                value={field.value ? String(field.value).slice(0, 16) : \"\"}\n")
-		b.WriteString("                onChange={(event) => {\n")
-		b.WriteString("                  const raw = event.target.value;\n")
-		b.WriteString("                  field.onChange(raw === \"\" ? \"\" : new Date(raw).toISOString());\n")
-		b.WriteString("                }}\n")
 		b.WriteString("              />\n")
 	case FieldDecimal:
+		// The exact decimal string is submitted as-is; onSubmit nulls an empty
+		// optional (*types.Decimal) value.
 		b.WriteString("              <TextField\n")
 		b.WriteString("                {...field}\n")
+		b.WriteString("                value={field.value ?? \"\"}\n")
 		b.WriteString("                label=\"" + field.GoName + "\"\n")
 		b.WriteString("                fullWidth\n")
 		b.WriteString("                slotProps={{ htmlInput: { inputMode: \"decimal\" } }}\n")

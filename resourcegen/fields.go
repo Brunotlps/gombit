@@ -114,6 +114,14 @@ func parseField(spec string) (Field, error) {
 			return Field{}, err
 		}
 	}
+	// time.Time / types.Decimal are value types Huma cannot leave empty: an
+	// optional field submits JSON null, and a non-pointer time/decimal rejects
+	// null (and empty string). Optional (non-required) time/decimal fields
+	// therefore become pointers on both the model and the DTO so an empty value
+	// round-trips. See #222 review.
+	if !field.Required && (field.Type == FieldTime || field.Type == FieldDecimal) {
+		field.GoType = "*" + field.GoType
+	}
 	return field, nil
 }
 

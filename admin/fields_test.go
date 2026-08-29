@@ -269,4 +269,15 @@ func TestDecimalFieldInferenceAndCoercion(t *testing.T) {
 	if _, err := coerceValue("not-a-number", TypeDecimal); err == nil {
 		t.Fatal("coerceValue(non-numeric) error = nil, want error")
 	}
+	// A JSON body decodes numbers to float64, which cannot represent a decimal
+	// exactly; decimals must arrive as strings. A float64 must be rejected, not
+	// silently rounded.
+	if _, err := coerceValue(float64(19.99), TypeDecimal); err == nil {
+		t.Fatal("coerceValue(float64) error = nil, want rejection (decimals must be strings)")
+	}
+	// A json.Number keeps its exact literal.
+	num, err := coerceValue(json.Number("19.9999"), TypeDecimal)
+	if err != nil || num != "19.9999" {
+		t.Fatalf("coerceValue(json.Number) = %#v, %v; want 19.9999", num, err)
+	}
 }

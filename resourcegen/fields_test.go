@@ -50,14 +50,19 @@ func TestParseFields(t *testing.T) {
 			want: Field{JSONName: "amount", GoName: "Amount", Type: FieldDecimal, GoType: "types.Decimal", Required: true},
 		},
 		{
-			name: "decimal with precision",
+			name: "decimal with precision (optional -> pointer)",
 			spec: "price:decimal(10,2)",
-			want: Field{JSONName: "price", GoName: "Price", Type: FieldDecimal, GoType: "types.Decimal"},
+			want: Field{JSONName: "price", GoName: "Price", Type: FieldDecimal, GoType: "*types.Decimal"},
 		},
 		{
-			name: "time",
-			spec: "starts_at:time:required",
-			want: Field{JSONName: "starts_at", GoName: "StartsAt", Type: FieldTime, GoType: "time.Time", Required: true},
+			name: "optional time is a pointer",
+			spec: "starts_at:time",
+			want: Field{JSONName: "starts_at", GoName: "StartsAt", Type: FieldTime, GoType: "*time.Time"},
+		},
+		{
+			name: "required time is a value",
+			spec: "ends_at:time:required",
+			want: Field{JSONName: "ends_at", GoName: "EndsAt", Type: FieldTime, GoType: "time.Time", Required: true},
 		},
 		{
 			name: "enum",
