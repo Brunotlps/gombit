@@ -80,11 +80,16 @@ type Field struct {
 	Column string `json:"-"`
 }
 
-// Relation describes a belongs_to, has_many, or many_to_many field. belongs_to
-// is stored as the foreign key on create/update. has_many is meta-only: the
-// data plane does not nest related collections. many_to_many reads the related
-// primary keys and, on write, syncs the join table to the submitted id list
-// (#223).
+// Relation describes a belongs_to, has_many, or many_to_many field (#223).
+//
+//   - belongs_to is stored as the foreign key on create/update.
+//   - has_many is read-only. When the field maps to a real GORM has_many
+//     association (the usual case, and what auto-derivation emits), list/detail
+//     preload it and the data plane returns the related children's primary keys;
+//     a has_many field declared without a matching association is meta-only and
+//     reads empty. Writes to a has_many field are always rejected.
+//   - many_to_many reads the related primary keys and, on write, syncs the join
+//     table to the submitted id list.
 type Relation struct {
 	Slug       string `json:"slug"`
 	Kind       string `json:"kind"`

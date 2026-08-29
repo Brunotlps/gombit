@@ -88,7 +88,8 @@ requires a GET of the current row (`actions.detail` + `can.view`); if
 detail is disabled, the edit screen is hidden rather than PATCHing empty
 boolean defaults (`false`) over stored `true` values.
 Field widgets cover the closed field types; `belongs_to` is a single-select
-picker (storing the foreign key); `has_many` is read-only; `many_to_many` is a
+picker (storing the foreign key); `has_many` is a read-only list of the related
+children; `many_to_many` is a
 multi-select. The relation pickers are searchable Autocompletes backed by the
 related model's list endpoint, showing its label field. When the related model
 supports search, typing issues a debounced server-side `search` (surfacing rows
@@ -200,10 +201,12 @@ renders the FK column as a relation field (target `slug` = the related table,
 label = the field name of its `name` column when present) so the SPA shows a
 picker instead of a
 bare integer, and the picker submits the selected primary key. **`has_many` is
-meta-only**:
-the data plane does not nest related collections and treats the field as
-read-only. `Register` rejects `has_many` (and any field with no SQL column)
-in Search, Filter, or Ordering.
+read-only**: auto-derivation emits it, and when it maps to a real GORM has_many
+association the list/detail responses preload it and return the related
+children's primary keys (the SPA shows them as read-only chips); a `has_many`
+field declared without a matching association is meta-only and reads empty.
+Writes to a `has_many` field are rejected, and `Register` rejects `has_many`
+(and any field with no SQL column) in Search, Filter, or Ordering.
 
 **`many_to_many`** round-trips as a list of related primary keys (#223): the
 list/detail responses read the related ids (the association is preloaded), and

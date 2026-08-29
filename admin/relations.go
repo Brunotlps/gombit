@@ -10,17 +10,23 @@ import (
 	"gorm.io/gorm/schema"
 )
 
-// m2mBinding is the resolved metadata for one many-to-many admin field: enough
-// to read the related primary keys off a preloaded instance and to sync the
-// join table from a submitted id list, without walking arbitrary Go types at
-// request time (#223 / ADR-013).
+// relationRead is the read-only metadata for one association admin field: enough
+// to read the related primary keys off a preloaded instance, without walking
+// arbitrary Go types at request time (#223 / ADR-013). It has no write method —
+// has_many uses it directly; many-to-many embeds it and adds the write path.
+type relationRead struct {
+	name         string // admin field (json) name
+	assoc        string // GORM association / struct field name, e.g. "Warehouses"
+	fieldIndex   []int  // index of the association slice field on the parent struct
+	relatedPKIdx []int  // related model primary key struct-field index
+}
+
+// m2mBinding is a relationRead plus the metadata needed to sync a many-to-many
+// join table from a submitted id list.
 type m2mBinding struct {
-	name          string       // admin field (json) name
-	assoc         string       // GORM association / struct field name, e.g. "Warehouses"
-	fieldIndex    []int        // index of the association slice field on the parent struct
+	relationRead
 	relatedElem   reflect.Type // related struct type (not a pointer)
 	relatedPKCol  string       // related model primary key column
-	relatedPKIdx  []int        // related model primary key struct-field index
 	relatedPKType FieldType
 }
 
@@ -39,15 +45,42 @@ func findM2M(sch *schema.Schema, fieldName string) (*m2mBinding, bool) {
 			return nil, false
 		}
 		pk := fieldSchema.PrimaryFields[0]
-		elem := fieldSchema.ModelType
 		return &m2mBinding{
-			name:          fieldName,
-			assoc:         rel.Name,
-			fieldIndex:    rel.Field.StructField.Index,
-			relatedElem:   elem,
+			relationRead: relationRead{
+				name:         fieldName,
+				assoc:        rel.Name,
+				fieldIndex:   rel.Field.StructField.Index,
+				relatedPKIdx: pk.StructField.Index,
+			},
+			relatedElem:   fieldSchema.ModelType,
 			relatedPKCol:  pk.DBName,
-			relatedPKIdx:  pk.StructField.Index,
 			relatedPKType: inferFieldType(pk),
+		}, true
+	}
+	return nil, false
+}
+
+// findHasMany returns a read-only binding for a has_many association: preload
+// the slice and extract the related primary keys. It is deliberately a
+// relationRead (no write method).
+func findHasMany(sch *schema.Schema, fieldName string) (*relationRead, bool) {
+	for _, rel := range sch.Relationships.HasMany {
+		if rel == nil || rel.Field == nil {
+			continue
+		}
+		if relationFieldName(rel.Field) != fieldName {
+			continue
+		}
+		fieldSchema := rel.FieldSchema
+		if fieldSchema == nil || len(fieldSchema.PrimaryFields) == 0 {
+			return nil, false
+		}
+		pk := fieldSchema.PrimaryFields[0]
+		return &relationRead{
+			name:         fieldName,
+			assoc:        rel.Name,
+			fieldIndex:   rel.Field.StructField.Index,
+			relatedPKIdx: pk.StructField.Index,
 		}, true
 	}
 	return nil, false
@@ -63,7 +96,7 @@ func relationFieldName(sf *schema.Field) string {
 }
 
 // ids reads the related primary keys off a (preloaded) parent instance.
-func (b *m2mBinding) ids(inst any) []any {
+func (b *relationRead) ids(inst any) []any {
 	rv := reflect.ValueOf(inst)
 	for rv.Kind() == reflect.Pointer {
 		if rv.IsNil() {

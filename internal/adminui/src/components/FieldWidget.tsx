@@ -1,7 +1,17 @@
 import { useEffect, useState } from "react";
 import { Controller, type Control, type FieldValues } from "react-hook-form";
 
-import { Autocomplete, Checkbox, FormControlLabel, TextField } from "@mui/material";
+import {
+  Autocomplete,
+  Box,
+  Checkbox,
+  Chip,
+  FormControl,
+  FormControlLabel,
+  FormLabel,
+  TextField,
+  Typography,
+} from "@mui/material";
 
 import { useApiClient } from "../api/client";
 import { useCatalog } from "../app/providers";
@@ -41,6 +51,18 @@ export function FieldWidget({ field, control, disabled }: Props) {
 
   if (isBelongsTo(field)) {
     return <RelationSelect field={field} control={control} disabled={disabled} />;
+  }
+
+  if (isHasMany(field)) {
+    // Read-only: show the related children already in the row as labeled chips.
+    // This is a display, not a picker — it never lists the related model.
+    return (
+      <Controller
+        name={field.name}
+        control={control}
+        render={({ field: rhf }) => <HasManyView field={field} ids={normalizeIds(rhf.value, true)} />}
+      />
+    );
   }
 
   if (field.type === "boolean") {
@@ -320,6 +342,69 @@ function RelationSelect({ field, control, disabled }: Props) {
         />
       )}
     />
+  );
+}
+
+/**
+ * HasManyView renders a has_many field's related children as read-only chips.
+ * It shows the ids already in the row (never lists the related model); when the
+ * related model is registered it fetches each child's label via client.detail,
+ * otherwise it falls back to the raw key (#223).
+ */
+function HasManyView({ field, ids }: { field: FieldMeta; ids: RelId[] }) {
+  const client = useApiClient();
+  const { bySlug } = useCatalog();
+  const slug = field.related?.slug ?? "";
+  const labelField = field.related?.label_field ?? "";
+  const registered = slug !== "" && bySlug.has(slug);
+  const [labels, setLabels] = useState<Map<string, string>>(new Map());
+  const idsKey = ids.map(String).join(",");
+
+  useEffect(() => {
+    if (!registered || !labelField || ids.length === 0) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      const resolved = new Map<string, string>();
+      await Promise.all(
+        ids.map(async (id) => {
+          try {
+            const env = await client.detail(slug, String(id));
+            const row = env.data as Row | undefined;
+            if (row && row[labelField] != null) {
+              resolved.set(String(id), String(row[labelField]));
+            }
+          } catch {
+            // Leave it to the key fallback.
+          }
+        }),
+      );
+      if (!cancelled) {
+        setLabels(resolved);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // idsKey tracks the selected set.
+  }, [client, registered, slug, labelField, idsKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <FormControl fullWidth>
+      <FormLabel>{fieldLabel(field)}</FormLabel>
+      <Box sx={{ display: "flex", flexWrap: "wrap", gap: 0.5, mt: 0.5 }}>
+        {ids.length === 0 ? (
+          <Typography variant="body2" color="text.secondary">
+            None
+          </Typography>
+        ) : (
+          ids.map((id) => (
+            <Chip key={String(id)} size="small" label={labels.get(String(id)) ?? String(id)} />
+          ))
+        )}
+      </Box>
+    </FormControl>
   );
 }
 

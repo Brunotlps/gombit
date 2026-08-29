@@ -93,6 +93,23 @@ func FieldsFrom(model any) ([]Field, error) {
 			},
 		})
 	}
+	// has_many associations are also columnless; emit a read-only relation field
+	// so the related children's ids appear (read only) rather than being dropped.
+	for _, rel := range sch.Relationships.HasMany {
+		if rel == nil || rel.Field == nil || rel.FieldSchema == nil {
+			continue
+		}
+		fields = append(fields, Field{
+			Name:     relationFieldName(rel.Field),
+			Type:     TypeRelation,
+			ReadOnly: true,
+			Related: &Relation{
+				Kind:       RelHasMany,
+				Slug:       rel.FieldSchema.Table,
+				LabelField: labelFieldFor(rel.FieldSchema),
+			},
+		})
+	}
 	return fields, nil
 }
 

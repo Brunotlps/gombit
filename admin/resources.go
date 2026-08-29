@@ -319,6 +319,9 @@ func withM2MPreloads(q *gorm.DB, m *registered) *gorm.DB {
 	for _, b := range m.m2m {
 		q = q.Preload(b.assoc)
 	}
+	for _, b := range m.hasMany {
+		q = q.Preload(b.assoc)
+	}
 	return q
 }
 

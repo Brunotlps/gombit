@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"reflect"
 	"sort"
 	"strings"
 	"testing"
@@ -386,6 +387,110 @@ func TestEmptySearchOptsOut(t *testing.T) {
 	}
 	if len(env.Data) != 2 {
 		t.Fatalf("with empty Search, search=South returned %d rows, want 2 (search opted out)", len(env.Data))
+	}
+}
+
+type hmPart struct {
+	ID        uint   `gorm:"primaryKey" json:"id"`
+	Name      string `json:"name"`
+	MachineID uint   `json:"machine_id"`
+}
+
+func (hmPart) TableName() string { return "hm_parts" }
+
+type hmMachine struct {
+	ID    uint     `gorm:"primaryKey" json:"id"`
+	Name  string   `json:"name"`
+	Parts []hmPart `gorm:"foreignKey:MachineID" json:"parts"`
+}
+
+func (hmMachine) TableName() string { return "hm_machines" }
+
+// TestHasManyReadOnlyView verifies a has_many association auto-derives to a
+// read-only relation whose data-plane read returns the related children's ids
+// (preloaded), and that a write to it is rejected.
+func TestHasManyReadOnlyView(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	// Auto-derivation emits a read-only has_many relation.
+	derived, err := admin.FieldsFrom(hmMachine{})
+	if err != nil {
+		t.Fatalf("FieldsFrom: %v", err)
+	}
+	var parts *admin.Field
+	for i := range derived {
+		if derived[i].Name == "parts" {
+			parts = &derived[i]
+		}
+	}
+	if parts == nil || parts.Type != admin.TypeRelation || parts.Related == nil ||
+		parts.Related.Kind != admin.RelHasMany || !parts.ReadOnly {
+		t.Fatalf("parts field = %+v, want a read-only has_many relation", parts)
+	}
+
+	app := newCookieApp(t)
+	if err := app.DB().AutoMigrate(&hmPart{}, &hmMachine{}); err != nil {
+		t.Fatalf("AutoMigrate: %v", err)
+	}
+	if err := admin.Register(app, hmMachine{}, admin.Options{Slug: "machines"}); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	jar := loginSuperuser(t, app)
+
+	machine := hmMachine{Name: "Lathe"}
+	if err := app.DB().Create(&machine).Error; err != nil {
+		t.Fatalf("create machine: %v", err)
+	}
+	children := []hmPart{
+		{Name: "Chuck", MachineID: machine.ID},
+		{Name: "Bed", MachineID: machine.ID},
+	}
+	if err := app.DB().Create(&children).Error; err != nil {
+		t.Fatalf("create parts: %v", err)
+	}
+	want := []int64{asInt(children[0].ID), asInt(children[1].ID)}
+	sort.Slice(want, func(i, j int) bool { return want[i] < want[j] })
+
+	path := fmt.Sprintf("/api/v1/admin/resources/machines/%d", machine.ID)
+	get := doRequest(app, jar, http.MethodGet, path, "")
+	if get.Code != http.StatusOK {
+		t.Fatalf("get status = %d; body: %s", get.Code, get.Body.String())
+	}
+	var got rowEnvelope
+	if err := json.Unmarshal(get.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode get: %v", err)
+	}
+	if ids := idsOf(t, got.Data["parts"]); !reflect.DeepEqual(ids, want) {
+		t.Fatalf("detail parts = %v, want the created child PKs %v", ids, want)
+	}
+
+	// The list endpoint returns the same child ids.
+	list := doRequest(app, jar, http.MethodGet, "/api/v1/admin/resources/machines", "")
+	var listed listEnvelope
+	if err := json.Unmarshal(list.Body.Bytes(), &listed); err != nil {
+		t.Fatalf("decode list: %v", err)
+	}
+	if len(listed.Data) != 1 {
+		t.Fatalf("list returned %d machines, want 1", len(listed.Data))
+	}
+	if ids := idsOf(t, listed.Data[0]["parts"]); !reflect.DeepEqual(ids, want) {
+		t.Fatalf("list parts = %v, want %v", ids, want)
+	}
+
+	// A write to the read-only has_many field is rejected with a field error.
+	patch := doRequest(app, jar, http.MethodPatch, path, fmt.Sprintf(`{"parts":[%d]}`, want[0]))
+	assertError(t, patch, http.StatusUnprocessableEntity, "validation_error")
+	if fields := decodeError(t, patch).Fields; len(fields["parts"]) == 0 {
+		t.Fatalf("error fields = %#v, want a parts error", fields)
+	}
+
+	// The rejected write must not have mutated the relation.
+	get2 := doRequest(app, jar, http.MethodGet, path, "")
+	var after rowEnvelope
+	if err := json.Unmarshal(get2.Body.Bytes(), &after); err != nil {
+		t.Fatalf("decode re-get: %v", err)
+	}
+	if ids := idsOf(t, after.Data["parts"]); !reflect.DeepEqual(ids, want) {
+		t.Fatalf("parts after rejected write = %v, want unchanged %v", ids, want)
 	}
 }
 

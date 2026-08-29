@@ -105,7 +105,7 @@ func registerModel(host Host, model any, opts Options) error {
 		return err
 	}
 
-	resolved, m2mBindings, err := resolveFields(opts.Fields, sch)
+	resolved, m2mBindings, hasManyBindings, err := resolveFields(opts.Fields, sch)
 	if err != nil {
 		return err
 	}
@@ -125,6 +125,7 @@ func registerModel(host Host, model any, opts Options) error {
 		fieldByName: map[string]*resolvedField{},
 		implicit:    implicit,
 		m2m:         m2mBindings,
+		hasMany:     hasManyBindings,
 	}
 	for i := range m.fields {
 		m.fieldByName[m.fields[i].Name] = &m.fields[i]
@@ -280,13 +281,14 @@ func validateQueryableColumns(opts Options, resolved []resolvedField) error {
 	return nil
 }
 
-func resolveFields(fields []Field, sch *schema.Schema) ([]resolvedField, []*m2mBinding, error) {
+func resolveFields(fields []Field, sch *schema.Schema) ([]resolvedField, []*m2mBinding, []*relationRead, error) {
 	out := make([]resolvedField, 0, len(fields))
-	var bindings []*m2mBinding
+	var bindings []*m2mBinding  // many_to_many (read + write)
+	var hasMany []*relationRead // has_many (read only)
 	seen := map[string]struct{}{}
 	for _, f := range fields {
 		if _, ok := seen[f.Name]; ok {
-			return nil, nil, fmt.Errorf("admin: duplicate field %q", f.Name)
+			return nil, nil, nil, fmt.Errorf("admin: duplicate field %q", f.Name)
 		}
 		seen[f.Name] = struct{}{}
 		if f.Type == TypeRelation && f.Related != nil && f.Related.Kind == RelHasMany {
@@ -300,7 +302,7 @@ func resolveFields(fields []Field, sch *schema.Schema) ([]resolvedField, []*m2mB
 		if f.Type == TypeRelation && f.Related != nil && f.Related.Kind == RelManyToMany {
 			b, ok := findM2M(sch, f.Name)
 			if !ok {
-				return nil, nil, fmt.Errorf("admin: many_to_many field %q has no matching association on the model", f.Name)
+				return nil, nil, nil, fmt.Errorf("admin: many_to_many field %q has no matching association on the model", f.Name)
 			}
 			binding := b
 			bindings = append(bindings, binding)
@@ -313,18 +315,31 @@ func resolveFields(fields []Field, sch *schema.Schema) ([]resolvedField, []*m2mB
 			})
 			continue
 		}
-		sf := matchSchemaField(sch, f)
-		if sf == nil {
-			if f.Type == TypeRelation && f.Related != nil && f.Related.Kind == RelHasMany {
+		if f.Type == TypeRelation && f.Related != nil && f.Related.Kind == RelHasMany {
+			// has_many is read-only. When it maps to a real GORM has_many
+			// association, preload it and expose the related primary keys;
+			// otherwise (a meta-only declaration) keep the empty read.
+			if binding, ok := findHasMany(sch, f.Name); ok {
+				hasMany = append(hasMany, binding)
+				out = append(out, resolvedField{
+					Field:  copyRel,
+					column: "",
+					get:    func(inst any) any { return binding.ids(inst) },
+					set:    func(any, any) error { return fmt.Errorf("has_many is not writable") },
+				})
+			} else {
 				out = append(out, resolvedField{
 					Field:  copyRel,
 					column: "",
 					get:    func(any) any { return nil },
 					set:    func(any, any) error { return fmt.Errorf("has_many is not writable") },
 				})
-				continue
 			}
-			return nil, nil, fmt.Errorf("admin: field %q does not exist on the model", f.Name)
+			continue
+		}
+		sf := matchSchemaField(sch, f)
+		if sf == nil {
+			return nil, nil, nil, fmt.Errorf("admin: field %q does not exist on the model", f.Name)
 		}
 		column := f.Column
 		if column == "" {
@@ -337,5 +352,5 @@ func resolveFields(fields []Field, sch *schema.Schema) ([]resolvedField, []*m2mB
 			set:    makeSetter(sf.StructField.Index, f.Type, sf.FieldType),
 		})
 	}
-	return out, bindings, nil
+	return out, bindings, hasMany, nil
 }

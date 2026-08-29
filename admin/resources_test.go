@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"go/parser"
 	"go/token"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -811,6 +812,11 @@ func asInt(v any) int64 {
 		return int64(n)
 	case int64:
 		return n
+	case uint:
+		if n > math.MaxInt64 {
+			return math.MaxInt64
+		}
+		return int64(n)
 	default:
 		return 0
 	}
