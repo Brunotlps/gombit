@@ -6,7 +6,7 @@ import { Checkbox, FormControlLabel, MenuItem, TextField } from "@mui/material";
 import { useApiClient } from "../api/client";
 import { useCatalog } from "../app/providers";
 import type { FieldMeta } from "../api/types";
-import { isHasMany, isManyToMany, toIdList } from "../fields";
+import { isBelongsTo, isHasMany, isManyToMany, relationOptions, toIdList, toRelId } from "../fields";
 
 type Props = {
   field: FieldMeta;
@@ -28,6 +28,10 @@ export function FieldWidget({ field, control, disabled }: Props) {
 
   if (isManyToMany(field)) {
     return <RelationMultiSelect field={field} control={control} disabled={disabled} />;
+  }
+
+  if (isBelongsTo(field)) {
+    return <RelationSelect field={field} control={control} disabled={disabled} />;
   }
 
   if (field.type === "boolean") {
@@ -83,11 +87,15 @@ export function FieldWidget({ field, control, disabled }: Props) {
 }
 
 /**
- * RelationMultiSelect renders a many-to-many field as a multi-select backed by
- * the related model's admin list endpoint, showing the related label field and
- * submitting the selected ids (#223).
+ * useRelationOptions loads the related model's rows (via the data-plane list
+ * endpoint — client.list -> /api/v1/admin/...; a bare /admin/{slug} hits the SPA
+ * embed fallback) and maps them to { value: pk, label } options.
  */
-function RelationMultiSelect({ field, control, disabled }: Props) {
+function useRelationOptions(field: FieldMeta): {
+  options: Option[];
+  helper: string;
+  loadError: string;
+} {
   const client = useApiClient();
   const { bySlug } = useCatalog();
   const slug = field.related?.slug ?? "";
@@ -105,25 +113,13 @@ function RelationMultiSelect({ field, control, disabled }: Props) {
     let cancelled = false;
     void (async () => {
       try {
-        // Use the data-plane list endpoint (client.list -> /api/v1/admin/...);
-        // a bare /admin/{slug} hits the SPA embed fallback, not the API.
         const env = await client.list(slug, { per_page: relationPageSize });
         if (cancelled) {
           return;
         }
         const rows = Array.isArray(env.data) ? env.data : [];
         setTruncated((env.meta?.total ?? rows.length) > relationPageSize);
-        setOptions(
-          rows
-            .filter((r) => r[pkField] != null)
-            .map((r) => {
-              const value = String(r[pkField]);
-              return {
-                value,
-                label: labelField && r[labelField] != null ? String(r[labelField]) : value,
-              };
-            }),
-        );
+        setOptions(relationOptions(rows, pkField, labelField));
       } catch (err: unknown) {
         if (!cancelled) {
           setLoadError(err instanceof Error ? err.message : "failed to load options");
@@ -140,7 +136,15 @@ function RelationMultiSelect({ field, control, disabled }: Props) {
     : truncated
       ? `Showing first ${relationPageSize} ${slug}; not all rows are selectable yet`
       : `Select related ${slug}`;
+  return { options, helper, loadError };
+}
 
+/**
+ * RelationMultiSelect renders a many-to-many field as a multi-select backed by
+ * the related model's admin list endpoint (#223).
+ */
+function RelationMultiSelect({ field, control, disabled }: Props) {
+  const { options, helper, loadError } = useRelationOptions(field);
   return (
     <Controller
       name={field.name}
@@ -172,6 +176,48 @@ function RelationMultiSelect({ field, control, disabled }: Props) {
           </TextField>
         );
       }}
+    />
+  );
+}
+
+/**
+ * RelationSelect renders a belongs_to foreign key as a single-select backed by
+ * the related model's list endpoint, storing the selected primary key (#223).
+ */
+function RelationSelect({ field, control, disabled }: Props) {
+  const { options, helper, loadError } = useRelationOptions(field);
+  const readOnly = disabled || field.readonly;
+  return (
+    <Controller
+      name={field.name}
+      control={control}
+      rules={{ required: field.required && !readOnly }}
+      render={({ field: rhf, fieldState }) => (
+        <TextField
+          select
+          label={fieldLabel(field)}
+          fullWidth
+          disabled={readOnly}
+          value={rhf.value == null || rhf.value === "" ? "" : String(rhf.value)}
+          onChange={(event) => {
+            const raw = event.target.value;
+            // Empty clears the FK (null); otherwise store the related PK type.
+            rhf.onChange(raw === "" ? null : toRelId(raw));
+          }}
+          error={!!fieldState.error || !!loadError}
+          helperText={fieldState.error?.message ?? (loadError || helper)}
+          slotProps={{ select: { displayEmpty: true } }}
+        >
+          <MenuItem value="">
+            <em>{field.required ? "Select…" : "None"}</em>
+          </MenuItem>
+          {options.map((option) => (
+            <MenuItem key={option.value} value={option.value}>
+              {option.label}
+            </MenuItem>
+          ))}
+        </TextField>
+      )}
     />
   );
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { FieldMeta } from "./api/types";
-import { formValuesToBody } from "./fields";
+import { formValuesToBody, relationOptions } from "./fields";
 
 function field(partial: Pick<FieldMeta, "name" | "type"> & Partial<FieldMeta>): FieldMeta {
   return {
@@ -93,6 +93,62 @@ describe("formValuesToBody", () => {
     ];
     const { body } = formValuesToBody({ id: 3, note: "" }, fields);
     expect(body).toEqual({ note: null });
+  });
+});
+
+describe("relationOptions (picker options)", () => {
+  const rows = [
+    { id: 1, title: "North" },
+    { id: 2, title: "South" },
+  ];
+
+  it("labels rows by the label_field JSON key", () => {
+    expect(relationOptions(rows, "id", "title")).toEqual([
+      { value: "1", label: "North" },
+      { value: "2", label: "South" },
+    ]);
+  });
+
+  it("falls back to the primary key when the label field is not a row key", () => {
+    // label_field must be a field name (json key), not a SQL column: a mismatch
+    // falls back to the pk instead of crashing.
+    expect(relationOptions(rows, "id", "name")).toEqual([
+      { value: "1", label: "1" },
+      { value: "2", label: "2" },
+    ]);
+  });
+
+  it("supports uuid / string primary keys", () => {
+    const uuidRows = [{ uid: "6f9619ff-8b86", title: "North" }];
+    expect(relationOptions(uuidRows, "uid", "title")).toEqual([
+      { value: "6f9619ff-8b86", label: "North" },
+    ]);
+  });
+});
+
+describe("belongs_to fields", () => {
+  const rel = (): FieldMeta => ({
+    name: "warehouse_id",
+    type: "relation",
+    required: false,
+    readonly: false,
+    related: { slug: "warehouses", kind: "belongs_to", label_field: "name" },
+  });
+
+  it("sends the selected foreign key, preserving numeric type", () => {
+    const { body } = formValuesToBody({ warehouse_id: "7" }, [rel()]);
+    expect(body.warehouse_id).toBe(7);
+  });
+
+  it("keeps a uuid / string foreign key as a string", () => {
+    const uuid = "6f9619ff-8b86-d011-b42d-00c04fc964ff";
+    const { body } = formValuesToBody({ warehouse_id: uuid }, [rel()]);
+    expect(body.warehouse_id).toBe(uuid);
+  });
+
+  it("sends null to clear an optional belongs_to", () => {
+    const { body } = formValuesToBody({ warehouse_id: "" }, [rel()]);
+    expect(body.warehouse_id).toBeNull();
   });
 });
 
