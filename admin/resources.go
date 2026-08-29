@@ -174,17 +174,71 @@ func (h *handlers) updateResource(ctx context.Context, input *patchInput) (*rowO
 	if err != nil {
 		return nil, err
 	}
-	if err := applyWrite(ctx, m, inst, input.Body, false); err != nil {
-		return nil, err
-	}
 	db, err := h.db()
 	if err != nil {
 		return nil, contract.WithContext(ctx, contract.Internal("admin database is not attached"))
+	}
+	if m.version != nil {
+		return h.updateVersioned(ctx, m, inst, input, db)
+	}
+	if err := applyWrite(ctx, m, inst, input.Body, false); err != nil {
+		return nil, err
 	}
 	if err := db.WithContext(ctx).Save(inst).Error; err != nil {
 		return nil, database.MapPersistError(ctx, err, "resource already exists", "persist resource")
 	}
 	return &rowOutput{Body: contract.Data[row]{Data: m.toRow(inst)}}, nil
+}
+
+// updateVersioned performs an optimistic-locking update for a model that carries
+// an integer "version" column. The guard is the version read when the row was
+// loaded, or a version supplied in the PATCH body when present (a stricter
+// precondition based on what the client last saw). The UPDATE bumps the version
+// and matches on the old value, so two concurrent PATCHes cannot both win: the
+// loser matches zero rows and gets a 409 instead of a silent last-write-wins.
+func (h *handlers) updateVersioned(ctx context.Context, m *registered, inst any, input *patchInput, db *gorm.DB) (*rowOutput, error) {
+	expected := m.version.get(inst)
+	body := input.Body
+	if raw, ok := body[m.version.name]; ok {
+		cv, err := asInt64(raw)
+		if err != nil {
+			return nil, contract.WithContext(ctx, contract.Validation(
+				"The request contains invalid fields.",
+				map[string][]string{m.version.name: {"must be an integer"}},
+			))
+		}
+		expected = cv
+		body = withoutKey(body, m.version.name)
+	}
+	if err := applyWrite(ctx, m, inst, body, false); err != nil {
+		return nil, err
+	}
+	m.version.set(inst, expected+1)
+	res := db.WithContext(ctx).
+		Model(inst).
+		Where(clause.Eq{Column: clause.Column{Name: m.version.column}, Value: expected}).
+		Select("*").
+		Updates(inst)
+	if res.Error != nil {
+		return nil, database.MapPersistError(ctx, res.Error, "resource already exists", "persist resource")
+	}
+	if res.RowsAffected == 0 {
+		return nil, contract.WithContext(ctx, contract.Conflict(
+			"The resource was modified by another request; reload and retry."))
+	}
+	return &rowOutput{Body: contract.Data[row]{Data: m.toRow(inst)}}, nil
+}
+
+// withoutKey returns a shallow copy of body without key.
+func withoutKey(body map[string]any, key string) map[string]any {
+	out := make(map[string]any, len(body))
+	for k, v := range body {
+		if k == key {
+			continue
+		}
+		out[k] = v
+	}
+	return out
 }
 
 func (h *handlers) deleteResource(ctx context.Context, input *itemInput) (*deleteOutput, error) {

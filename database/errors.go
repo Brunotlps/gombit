@@ -78,6 +78,12 @@ func MapPersistError(ctx context.Context, err error, conflict, internal string) 
 	if err == nil {
 		return nil
 	}
+	// A domain Validate hook failure is an intentional 422 with field detail,
+	// not a driver error — check it before the constraint classifiers.
+	var ve *ValidationError
+	if errors.As(err, &ve) {
+		return contract.WithContext(ctx, contract.Validation(ve.Message, ve.Fields))
+	}
 	if IsUniqueViolation(err) {
 		return contract.WithContext(ctx, contract.Conflict(conflict))
 	}
