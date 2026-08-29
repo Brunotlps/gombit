@@ -128,7 +128,7 @@ export function emptyFormValue(field: FieldMeta): unknown {
   if (field.type === "boolean") {
     return false;
   }
-  if (isManyToMany(field)) {
+  if (isManyToMany(field) || isHasMany(field)) {
     return [];
   }
   if (field.type === "json") {
@@ -284,7 +284,7 @@ function valueToForm(field: FieldMeta, raw: unknown): unknown {
   if (field.type === "boolean") {
     return Boolean(raw);
   }
-  if (isManyToMany(field)) {
+  if (isManyToMany(field) || isHasMany(field)) {
     return toIdList(raw);
   }
   if (field.type === "json") {

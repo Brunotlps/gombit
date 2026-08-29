@@ -12,6 +12,12 @@ version.
 
 ### Added
 
+- Admin read-only `has_many` view
+  ([#223](https://github.com/gombit-dev/gombit/issues/223)): a `has_many`
+  association now auto-derives to a read-only relation field — list/detail
+  preload it and return the related children's primary keys, and the SPA shows
+  them as read-only chips (writes are rejected). Previously `has_many` was
+  dropped from auto-derivation and returned nothing.
 - Admin relation pickers are searchable
   ([#223](https://github.com/gombit-dev/gombit/issues/223)): the `belongs_to` and
   `many_to_many` widgets are now MUI Autocompletes. When the related model

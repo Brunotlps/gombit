@@ -43,6 +43,19 @@ export function FieldWidget({ field, control, disabled }: Props) {
     return <RelationSelect field={field} control={control} disabled={disabled} />;
   }
 
+  if (isHasMany(field)) {
+    // Read-only: show the related children as labeled chips, never editable.
+    return (
+      <Controller
+        name={field.name}
+        control={control}
+        render={({ field: rhf }) => (
+          <RelationAutocomplete field={field} multiple value={rhf.value} onChange={() => {}} disabled />
+        )}
+      />
+    );
+  }
+
   if (field.type === "boolean") {
     return (
       <Controller

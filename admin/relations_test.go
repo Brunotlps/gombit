@@ -389,6 +389,81 @@ func TestEmptySearchOptsOut(t *testing.T) {
 	}
 }
 
+type hmPart struct {
+	ID        uint   `gorm:"primaryKey" json:"id"`
+	Name      string `json:"name"`
+	MachineID uint   `json:"machine_id"`
+}
+
+func (hmPart) TableName() string { return "hm_parts" }
+
+type hmMachine struct {
+	ID    uint     `gorm:"primaryKey" json:"id"`
+	Name  string   `json:"name"`
+	Parts []hmPart `gorm:"foreignKey:MachineID" json:"parts"`
+}
+
+func (hmMachine) TableName() string { return "hm_machines" }
+
+// TestHasManyReadOnlyView verifies a has_many association auto-derives to a
+// read-only relation whose data-plane read returns the related children's ids
+// (preloaded), and that a write to it is rejected.
+func TestHasManyReadOnlyView(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	// Auto-derivation emits a read-only has_many relation.
+	derived, err := admin.FieldsFrom(hmMachine{})
+	if err != nil {
+		t.Fatalf("FieldsFrom: %v", err)
+	}
+	var parts *admin.Field
+	for i := range derived {
+		if derived[i].Name == "parts" {
+			parts = &derived[i]
+		}
+	}
+	if parts == nil || parts.Type != admin.TypeRelation || parts.Related == nil ||
+		parts.Related.Kind != admin.RelHasMany || !parts.ReadOnly {
+		t.Fatalf("parts field = %+v, want a read-only has_many relation", parts)
+	}
+
+	app := newCookieApp(t)
+	if err := app.DB().AutoMigrate(&hmPart{}, &hmMachine{}); err != nil {
+		t.Fatalf("AutoMigrate: %v", err)
+	}
+	if err := admin.Register(app, hmMachine{}, admin.Options{Slug: "machines"}); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	jar := loginSuperuser(t, app)
+
+	machine := hmMachine{Name: "Lathe"}
+	if err := app.DB().Create(&machine).Error; err != nil {
+		t.Fatalf("create machine: %v", err)
+	}
+	if err := app.DB().Create(&[]hmPart{
+		{Name: "Chuck", MachineID: machine.ID},
+		{Name: "Bed", MachineID: machine.ID},
+	}).Error; err != nil {
+		t.Fatalf("create parts: %v", err)
+	}
+
+	path := fmt.Sprintf("/api/v1/admin/resources/machines/%d", machine.ID)
+	get := doRequest(app, jar, http.MethodGet, path, "")
+	if get.Code != http.StatusOK {
+		t.Fatalf("get status = %d; body: %s", get.Code, get.Body.String())
+	}
+	var got rowEnvelope
+	if err := json.Unmarshal(get.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode get: %v", err)
+	}
+	if ids := idsOf(t, got.Data["parts"]); len(ids) != 2 {
+		t.Fatalf("parts = %v, want 2 related child ids", ids)
+	}
+
+	// A write to the read-only has_many field is rejected.
+	patch := doRequest(app, jar, http.MethodPatch, path, `{"parts":[1]}`)
+	assertError(t, patch, http.StatusUnprocessableEntity, "validation_error")
+}
+
 func createWarehouse(t *testing.T, app *framework.App, jar *cookieJar, name string) int64 {
 	t.Helper()
 	rec := doRequest(app, jar, http.MethodPost, "/api/v1/admin/resources/warehouses",

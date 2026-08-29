@@ -53,6 +53,34 @@ func findM2M(sch *schema.Schema, fieldName string) (*m2mBinding, bool) {
 	return nil, false
 }
 
+// findHasMany returns a read binding for a has_many association (same read shape
+// as m2m — preload the slice, extract the related primary keys — but no write).
+func findHasMany(sch *schema.Schema, fieldName string) (*m2mBinding, bool) {
+	for _, rel := range sch.Relationships.HasMany {
+		if rel == nil || rel.Field == nil {
+			continue
+		}
+		if relationFieldName(rel.Field) != fieldName {
+			continue
+		}
+		fieldSchema := rel.FieldSchema
+		if fieldSchema == nil || len(fieldSchema.PrimaryFields) == 0 {
+			return nil, false
+		}
+		pk := fieldSchema.PrimaryFields[0]
+		return &m2mBinding{
+			name:          fieldName,
+			assoc:         rel.Name,
+			fieldIndex:    rel.Field.StructField.Index,
+			relatedElem:   fieldSchema.ModelType,
+			relatedPKCol:  pk.DBName,
+			relatedPKIdx:  pk.StructField.Index,
+			relatedPKType: inferFieldType(pk),
+		}, true
+	}
+	return nil, false
+}
+
 // relationFieldName is the json/snake name an admin field uses for a GORM
 // association struct field.
 func relationFieldName(sf *schema.Field) string {

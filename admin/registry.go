@@ -64,6 +64,7 @@ type registered struct {
 	fieldByName map[string]*resolvedField
 	implicit    map[string]implicitColumn // created_at / updated_at when omitted from Fields
 	m2m         []*m2mBinding             // many-to-many fields synced on write (#223)
+	hasMany     []*m2mBinding             // has_many fields, read-only (preload + ids) (#223)
 	version     *versionField             // optimistic-lock column, if the model has one
 }
 
