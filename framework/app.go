@@ -304,12 +304,15 @@ func (a *App) DB() *gorm.DB {
 // nil and rolls back on any error or panic. It is the framework home for
 // transactional multi-model writes (atomically update A + B + C) and for
 // cross-row invariants that must read and write consistently. Model Validate
-// hooks (database.Validator) run inside this transaction too, so an invariant
-// checked in Validate cannot commit alongside a change that violates it.
+// hooks (database.Validator) run inside this transaction too. Use struct writes
+// (Create/Save/Updates(struct)) so Validate sees the values being written — an
+// invariant checked in Validate then cannot commit alongside a change that
+// violates it.
 //
 //	err := app.Tx(ctx, func(tx *gorm.DB) error {
 //	    if err := tx.Create(&a).Error; err != nil { return err }
-//	    return tx.Model(&b).Update("count", gorm.Expr("count + 1")).Error
+//	    b.Count++
+//	    return tx.Save(&b).Error
 //	})
 func (a *App) Tx(ctx context.Context, fn func(tx *gorm.DB) error) error {
 	db := a.DB()

@@ -53,12 +53,16 @@ err := app.Tx(ctx, func(tx *gorm.DB) error {
 	if err := tx.Create(&order).Error; err != nil {
 		return err
 	}
-	return tx.Model(&inventory).Update("count", gorm.Expr("count - ?", n)).Error
+	inventory.Count -= n
+	return tx.Save(&inventory).Error
 })
 ```
 
-`Validate` hooks fire inside this transaction too, so a rule checked in
-`Validate` cannot commit next to a change that violates it.
+`Validate` hooks fire inside this transaction too. Write structs
+(`Create`/`Save`/`Updates(struct)`) so `Validate` sees the new values — a rule
+checked in `Validate` then cannot commit next to a change that violates it. A
+map `Updates`/`Update(col, val)` still runs `Validate`, but on the model as
+loaded (it cannot see the map's changes).
 
 ## Optimistic locking
 

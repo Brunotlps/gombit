@@ -83,6 +83,75 @@ func TestValidatorHookRunsOnUpdate(t *testing.T) {
 	}
 }
 
+type crossRow struct {
+	ID   uint `gorm:"primaryKey"`
+	Name string
+}
+
+// Validate enforces a cross-row invariant by querying tx — the case that hung
+// when the hook was handed the in-flight statement instead of a NewDB session.
+func (r crossRow) Validate(_ context.Context, tx *gorm.DB) error {
+	var n int64
+	if err := tx.Model(&crossRow{}).Where("name = ? AND id <> ?", r.Name, r.ID).Count(&n).Error; err != nil {
+		return err
+	}
+	if n > 0 {
+		return NewValidationError("duplicate name", map[string][]string{"name": {"already exists"}})
+	}
+	return nil
+}
+
+func TestValidatorCanQueryTxWithoutHanging(t *testing.T) {
+	db := openSQLite(t)
+	if err := db.AutoMigrate(&crossRow{}); err != nil {
+		t.Fatalf("AutoMigrate: %v", err)
+	}
+	if err := db.Create(&crossRow{Name: "a"}).Error; err != nil {
+		t.Fatalf("first create: %v", err)
+	}
+	// The hook queries tx during Create and must complete, not deadlock.
+	err := db.Create(&crossRow{Name: "a"}).Error
+	var ve *ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("duplicate create error = %v, want ValidationError from cross-row query", err)
+	}
+	if err := db.Create(&crossRow{Name: "b"}).Error; err != nil {
+		t.Fatalf("distinct create: %v", err)
+	}
+}
+
+type condRow struct {
+	ID      uint `gorm:"primaryKey"`
+	Name    string
+	Blocked bool
+}
+
+func (r condRow) Validate(_ context.Context, _ *gorm.DB) error {
+	if r.Blocked {
+		return NewValidationError("blocked", nil)
+	}
+	return nil
+}
+
+// TestValidatorRunsOnMapUpdate covers the Updates(map) path: the hook validates
+// the model passed to db.Model() so it is not silently skipped.
+func TestValidatorRunsOnMapUpdate(t *testing.T) {
+	db := openSQLite(t)
+	if err := db.AutoMigrate(&condRow{}); err != nil {
+		t.Fatalf("AutoMigrate: %v", err)
+	}
+	row := condRow{Name: "x"}
+	if err := db.Create(&row).Error; err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	row.Blocked = true
+	err := db.Model(&row).Updates(map[string]any{"name": "y"}).Error
+	var ve *ValidationError
+	if !errors.As(err, &ve) {
+		t.Fatalf("map update error = %v, want Validate to run on the model", err)
+	}
+}
+
 func TestMapPersistErrorMapsValidationErrorTo422(t *testing.T) {
 	err := MapPersistError(
 		context.Background(),

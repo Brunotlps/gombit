@@ -70,18 +70,41 @@ func runValidate(db *gorm.DB) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
+	// Validate must not run queries against the in-flight Create/Update
+	// statement (that reuse corrupts it — GORM's own hook dispatcher passes a
+	// NewDB session for the same reason). A NewDB session keeps the ConnPool, so
+	// Validate still sees the surrounding transaction.
+	tx := db.Session(&gorm.Session{NewDB: true})
+
 	rv := db.Statement.ReflectValue
 	switch rv.Kind() {
 	case reflect.Slice, reflect.Array:
 		for i := 0; i < rv.Len(); i++ {
-			if err := validateValue(ctx, db, rv.Index(i)); err != nil {
+			if err := validateValue(ctx, tx, rv.Index(i)); err != nil {
 				_ = db.AddError(err)
 				return
 			}
 		}
 	case reflect.Struct:
-		if err := validateValue(ctx, db, rv); err != nil {
+		if err := validateValue(ctx, tx, rv); err != nil {
 			_ = db.AddError(err)
+		}
+	default:
+		// Updates(map) / Update(col, val) set a non-struct Dest; validate the
+		// model passed to db.Model() so the hook still runs on those paths.
+		if db.Statement.Model != nil {
+			mv := reflect.ValueOf(db.Statement.Model)
+			for mv.Kind() == reflect.Pointer {
+				if mv.IsNil() {
+					return
+				}
+				mv = mv.Elem()
+			}
+			if mv.Kind() == reflect.Struct {
+				if err := validateValue(ctx, tx, mv); err != nil {
+					_ = db.AddError(err)
+				}
+			}
 		}
 	}
 }
