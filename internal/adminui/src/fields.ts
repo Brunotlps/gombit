@@ -4,6 +4,46 @@ export function isHasMany(field: FieldMeta): boolean {
   return field.type === "relation" && field.related?.kind === "has_many";
 }
 
+export function isManyToMany(field: FieldMeta): boolean {
+  return field.type === "relation" && field.related?.kind === "many_to_many";
+}
+
+/** RelId is a related primary key: a number (integer PK) or a string (uuid /
+ * string PK). */
+export type RelId = number | string;
+
+/**
+ * toIdList coerces a form value into the id list a many_to_many field submits.
+ * It preserves the related primary key type: a numeric id stays a number, a
+ * non-numeric id (uuid / string PK) stays a string. Only null / undefined /
+ * empty entries are dropped — a string id is never silently coerced away (which
+ * would wipe the join table for string-keyed related models).
+ */
+export function toIdList(raw: unknown): RelId[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const out: RelId[] = [];
+  for (const v of raw) {
+    if (v === null || v === undefined) {
+      continue;
+    }
+    if (typeof v === "number") {
+      if (!Number.isNaN(v)) {
+        out.push(v);
+      }
+      continue;
+    }
+    const s = String(v).trim();
+    if (s === "") {
+      continue;
+    }
+    const n = Number(s);
+    out.push(Number.isNaN(n) ? s : n);
+  }
+  return out;
+}
+
 export function isWritable(field: FieldMeta): boolean {
   return !field.readonly && !isHasMany(field);
 }
@@ -33,6 +73,9 @@ export function emptyFormValue(field: FieldMeta): unknown {
   if (field.type === "boolean") {
     return false;
   }
+  if (isManyToMany(field)) {
+    return [];
+  }
   if (field.type === "json") {
     return "";
   }
@@ -53,6 +96,12 @@ export function formValuesToBody(values: Row, fields: FieldMeta[]): { body: Row;
   const jsonErrors: Record<string, string> = {};
   for (const field of writableFields(fields)) {
     const raw = values[field.name];
+    if (isManyToMany(field)) {
+      // Send the id list so the data plane syncs the join table. An empty
+      // list clears the relation; omission is not possible from the form.
+      body[field.name] = toIdList(raw);
+      continue;
+    }
     if (field.type === "json") {
       const text = raw === undefined || raw === null ? "" : String(raw).trim();
       if (text === "") {
@@ -174,6 +223,9 @@ export function datetimeLocalToRFC3339(raw: string): string {
 function valueToForm(field: FieldMeta, raw: unknown): unknown {
   if (field.type === "boolean") {
     return Boolean(raw);
+  }
+  if (isManyToMany(field)) {
+    return toIdList(raw);
   }
   if (field.type === "json") {
     if (raw === undefined || raw === null || raw === "") {

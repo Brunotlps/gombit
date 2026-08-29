@@ -98,7 +98,7 @@ func registerModel(host Host, model any, opts Options) error {
 		return err
 	}
 
-	resolved, err := resolveFields(opts.Fields, sch)
+	resolved, m2mBindings, err := resolveFields(opts.Fields, sch)
 	if err != nil {
 		return err
 	}
@@ -117,11 +117,19 @@ func registerModel(host Host, model any, opts Options) error {
 		fields:      resolved,
 		fieldByName: map[string]*resolvedField{},
 		implicit:    implicit,
+		m2m:         m2mBindings,
 	}
 	for i := range m.fields {
 		m.fieldByName[m.fields[i].Name] = &m.fields[i]
 	}
 	m.version = detectVersionField(sch)
+	// The optimistic-lock update path (updateVersioned) and the many-to-many
+	// join sync are separate write paths; combining them on one model would
+	// silently drop the m2m write on a versioned PATCH. Refuse the combination
+	// at registration rather than accept-and-discard at request time (#223).
+	if m.version != nil && len(m.m2m) > 0 {
+		return fmt.Errorf("admin: model %q has both a version column and many_to_many field(s), which is not supported yet", opts.Slug)
+	}
 	if pk, ok := m.fieldByName[pkName]; ok && pk.Type != "" {
 		m.pkType = pk.Type
 		if pk.column != "" {
@@ -172,11 +180,17 @@ func validateFieldRefs(opts Options, implicit map[string]implicitColumn) error {
 			if f.Related == nil {
 				return fmt.Errorf("admin: field %q is a relation without related", f.Name)
 			}
-			if f.Related.Kind != RelBelongsTo && f.Related.Kind != RelHasMany {
+			if f.Related.Kind != RelBelongsTo && f.Related.Kind != RelHasMany && f.Related.Kind != RelManyToMany {
 				return fmt.Errorf("admin: field %q has unknown relation kind %q", f.Name, f.Related.Kind)
 			}
 			if strings.TrimSpace(f.Related.Slug) == "" {
 				return fmt.Errorf("admin: field %q relation is missing slug", f.Name)
+			}
+			// A many_to_many id list is split out before applyWrite, so the
+			// required-field check there can never see it. Rather than mis-report
+			// a submitted list as missing, reject Required on m2m at registration.
+			if f.Related.Kind == RelManyToMany && f.Required {
+				return fmt.Errorf("admin: many_to_many field %q cannot be Required", f.Name)
 			}
 		}
 		known[f.Name] = true
@@ -244,12 +258,13 @@ func validateQueryableColumns(opts Options, resolved []resolvedField) error {
 	return nil
 }
 
-func resolveFields(fields []Field, sch *schema.Schema) ([]resolvedField, error) {
+func resolveFields(fields []Field, sch *schema.Schema) ([]resolvedField, []*m2mBinding, error) {
 	out := make([]resolvedField, 0, len(fields))
+	var bindings []*m2mBinding
 	seen := map[string]struct{}{}
 	for _, f := range fields {
 		if _, ok := seen[f.Name]; ok {
-			return nil, fmt.Errorf("admin: duplicate field %q", f.Name)
+			return nil, nil, fmt.Errorf("admin: duplicate field %q", f.Name)
 		}
 		seen[f.Name] = struct{}{}
 		if f.Type == TypeRelation && f.Related != nil && f.Related.Kind == RelHasMany {
@@ -259,6 +274,22 @@ func resolveFields(fields []Field, sch *schema.Schema) ([]resolvedField, error) 
 		if f.Related != nil {
 			rel := *f.Related
 			copyRel.Related = &rel
+		}
+		if f.Type == TypeRelation && f.Related != nil && f.Related.Kind == RelManyToMany {
+			b, ok := findM2M(sch, f.Name)
+			if !ok {
+				return nil, nil, fmt.Errorf("admin: many_to_many field %q has no matching association on the model", f.Name)
+			}
+			binding := b
+			bindings = append(bindings, binding)
+			out = append(out, resolvedField{
+				Field:  copyRel,
+				column: "",
+				get:    func(inst any) any { return binding.ids(inst) },
+				// Write is handled by the join-table sync in create/update.
+				set: func(any, any) error { return nil },
+			})
+			continue
 		}
 		sf := matchSchemaField(sch, f)
 		if sf == nil {
@@ -271,7 +302,7 @@ func resolveFields(fields []Field, sch *schema.Schema) ([]resolvedField, error) 
 				})
 				continue
 			}
-			return nil, fmt.Errorf("admin: field %q does not exist on the model", f.Name)
+			return nil, nil, fmt.Errorf("admin: field %q does not exist on the model", f.Name)
 		}
 		column := f.Column
 		if column == "" {
@@ -284,5 +315,5 @@ func resolveFields(fields []Field, sch *schema.Schema) ([]resolvedField, error) 
 			set:    makeSetter(sf.StructField.Index, f.Type, sf.FieldType),
 		})
 	}
-	return out, nil
+	return out, bindings, nil
 }

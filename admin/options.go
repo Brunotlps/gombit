@@ -16,10 +16,11 @@ const (
 	TypeRelation FieldType = "relation"
 )
 
-// Relation kinds for v1. Many-to-many is deferred.
+// Relation kinds for v1.
 const (
-	RelBelongsTo = "belongs_to"
-	RelHasMany   = "has_many"
+	RelBelongsTo  = "belongs_to"
+	RelHasMany    = "has_many"
+	RelManyToMany = "many_to_many"
 )
 
 // Implicit timestamp names allowed in List and Ordering even when omitted
@@ -79,9 +80,11 @@ type Field struct {
 	Column string `json:"-"`
 }
 
-// Relation describes a belongs_to or has_many field. belongs_to is stored as
-// the foreign key on create/update. has_many is meta-only in ADMIN-1: the
-// data plane does not nest related collections.
+// Relation describes a belongs_to, has_many, or many_to_many field. belongs_to
+// is stored as the foreign key on create/update. has_many is meta-only: the
+// data plane does not nest related collections. many_to_many reads the related
+// primary keys and, on write, syncs the join table to the submitted id list
+// (#223).
 type Relation struct {
 	Slug       string `json:"slug"`
 	Kind       string `json:"kind"`
