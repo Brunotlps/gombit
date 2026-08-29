@@ -8,9 +8,24 @@ export function isManyToMany(field: FieldMeta): boolean {
   return field.type === "relation" && field.related?.kind === "many_to_many";
 }
 
+export function isBelongsTo(field: FieldMeta): boolean {
+  return field.type === "relation" && field.related?.kind === "belongs_to";
+}
+
 /** RelId is a related primary key: a number (integer PK) or a string (uuid /
  * string PK). */
 export type RelId = number | string;
+
+/** toRelId coerces a single related primary key, preserving its type (a numeric
+ * id stays a number; a uuid / string id stays a string). */
+export function toRelId(raw: unknown): RelId {
+  if (typeof raw === "number") {
+    return raw;
+  }
+  const s = String(raw).trim();
+  const n = Number(s);
+  return s !== "" && !Number.isNaN(n) ? n : s;
+}
 
 /**
  * toIdList coerces a form value into the id list a many_to_many field submits.
@@ -42,6 +57,28 @@ export function toIdList(raw: unknown): RelId[] {
     out.push(Number.isNaN(n) ? s : n);
   }
   return out;
+}
+
+/** RelationOption is a picker choice: the primary key (as a string value) and a
+ * human label. */
+export type RelationOption = { value: string; label: string };
+
+/**
+ * relationOptions maps related list rows to picker options. The label comes from
+ * the `label_field` key of the row JSON — which is the related model's field
+ * name (json tag / registered name), not its SQL column — falling back to the
+ * primary key when the label field is absent.
+ */
+export function relationOptions(rows: Row[], pkField: string, labelField: string): RelationOption[] {
+  return rows
+    .filter((r) => r[pkField] != null)
+    .map((r) => {
+      const value = String(r[pkField]);
+      return {
+        value,
+        label: labelField && r[labelField] != null ? String(r[labelField]) : value,
+      };
+    });
 }
 
 export function isWritable(field: FieldMeta): boolean {
@@ -100,6 +137,11 @@ export function formValuesToBody(values: Row, fields: FieldMeta[]): { body: Row;
       // Send the id list so the data plane syncs the join table. An empty
       // list clears the relation; omission is not possible from the form.
       body[field.name] = toIdList(raw);
+      continue;
+    }
+    if (isBelongsTo(field)) {
+      // Send the selected foreign key (preserving its type), or null to clear.
+      body[field.name] = isEmptyFormValue(raw) ? null : toRelId(raw);
       continue;
     }
     if (field.type === "json") {

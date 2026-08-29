@@ -306,6 +306,136 @@ func createWarehouse(t *testing.T, app *framework.App, jar *cookieJar, name stri
 	return asInt(env.Data["id"])
 }
 
+type belongsEngine struct {
+	ID          uint         `gorm:"primaryKey" json:"id"`
+	Name        string       `json:"name"`
+	WarehouseID uint         `json:"warehouse_id"`
+	Warehouse   relWarehouse `json:"-"`
+}
+
+func (belongsEngine) TableName() string { return "belongs_engines" }
+
+// TestBelongsToAutoDerivation verifies FieldsFrom renders a belongs_to foreign
+// key as a relation (a picker), not a bare integer, with the target slug and a
+// label field (#223).
+func TestBelongsToAutoDerivation(t *testing.T) {
+	fields, err := admin.FieldsFrom(belongsEngine{})
+	if err != nil {
+		t.Fatalf("FieldsFrom: %v", err)
+	}
+	var fk *admin.Field
+	for i := range fields {
+		if fields[i].Name == "warehouse_id" {
+			fk = &fields[i]
+		}
+	}
+	if fk == nil {
+		t.Fatalf("derived fields %v missing warehouse_id", fields)
+	}
+	if fk.Type != admin.TypeRelation || fk.Related == nil || fk.Related.Kind != admin.RelBelongsTo {
+		t.Fatalf("warehouse_id = %+v, want belongs_to relation", fk)
+	}
+	if fk.Related.Slug != "warehouses" {
+		t.Fatalf("warehouse_id slug = %q, want warehouses", fk.Related.Slug)
+	}
+	if fk.Related.LabelField != "name" {
+		t.Fatalf("warehouse_id label = %q, want name", fk.Related.LabelField)
+	}
+}
+
+type labelWarehouse struct {
+	ID   uint   `gorm:"primaryKey" json:"id"`
+	Name string `json:"title"` // JSON key deliberately differs from the column
+}
+
+func (labelWarehouse) TableName() string { return "label_warehouses" }
+
+type labelEngine struct {
+	ID          uint           `gorm:"primaryKey" json:"id"`
+	WarehouseID uint           `json:"warehouse_id"`
+	Warehouse   labelWarehouse `json:"-"`
+}
+
+func (labelEngine) TableName() string { return "label_engines" }
+
+// TestBelongsToLabelIsFieldName verifies label_field is the related model's JSON
+// field name (what the SPA indexes on the list row), not the SQL column name.
+func TestBelongsToLabelIsFieldName(t *testing.T) {
+	fields, err := admin.FieldsFrom(labelEngine{})
+	if err != nil {
+		t.Fatalf("FieldsFrom: %v", err)
+	}
+	for i := range fields {
+		if fields[i].Name == "warehouse_id" {
+			got := ""
+			if fields[i].Related != nil {
+				got = fields[i].Related.LabelField
+			}
+			if got != "title" {
+				t.Fatalf("label_field = %q, want the json field name \"title\", not the column \"name\"", got)
+			}
+			return
+		}
+	}
+	t.Fatalf("derived fields %v missing warehouse_id", fields)
+}
+
+// TestBelongsToAutoDerivationRoundTrip exercises the full picker contract: both
+// models are registered with auto-derived fields (empty Fields), the belongs_to
+// FK is written through the derived relation field, and it reads back — plus the
+// meta advertises the relation with its target slug and label field.
+func TestBelongsToAutoDerivationRoundTrip(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	app := newCookieApp(t)
+	if err := app.DB().AutoMigrate(&relWarehouse{}, &belongsEngine{}); err != nil {
+		t.Fatalf("AutoMigrate: %v", err)
+	}
+	// Empty Fields → FieldsFrom auto-derivation.
+	if err := admin.Register(app, relWarehouse{}, admin.Options{Slug: "warehouses"}); err != nil {
+		t.Fatalf("Register warehouse: %v", err)
+	}
+	if err := admin.Register(app, belongsEngine{}, admin.Options{Slug: "engines"}); err != nil {
+		t.Fatalf("Register engine: %v", err)
+	}
+	jar := loginSuperuser(t, app)
+
+	// Meta advertises the belongs_to relation.
+	meta := doRequest(app, jar, http.MethodGet, "/api/v1/admin/meta/engines", "")
+	if meta.Code != http.StatusOK {
+		t.Fatalf("meta status = %d; body: %s", meta.Code, meta.Body.String())
+	}
+	if body := meta.Body.String(); !strings.Contains(body, `"kind":"belongs_to"`) ||
+		!strings.Contains(body, `"slug":"warehouses"`) || !strings.Contains(body, `"label_field":"name"`) {
+		t.Fatalf("engines meta missing belongs_to relation with slug+label: %s", body)
+	}
+
+	w1 := createWarehouse(t, app, jar, "North")
+
+	// Write the FK through the derived relation field, then read it back.
+	create := doRequest(app, jar, http.MethodPost, "/api/v1/admin/resources/engines",
+		fmt.Sprintf(`{"name":"V8","warehouse_id":%d}`, w1))
+	if create.Code != http.StatusOK {
+		t.Fatalf("create engine status = %d; body: %s", create.Code, create.Body.String())
+	}
+	var created rowEnvelope
+	if err := json.Unmarshal(create.Body.Bytes(), &created); err != nil {
+		t.Fatalf("decode create: %v", err)
+	}
+	if got := asInt(created.Data["warehouse_id"]); got != w1 {
+		t.Fatalf("created warehouse_id = %d, want %d", got, w1)
+	}
+	engineID := asInt(created.Data["id"])
+
+	get := doRequest(app, jar, http.MethodGet, fmt.Sprintf("/api/v1/admin/resources/engines/%d", engineID), "")
+	var got rowEnvelope
+	if err := json.Unmarshal(get.Body.Bytes(), &got); err != nil {
+		t.Fatalf("decode get: %v", err)
+	}
+	if id := asInt(got.Data["warehouse_id"]); id != w1 {
+		t.Fatalf("get warehouse_id = %d, want %d (FK must round-trip)", id, w1)
+	}
+}
+
 // TestManyToManyAutoDerivation verifies FieldsFrom emits a relation field for a
 // many-to-many association instead of dropping it (#221/#223).
 func TestManyToManyAutoDerivation(t *testing.T) {

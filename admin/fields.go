@@ -32,6 +32,9 @@ func FieldsFrom(model any) ([]Field, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Foreign-key columns of belongs_to relationships become a relation field
+	// (a picker), not a bare integer input (#223).
+	belongsToFK := belongsToByFK(sch)
 	fields := make([]Field, 0, len(sch.Fields))
 	for _, sf := range sch.Fields {
 		if sf == nil || !sf.StructField.IsExported() {
@@ -47,12 +50,26 @@ func FieldsFrom(model any) ([]Field, error) {
 		if name == "" || name == "-" {
 			continue
 		}
-		ft := inferFieldType(sf)
 		readOnly := sf.PrimaryKey || sf.AutoIncrement || sf.AutoCreateTime > 0 || sf.AutoUpdateTime > 0
 		required := sf.NotNull && !readOnly && !sf.HasDefaultValue && sf.FieldType.Kind() != reflect.Pointer
+		if rel, ok := belongsToFK[sf.DBName]; ok && !readOnly {
+			fields = append(fields, Field{
+				Name:     name,
+				Type:     TypeRelation,
+				Required: required,
+				ReadOnly: readOnly,
+				Column:   sf.DBName,
+				Related: &Relation{
+					Kind:       RelBelongsTo,
+					Slug:       rel.FieldSchema.Table,
+					LabelField: labelFieldFor(rel.FieldSchema),
+				},
+			})
+			continue
+		}
 		fields = append(fields, Field{
 			Name:     name,
-			Type:     ft,
+			Type:     inferFieldType(sf),
 			Required: required,
 			ReadOnly: readOnly,
 			Column:   sf.DBName,
@@ -146,6 +163,37 @@ func inferFieldType(sf *schema.Field) FieldType {
 	default:
 		return TypeString
 	}
+}
+
+// belongsToByFK maps each belongs_to foreign-key column (on this schema) to its
+// relationship, so FieldsFrom can render the FK as a picker.
+func belongsToByFK(sch *schema.Schema) map[string]*schema.Relationship {
+	out := map[string]*schema.Relationship{}
+	for _, rel := range sch.Relationships.BelongsTo {
+		if rel == nil || rel.FieldSchema == nil {
+			continue
+		}
+		for _, ref := range rel.References {
+			if ref != nil && ref.ForeignKey != nil && ref.ForeignKey.DBName != "" {
+				out[ref.ForeignKey.DBName] = rel
+			}
+		}
+	}
+	return out
+}
+
+// labelFieldFor picks a human label for a related model — the JSON field name
+// of its "name" column when present, otherwise empty (the picker falls back to
+// the primary key). It returns the field name, not the SQL column: label_field
+// sits next to other field names in meta (ADR-013), and the SPA indexes it as a
+// key of the data-plane list row (whose keys are field names, not columns).
+func labelFieldFor(sch *schema.Schema) string {
+	for _, f := range sch.Fields {
+		if f != nil && f.DBName == "name" {
+			return jsonFieldName(f)
+		}
+	}
+	return ""
 }
 
 // detectVersionField finds an integer column named "version" for optimistic

@@ -87,9 +87,10 @@ overlapping field names do not leak onto the next model or row. Edit
 requires a GET of the current row (`actions.detail` + `can.view`); if
 detail is disabled, the edit screen is hidden rather than PATCHing empty
 boolean defaults (`false`) over stored `true` values.
-Field widgets cover the closed field types; `belongs_to` is an FK
-input; `has_many` is read-only; `many_to_many` is a multi-select backed by the
-related model's list endpoint.
+Field widgets cover the closed field types; `belongs_to` is a single-select
+picker (storing the foreign key); `has_many` is read-only; `many_to_many` is a
+multi-select. The relation pickers are backed by the related model's list
+endpoint and show its label field.
 `datetime-local` values are converted to RFC3339 before POST/PATCH.
 Empty optional (non-boolean) inputs — string, text, date, datetime, json,
 number, relation — are sent as JSON `null` so a partial PATCH can clear
@@ -189,7 +190,12 @@ Closed field types: `string`, `text`, `integer`, `float`, `decimal`,
 `boolean`, `datetime`, `date`, `uuid`, `json`, `relation`.
 
 Relation `kind` is `belongs_to`, `has_many`, or `many_to_many`. **`belongs_to`**
-is stored as the foreign key on create/update. **`has_many` is meta-only**:
+is stored as the foreign key on create/update; auto-derivation (`FieldsFrom`)
+renders the FK column as a relation field (target `slug` = the related table,
+label = the field name of its `name` column when present) so the SPA shows a
+picker instead of a
+bare integer, and the picker submits the selected primary key. **`has_many` is
+meta-only**:
 the data plane does not nest related collections and treats the field as
 read-only. `Register` rejects `has_many` (and any field with no SQL column)
 in Search, Filter, or Ordering.
