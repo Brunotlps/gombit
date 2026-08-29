@@ -109,6 +109,11 @@ func TestGenerateWritesFeaturePackageLayout(t *testing.T) {
 	if !strings.Contains(envExample, "GOMBIT_DATABASE_DRIVER=sqlite") {
 		t.Fatalf(".env.example missing sqlite driver:\n%s", envExample)
 	}
+	// The DSN value carries `&`/`?`; it must be quoted so `set -a; . ./.env`
+	// does not background the line and truncate the value. See #225 item 3.
+	if !strings.Contains(envExample, `GOMBIT_DATABASE_DSN="`) {
+		t.Fatalf(".env.example DSN must be shell-quote-safe:\n%s", envExample)
+	}
 	if !strings.Contains(envExample, "VITE_API_URL=") {
 		t.Fatalf(".env.example missing public VITE_API_URL:\n%s", envExample)
 	}

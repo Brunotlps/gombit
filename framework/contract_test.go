@@ -94,6 +94,46 @@ func TestAPIOpenAPIUsesD10ErrorSchema(t *testing.T) {
 	}
 }
 
+// TestAPIResponseOmitsSchemaKey verifies #225 item 2: Huma's SchemaLinkTransformer
+// is disabled, so neither response bodies nor the OpenAPI request/response
+// schemas carry an off-contract "$schema" key. The D10 envelope is exactly
+// {data, meta?} / {error}.
+func TestAPIResponseOmitsSchemaKey(t *testing.T) {
+	app := newTestApp(t)
+
+	prefix := app.Config().API.Prefix
+	huma.Register(app.API(), huma.Operation{
+		OperationID: "get-thing",
+		Method:      http.MethodGet,
+		Path:        prefix + "/things",
+	}, func(ctx context.Context, input *struct{}) (*struct {
+		Body contract.Data[[]string]
+	}, error) {
+		return &struct {
+			Body contract.Data[[]string]
+		}{Body: contract.Data[[]string]{Data: []string{"a"}}}, nil
+	})
+
+	rec := httptest.NewRecorder()
+	app.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, prefix+"/things", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; body: %s", rec.Code, rec.Body.String())
+	}
+	var raw map[string]json.RawMessage
+	if err := json.Unmarshal(rec.Body.Bytes(), &raw); err != nil {
+		t.Fatalf("decode body: %v; body: %s", err, rec.Body.String())
+	}
+	if _, ok := raw["$schema"]; ok {
+		t.Fatalf("response body carries off-contract $schema key: %s", rec.Body.String())
+	}
+
+	oapi := httptest.NewRecorder()
+	app.Router().ServeHTTP(oapi, httptest.NewRequest(http.MethodGet, "/openapi.json", nil))
+	if strings.Contains(oapi.Body.String(), `"$schema"`) {
+		t.Fatalf("OpenAPI schemas still advertise $schema; body: %s", oapi.Body.String())
+	}
+}
+
 func TestAPIDocsServesSwaggerUIAndOmitsRawRoutes(t *testing.T) {
 	app := newTestApp(t)
 

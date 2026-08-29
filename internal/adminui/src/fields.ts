@@ -121,7 +121,23 @@ export function formValuesToBody(values: Row, fields: FieldMeta[]): { body: Row;
       body[field.name] = Boolean(raw);
       continue;
     }
-    if (field.type === "integer" || field.type === "float" || field.type === "decimal") {
+    if (field.type === "decimal") {
+      // Decimals are submitted as an exact string, never a JSON number: a JSON
+      // body decodes numbers to float64 on the server, which cannot represent a
+      // decimal exactly (the data plane rejects a float for a decimal column).
+      if (isEmptyFormValue(raw)) {
+        body[field.name] = null;
+        continue;
+      }
+      const text = String(raw).trim();
+      if (!/^-?\d+(\.\d+)?$/.test(text)) {
+        jsonErrors[field.name] = "must be a decimal";
+        continue;
+      }
+      body[field.name] = text;
+      continue;
+    }
+    if (field.type === "integer" || field.type === "float") {
       if (isEmptyFormValue(raw)) {
         body[field.name] = null;
         continue;

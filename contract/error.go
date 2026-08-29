@@ -13,6 +13,11 @@ const CodeValidationError = "validation_error"
 // buffer cap (HTTP 413). This is not a §41 category.
 const CodePayloadTooLarge = "payload_too_large"
 
+// CodeMethodNotAllowed is the D10 code for a known path reached with an
+// unsupported method (HTTP 405). This is not a §41 category; the transport
+// layer (Gin NoMethod) produces it and attaches an Allow header.
+const CodeMethodNotAllowed = "method_not_allowed"
+
 const validationMessage = "The request contains invalid fields."
 
 // ErrorBody is the D10 error object nested under "error".
@@ -134,6 +139,24 @@ func PayloadTooLarge(message string) *ErrorEnvelope {
 		status: http.StatusRequestEntityTooLarge,
 		Body: ErrorBody{
 			Code:    CodePayloadTooLarge,
+			Message: message,
+		},
+	}
+}
+
+// MethodNotAllowed returns a D10 error for a known path reached with an
+// unsupported HTTP method (HTTP 405). This is not a §41 category; the transport
+// layer produces it (Gin NoMethod) and is responsible for the Allow header
+// listing the methods the path does support. Wrap with WithContext to attach
+// request_id.
+func MethodNotAllowed(message string) *ErrorEnvelope {
+	if message == "" {
+		message = http.StatusText(http.StatusMethodNotAllowed)
+	}
+	return &ErrorEnvelope{
+		status: http.StatusMethodNotAllowed,
+		Body: ErrorBody{
+			Code:    CodeMethodNotAllowed,
 			Message: message,
 		},
 	}

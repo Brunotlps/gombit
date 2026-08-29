@@ -188,6 +188,34 @@ func TestMakeResourceGolden(t *testing.T) {
 	})
 }
 
+// TestMakeResourceScalarTypesCompiles exercises the #222 scalar grammar
+// (decimal/time/enum) end to end: a generated resource using all three must
+// compile against the framework (including types.Decimal). No golden tree is
+// committed — the point is that the generated Go builds and the DTO matches the
+// model for the newly supported types.
+func TestMakeResourceScalarTypesCompiles(t *testing.T) {
+	appDir := scaffoldDemo(t)
+	stdout := new(bytes.Buffer)
+	if err := resourcegen.Generate(context.Background(), resourcegen.Options{
+		WorkDir: appDir,
+		Name:    "Rental",
+		Fields: []string{
+			"price:decimal:required",
+			"deposit:decimal(10,2)",
+			"starts_at:time:required",
+			"status:enum(requested,confirmed,active,returned,cancelled)",
+		},
+		AtlasBin: missingAtlas,
+		Stdout:   stdout,
+		Stderr:   io.Discard,
+	}); err != nil {
+		t.Fatalf("gombit make resource (scalars): %v\nstdout=%s", err, stdout.String())
+	}
+	t.Run("compile", func(t *testing.T) {
+		compileBackend(t, appDir)
+	})
+}
+
 func TestMakeCommandGolden(t *testing.T) {
 	appDir := scaffoldDemo(t)
 	stdout := new(bytes.Buffer)

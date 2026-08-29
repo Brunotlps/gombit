@@ -28,6 +28,13 @@ func HumaConfigFor(title, version string, docsEnabled bool) huma.Config {
 	config := huma.DefaultConfig(title, version)
 	config.OpenAPIPath = OpenAPIPath
 	config.SchemasPath = ""
+	// Drop Huma's SchemaLinkTransformer. Its create hook injects a `$schema`
+	// URL property into every response body (and into request input schemas,
+	// so it leaks into the generated TS request types). The D10 envelope is
+	// exactly {data, meta?} / {error}; a `$schema` key is off-contract. Clearing
+	// CreateHooks is the supported way to opt out — it is the only default hook
+	// and setting SchemasPath="" alone does not remove it. See #225.
+	config.CreateHooks = nil
 	if docsEnabled {
 		config.DocsPath = DocsPath
 		config.DocsRenderer = huma.DocsRendererSwaggerUI

@@ -5,6 +5,8 @@ import (
 	"strings"
 	"unicode"
 	"unicode/utf8"
+
+	"github.com/jinzhu/inflection"
 )
 
 var goKeywords = map[string]struct{}{
@@ -143,21 +145,17 @@ func toSnake(s string) string {
 	return b.String()
 }
 
+// pluralizeSnake pluralizes a snake_case identifier using GORM's inflection
+// library — the same pluralizer GORM's default NamingStrategy applies to derive
+// a table name (inflection.Plural(toDBName(struct))). Sharing one source keeps
+// the generated route surface (and TS client method names) in agreement with
+// the schema for irregular nouns: Mouse -> /mice (table mice), Person ->
+// /people (table people), Analysis -> /analyses (table analyses). See #225.
 func pluralizeSnake(snake string) string {
 	if snake == "" {
 		return "s"
 	}
-	if strings.HasSuffix(snake, "s") || strings.HasSuffix(snake, "x") || strings.HasSuffix(snake, "z") ||
-		strings.HasSuffix(snake, "ch") || strings.HasSuffix(snake, "sh") {
-		return snake + "es"
-	}
-	if strings.HasSuffix(snake, "y") && len(snake) > 1 {
-		before := snake[len(snake)-2]
-		if before != 'a' && before != 'e' && before != 'i' && before != 'o' && before != 'u' {
-			return snake[:len(snake)-1] + "ies"
-		}
-	}
-	return snake + "s"
+	return inflection.Plural(snake)
 }
 
 func isGoIdent(name string) bool {

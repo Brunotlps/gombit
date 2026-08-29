@@ -252,10 +252,8 @@ curl -s http://127.0.0.1:8080/api/v1/tasks
 {"data":[],"meta":{"page":1,"per_page":20,"total":0}}
 ```
 
-That shape is the D10 envelope: success is `{"data": ..., "meta"?: ...}`. Your
-own response also carries a `$schema` field pointing at its JSON Schema
-(Huma's doing, on every response) — every JSON example in this tutorial
-omits it for brevity.
+That shape is the D10 envelope: success is `{"data": ..., "meta"?: ...}` and
+nothing else — the response body carries no extra keys.
 
 ---
 

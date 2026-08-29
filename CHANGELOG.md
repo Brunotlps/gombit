@@ -21,6 +21,19 @@ version.
   association. The framework admin SPA renders it as a multi-select backed by
   the related model's list endpoint. `belongs_to`/`has_many` picker widgets and
   belongs_to auto-derivation remain follow-ups on the same issue.
+- `gombit make resource` field grammar now supports `decimal`, `decimal(p,s)`,
+  `time`, and `enum(a,b,c)` in addition to the existing scalars. `decimal` uses
+  the new framework `types.Decimal` (a `shopspring/decimal` wrapper that carries
+  an OpenAPI string schema and GORM persistence), `time` maps to `time.Time`,
+  and `enum` maps to a validated string column. A single Go type flows through
+  the model, handler DTO, OpenAPI/TS contract, and GORM, so these types do not
+  reproduce the model/DTO drift of
+  [#218](https://github.com/gombit-dev/gombit/issues/218). An optional
+  `time`/`decimal` field becomes a pointer so it can be left empty. Relationships
+  remain future work ([#222](https://github.com/gombit-dev/gombit/issues/222) part b).
+- `types.Decimal` — a fixed-point decimal for money and exact numerics, shared
+  by generated models, DTOs, and the admin data plane
+  ([#222](https://github.com/gombit-dev/gombit/issues/222)).
 - A framework home for domain logic shared by the API and admin write paths
   ([#224](https://github.com/gombit-dev/gombit/issues/224)):
   - `database.Validator` (`Validate(ctx, tx) error`) runs via a GORM callback on
@@ -55,6 +68,23 @@ version.
 
 ### Fixed
 
+- An unsupported HTTP method on a known route now returns `405 Method Not
+  Allowed` with an `Allow` header (and the D10 envelope, code
+  `method_not_allowed`) instead of `404`, so clients can distinguish a missing
+  resource from an unsupported method. A genuinely unknown path still returns
+  the 404-style fallback ([#225](https://github.com/gombit-dev/gombit/issues/225)).
+- Response bodies and generated request types no longer carry Huma's
+  off-contract `$schema` key; the D10 envelope is exactly `{data, meta?}` /
+  `{error}`. Regenerated `openapi.json` and the sample TS client
+  ([#225](https://github.com/gombit-dev/gombit/issues/225)).
+- The generated `.env` / `.env.example` now quotes `GOMBIT_DATABASE_DSN`, so a
+  DSN containing `&`/`?` survives `set -a; . ./.env` instead of being truncated.
+  `config.Load` strips one layer of matching quotes, so the runtime value is
+  unchanged ([#225](https://github.com/gombit-dev/gombit/issues/225)).
+- `gombit make resource` derives route paths (and TS client method names) with
+  GORM's pluralizer (`jinzhu/inflection`), so irregular nouns agree with the
+  table name: `Mouse` → `/mice`, `Person` → `/people`, `Analysis` → `/analyses`
+  ([#225](https://github.com/gombit-dev/gombit/issues/225)).
 - Concurrent `POST /auth/refresh` of the same still-valid token no longer
   family-revokes the winner's new session (two tabs / parallel curls)
   ([#127](https://github.com/gombit-dev/gombit/issues/127)).

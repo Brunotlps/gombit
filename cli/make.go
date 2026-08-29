@@ -48,11 +48,18 @@ Field grammar (design §27 subset):
 
   name:type[:required][,unique][,index]
 
-Supported types: string, text, int, int64, bool, uint.
+Supported types: string, text, int, int64, bool, uint, decimal, time, enum.
+
+  decimal            money/exact numeric (types.Decimal; decimal(19,4) column).
+  decimal(p,s)       pin precision/scale, e.g. decimal(10,2).
+  time               time.Time (RFC3339 in JSON).
+  enum(a,b,c)        string column validated against the listed values.
 
 Examples:
 
   gombit make resource Widget name:string:required price:int
+  gombit make resource Rental price:decimal:required starts_at:time \
+    status:enum(requested,confirmed,active,returned,cancelled)
   gombit make resource Invoice --service --repo --dry-run
   gombit make resource Widget --force
 
