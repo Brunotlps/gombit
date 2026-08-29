@@ -281,3 +281,42 @@ func TestDecimalFieldInferenceAndCoercion(t *testing.T) {
 		t.Fatalf("coerceValue(json.Number) = %#v, %v; want 19.9999", num, err)
 	}
 }
+
+func TestDetectVersionFieldSkipsPointer(t *testing.T) {
+	type intVersion struct {
+		ID      uint `gorm:"primaryKey"`
+		Version int
+	}
+	type ptrVersion struct {
+		ID      uint `gorm:"primaryKey"`
+		Version *int
+	}
+	type strVersion struct {
+		ID      uint `gorm:"primaryKey"`
+		Version string
+	}
+
+	schInt, err := parseSchema(intVersion{})
+	if err != nil {
+		t.Fatalf("parseSchema int: %v", err)
+	}
+	if detectVersionField(schInt) == nil {
+		t.Fatal("int version column should enable optimistic locking")
+	}
+
+	schPtr, err := parseSchema(ptrVersion{})
+	if err != nil {
+		t.Fatalf("parseSchema ptr: %v", err)
+	}
+	if detectVersionField(schPtr) != nil {
+		t.Fatal("pointer version column must be ignored (get/set no-op on pointers)")
+	}
+
+	schStr, err := parseSchema(strVersion{})
+	if err != nil {
+		t.Fatalf("parseSchema str: %v", err)
+	}
+	if detectVersionField(schStr) != nil {
+		t.Fatal("non-integer version column must be ignored")
+	}
+}

@@ -5,6 +5,7 @@ import (
 	"encoding"
 	"encoding/json"
 	"fmt"
+	"math"
 	"reflect"
 	"strings"
 	"sync"
@@ -126,6 +127,78 @@ func inferFieldType(sf *schema.Field) FieldType {
 		return TypeJSON
 	default:
 		return TypeString
+	}
+}
+
+// detectVersionField finds an integer column named "version" for optimistic
+// locking. Pointer and non-integer "version" columns are ignored.
+func detectVersionField(sch *schema.Schema) *versionField {
+	for _, sf := range sch.Fields {
+		if sf == nil || sf.DBName != "version" {
+			continue
+		}
+		// Only a non-pointer integer column drives optimistic locking. A pointer
+		// version column is ignored (reflectVersionInt/Set no-op on pointers, so
+		// admitting it would guard on version=0 and never bump).
+		switch sf.FieldType.Kind() {
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64,
+			reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		default:
+			return nil
+		}
+		index := sf.StructField.Index
+		return &versionField{
+			name:   jsonFieldName(sf),
+			column: sf.DBName,
+			get:    func(inst any) int64 { return reflectVersionInt(inst, index) },
+			set:    func(inst any, v int64) { reflectSetVersionInt(inst, index, v) },
+		}
+	}
+	return nil
+}
+
+func reflectVersionInt(inst any, index []int) int64 {
+	rv := reflect.ValueOf(inst)
+	if rv.Kind() == reflect.Pointer {
+		if rv.IsNil() {
+			return 0
+		}
+		rv = rv.Elem()
+	}
+	f := rv.FieldByIndex(index)
+	switch f.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		return f.Int()
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		u := f.Uint()
+		if u > math.MaxInt64 {
+			return math.MaxInt64
+		}
+		return int64(u)
+	default:
+		return 0
+	}
+}
+
+func reflectSetVersionInt(inst any, index []int, v int64) {
+	rv := reflect.ValueOf(inst)
+	if rv.Kind() == reflect.Pointer {
+		if rv.IsNil() {
+			return
+		}
+		rv = rv.Elem()
+	}
+	f := rv.FieldByIndex(index)
+	if !f.CanSet() {
+		return
+	}
+	switch f.Kind() {
+	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+		f.SetInt(v)
+	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+		if v >= 0 {
+			f.SetUint(uint64(v))
+		}
 	}
 }
 

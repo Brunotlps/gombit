@@ -19,11 +19,24 @@ version.
   and `enum` maps to a validated string column. A single Go type flows through
   the model, handler DTO, OpenAPI/TS contract, and GORM, so these types do not
   reproduce the model/DTO drift of
-  [#218](https://github.com/gombit-dev/gombit/issues/218). Relationships remain
-  future work ([#222](https://github.com/gombit-dev/gombit/issues/222) part b).
+  [#218](https://github.com/gombit-dev/gombit/issues/218). An optional
+  `time`/`decimal` field becomes a pointer so it can be left empty. Relationships
+  remain future work ([#222](https://github.com/gombit-dev/gombit/issues/222) part b).
 - `types.Decimal` — a fixed-point decimal for money and exact numerics, shared
   by generated models, DTOs, and the admin data plane
   ([#222](https://github.com/gombit-dev/gombit/issues/222)).
+- A framework home for domain logic shared by the API and admin write paths
+  ([#224](https://github.com/gombit-dev/gombit/issues/224)):
+  - `database.Validator` (`Validate(ctx, tx) error`) runs via a GORM callback on
+    every create/update, so an invariant enforced once cannot be bypassed by the
+    other write surface. A returned `database.ValidationError` maps to a D10 422
+    with field detail through `database.MapPersistError`.
+  - `framework.App.Tx(ctx, fn)` — a transaction helper for multi-model writes;
+    `Validate` hooks run inside it.
+  - Optimistic locking on the admin update path: a model with an integer
+    `version` column gets a version-guarded update that returns 409 on a stale
+    write instead of silently last-write-wins.
+  - See [`docs/validation.md`](docs/validation.md).
 - `framework.WithCSRFExemptPaths` — opt specific request paths out of
   cookie-mode CSRF enforcement, for non-browser endpoints (webhooks,
   server-to-server callbacks) that cannot echo a double-submit token and
