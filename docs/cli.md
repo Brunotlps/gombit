@@ -341,9 +341,34 @@ Design §27 subset:
 name:type[:required][,unique][,index]
 ```
 
-Supported types: `string`, `text`, `int`, `int64`, `bool`, `uint`. Unknown
-types error with the supported list. `nullable` is accepted as the opposite
-of `required`.
+Supported types: `string`, `text`, `int`, `int64`, `bool`, `uint`, `decimal`,
+`time`, `enum`. Unknown types error with the supported list. `nullable` is
+accepted as the opposite of `required`.
+
+| Type | Go type | Column / contract |
+| --- | --- | --- |
+| `decimal` | `types.Decimal` (wraps `shopspring/decimal`) | `decimal(19,4)`; JSON string, exact — no float rounding |
+| `decimal(p,s)` | `types.Decimal` | `decimal(p,s)`, e.g. `decimal(10,2)` |
+| `time` | `time.Time` | RFC3339 date-time in JSON |
+| `enum(a,b,c)` | `string` | sized varchar; validated against the listed values (Huma `enum` tag) |
+
+`types.Decimal` is the framework money/decimal type. Because a single Go type
+flows through the model, the handler DTO, the OpenAPI/TS contract, and GORM,
+adding one of these types does not reproduce the model/DTO drift of
+[#218](https://github.com/gombit-dev/gombit/issues/218). Enum values are
+case-sensitive and validated at the API layer; no database CHECK constraint is
+added (portable across SQLite/PostgreSQL/MySQL). Relationships
+(`belongs_to`/`has_many`/`many_to_many`) are tracked separately in
+[#222](https://github.com/gombit-dev/gombit/issues/222) part (b).
+
+Example:
+
+```sh
+gombit make resource Rental \
+  price:decimal:required \
+  starts_at:time \
+  status:enum(requested,confirmed,active,returned,cancelled)
+```
 
 ### Idempotency
 

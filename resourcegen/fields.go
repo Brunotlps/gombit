@@ -2,6 +2,7 @@ package resourcegen
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 )
 
@@ -17,23 +18,44 @@ type Field struct {
 	Unique   bool
 	Index    bool
 	Nullable bool
+
+	// EnumValues holds the allowed values for FieldEnum, in declared order.
+	EnumValues []string
+	// Precision/Scale set the decimal(p,s) column for FieldDecimal.
+	Precision int
+	Scale     int
 }
 
 // FieldType is a supported scalar in the v0.1 subset.
 type FieldType string
 
 const (
-	FieldString FieldType = "string"
-	FieldText   FieldType = "text"
-	FieldInt    FieldType = "int"
-	FieldInt64  FieldType = "int64"
-	FieldBool   FieldType = "bool"
-	FieldUint   FieldType = "uint"
+	FieldString  FieldType = "string"
+	FieldText    FieldType = "text"
+	FieldInt     FieldType = "int"
+	FieldInt64   FieldType = "int64"
+	FieldBool    FieldType = "bool"
+	FieldUint    FieldType = "uint"
+	FieldDecimal FieldType = "decimal"
+	FieldTime    FieldType = "time"
+	FieldEnum    FieldType = "enum"
+)
+
+// defaultDecimalPrecision / defaultDecimalScale back a bare `decimal` field.
+// They match the multi-DB conformance fixture (decimal(19,4)) that already
+// passes the SQLite + PostgreSQL + MySQL matrix.
+const (
+	defaultDecimalPrecision = 19
+	defaultDecimalScale     = 4
 )
 
 var supportedTypes = []FieldType{
 	FieldString, FieldText, FieldInt, FieldInt64, FieldBool, FieldUint,
+	FieldDecimal, FieldTime, FieldEnum,
 }
+
+// decimalGoType is the fully qualified generated Go type for a decimal field.
+const decimalGoType = "types.Decimal"
 
 func parseFields(specs []string) ([]Field, error) {
 	seen := make(map[string]struct{}, len(specs))
@@ -63,8 +85,10 @@ func parseField(spec string) (Field, error) {
 		return Field{}, fmt.Errorf("resourcegen: field %q must be name:type[:modifiers]", spec)
 	}
 	name := strings.TrimSpace(parts[0])
-	typeName := strings.ToLower(strings.TrimSpace(parts[1]))
-	if name == "" || typeName == "" {
+	// Keep original case for the type token: enum(...) values are
+	// case-sensitive. The base keyword is matched case-insensitively.
+	typeToken := strings.TrimSpace(parts[1])
+	if name == "" || typeToken == "" {
 		return Field{}, fmt.Errorf("resourcegen: field %q must be name:type[:modifiers]", spec)
 	}
 
@@ -77,17 +101,13 @@ func parseField(spec string) (Field, error) {
 		return Field{}, fmt.Errorf("resourcegen: field %q conflicts with gorm.Model", jsonName)
 	}
 
-	goType, fieldType, err := mapFieldType(typeName)
-	if err != nil {
-		return Field{}, err
-	}
-
 	field := Field{
 		Name:     name,
 		JSONName: jsonName,
 		GoName:   goName,
-		Type:     fieldType,
-		GoType:   goType,
+	}
+	if err := applyType(&field, typeToken); err != nil {
+		return Field{}, err
 	}
 	if len(parts) == 3 {
 		if err := applyModifiers(&field, parts[2]); err != nil {
@@ -97,27 +117,114 @@ func parseField(spec string) (Field, error) {
 	return field, nil
 }
 
-func mapFieldType(typeName string) (string, FieldType, error) {
-	switch typeName {
+// applyType parses the type token (which may carry arguments, e.g.
+// `decimal(19,4)` or `enum(a,b,c)`) and fills field.Type/GoType and any
+// type-specific data (enum values, decimal precision/scale).
+func applyType(field *Field, token string) error {
+	base, args, hasArgs := splitTypeArgs(token)
+	switch strings.ToLower(base) {
 	case "string":
-		return "string", FieldString, nil
+		field.Type, field.GoType = FieldString, "string"
 	case "text":
-		return "string", FieldText, nil
+		field.Type, field.GoType = FieldText, "string"
 	case "int":
-		return "int", FieldInt, nil
+		field.Type, field.GoType = FieldInt, "int"
 	case "int64":
-		return "int64", FieldInt64, nil
+		field.Type, field.GoType = FieldInt64, "int64"
 	case "bool":
-		return "bool", FieldBool, nil
+		field.Type, field.GoType = FieldBool, "bool"
 	case "uint":
-		return "uint", FieldUint, nil
+		field.Type, field.GoType = FieldUint, "uint"
+	case "time":
+		field.Type, field.GoType = FieldTime, "time.Time"
+	case "decimal":
+		field.Type, field.GoType = FieldDecimal, decimalGoType
+		field.Precision, field.Scale = defaultDecimalPrecision, defaultDecimalScale
+		if hasArgs {
+			p, s, err := parseDecimalArgs(args)
+			if err != nil {
+				return err
+			}
+			field.Precision, field.Scale = p, s
+		}
+	case "enum":
+		if !hasArgs {
+			return fmt.Errorf("resourcegen: enum field %q needs values, e.g. status:enum(draft,published)", field.JSONName)
+		}
+		values, err := parseEnumValues(args)
+		if err != nil {
+			return err
+		}
+		field.Type, field.GoType = FieldEnum, "string"
+		field.EnumValues = values
 	default:
 		names := make([]string, 0, len(supportedTypes))
 		for _, item := range supportedTypes {
 			names = append(names, string(item))
 		}
-		return "", "", fmt.Errorf("resourcegen: unknown type %q (supported: %s)", typeName, strings.Join(names, ", "))
+		return fmt.Errorf("resourcegen: unknown type %q (supported: %s)", token, strings.Join(names, ", "))
 	}
+	if hasArgs && field.Type != FieldDecimal && field.Type != FieldEnum {
+		return fmt.Errorf("resourcegen: type %q does not take arguments", base)
+	}
+	return nil
+}
+
+// splitTypeArgs splits `enum(a,b)` into ("enum", "a,b", true) and `int` into
+// ("int", "", false).
+func splitTypeArgs(token string) (base, args string, hasArgs bool) {
+	open := strings.IndexByte(token, '(')
+	if open < 0 {
+		return token, "", false
+	}
+	if !strings.HasSuffix(token, ")") {
+		return token, "", false
+	}
+	return strings.TrimSpace(token[:open]), token[open+1 : len(token)-1], true
+}
+
+func parseDecimalArgs(args string) (precision, scale int, err error) {
+	fields := strings.Split(args, ",")
+	if len(fields) != 2 {
+		return 0, 0, fmt.Errorf("resourcegen: decimal precision must be decimal(precision,scale), got decimal(%s)", args)
+	}
+	p, err := strconv.Atoi(strings.TrimSpace(fields[0]))
+	if err != nil {
+		return 0, 0, fmt.Errorf("resourcegen: decimal precision %q is not an integer", fields[0])
+	}
+	s, err := strconv.Atoi(strings.TrimSpace(fields[1]))
+	if err != nil {
+		return 0, 0, fmt.Errorf("resourcegen: decimal scale %q is not an integer", fields[1])
+	}
+	if p <= 0 || s < 0 || s > p {
+		return 0, 0, fmt.Errorf("resourcegen: invalid decimal(%d,%d): need precision > 0 and 0 <= scale <= precision", p, s)
+	}
+	return p, s, nil
+}
+
+func parseEnumValues(args string) ([]string, error) {
+	raw := strings.Split(args, ",")
+	values := make([]string, 0, len(raw))
+	seen := make(map[string]struct{}, len(raw))
+	for _, v := range raw {
+		v = strings.TrimSpace(v)
+		if v == "" {
+			return nil, fmt.Errorf("resourcegen: enum has an empty value")
+		}
+		// Values land in a Go struct tag and a TS union literal; keep them to
+		// a safe, unambiguous character set.
+		for _, r := range v {
+			if r == '"' || r == '`' || r == '\\' {
+				return nil, fmt.Errorf("resourcegen: enum value %q contains an unsupported character", v)
+			}
+		}
+		if _, dup := seen[v]; dup {
+			return nil, fmt.Errorf("resourcegen: duplicate enum value %q", v)
+		}
+		seen[v] = struct{}{}
+		values = append(values, v)
+	}
+	return values, nil
 }
 
 func applyModifiers(field *Field, raw string) error {
@@ -154,6 +261,10 @@ func (f Field) gormTag() string {
 		parts = append(parts, "size:255")
 	case FieldText:
 		parts = append(parts, "type:text")
+	case FieldEnum:
+		parts = append(parts, "size:"+strconv.Itoa(enumColumnSize(f.EnumValues)))
+	case FieldDecimal:
+		parts = append(parts, fmt.Sprintf("type:decimal(%d,%d)", f.Precision, f.Scale))
 	}
 	if f.Required && !f.Nullable {
 		parts = append(parts, "not null")
@@ -185,6 +296,8 @@ func (f Field) humaTags() string {
 		}
 	case FieldUint:
 		parts = append(parts, `minimum:"0"`)
+	case FieldEnum:
+		parts = append(parts, fmt.Sprintf(`enum:"%s"`, strings.Join(f.EnumValues, ",")))
 	}
 	parts = append(parts, fmt.Sprintf(`doc:"%s"`, f.GoName))
 	return strings.Join(parts, " ")
@@ -192,4 +305,20 @@ func (f Field) humaTags() string {
 
 func (f Field) jsonTag() string {
 	return fmt.Sprintf(`json:"%s"`, f.JSONName)
+}
+
+// enumColumnSize sizes the varchar column to hold the longest allowed value,
+// with headroom so a later value addition rarely needs a column widen.
+func enumColumnSize(values []string) int {
+	longest := 0
+	for _, v := range values {
+		if len(v) > longest {
+			longest = len(v)
+		}
+	}
+	size := longest + 16
+	if size < 32 {
+		size = 32
+	}
+	return size
 }

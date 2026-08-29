@@ -12,6 +12,18 @@ version.
 
 ### Added
 
+- `gombit make resource` field grammar now supports `decimal`, `decimal(p,s)`,
+  `time`, and `enum(a,b,c)` in addition to the existing scalars. `decimal` uses
+  the new framework `types.Decimal` (a `shopspring/decimal` wrapper that carries
+  an OpenAPI string schema and GORM persistence), `time` maps to `time.Time`,
+  and `enum` maps to a validated string column. A single Go type flows through
+  the model, handler DTO, OpenAPI/TS contract, and GORM, so these types do not
+  reproduce the model/DTO drift of
+  [#218](https://github.com/gombit-dev/gombit/issues/218). Relationships remain
+  future work ([#222](https://github.com/gombit-dev/gombit/issues/222) part b).
+- `types.Decimal` — a fixed-point decimal for money and exact numerics, shared
+  by generated models, DTOs, and the admin data plane
+  ([#222](https://github.com/gombit-dev/gombit/issues/222)).
 - `framework.WithCSRFExemptPaths` — opt specific request paths out of
   cookie-mode CSRF enforcement, for non-browser endpoints (webhooks,
   server-to-server callbacks) that cannot echo a double-submit token and

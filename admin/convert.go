@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/shopspring/decimal"
 )
 
 func coerceValue(raw any, ft FieldType) (any, error) {
@@ -25,8 +27,12 @@ func coerceValue(raw any, ft FieldType) (any, error) {
 		return s, nil
 	case TypeInteger:
 		return asInt64(raw)
-	case TypeFloat, TypeDecimal:
+	case TypeFloat:
 		return asFloat64(raw)
+	case TypeDecimal:
+		// Keep the exact textual value — coercing money through float64 would
+		// lose precision. The setter feeds it to decimal.UnmarshalText.
+		return asDecimalString(raw)
 	case TypeBoolean:
 		return asBool(raw)
 	case TypeDateTime:
@@ -80,6 +86,30 @@ func asString(raw any) (string, error) {
 	default:
 		return "", fmt.Errorf("must be a string")
 	}
+}
+
+// asDecimalString returns raw as an exact decimal string. JSON numbers keep
+// their literal text (no float rounding); strings are validated to be numeric.
+func asDecimalString(raw any) (string, error) {
+	var s string
+	switch v := raw.(type) {
+	case json.Number:
+		s = v.String()
+	case string:
+		s = strings.TrimSpace(v)
+	case fmt.Stringer:
+		s = v.String()
+	case float64:
+		s = strconv.FormatFloat(v, 'f', -1, 64)
+	case float32:
+		s = strconv.FormatFloat(float64(v), 'f', -1, 32)
+	default:
+		return "", fmt.Errorf("must be a decimal")
+	}
+	if _, err := decimal.NewFromString(s); err != nil {
+		return "", fmt.Errorf("must be a decimal")
+	}
+	return s, nil
 }
 
 func asInt64(raw any) (int64, error) {

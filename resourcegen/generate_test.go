@@ -451,7 +451,7 @@ func TestGenerateUnknownType(t *testing.T) {
 	err := Generate(context.Background(), Options{
 		WorkDir: filepath.Join(workDir, "demo"),
 		Name:    "Widget",
-		Fields:  []string{"amount:decimal"},
+		Fields:  []string{"amount:blob"},
 		Stdout:  ioDiscard{},
 	})
 	if err == nil || !strings.Contains(err.Error(), "unknown type") {
