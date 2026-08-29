@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import type { FieldMeta } from "./api/types";
-import { formValuesToBody, relationOptions } from "./fields";
+import { formValuesToBody, relationListQuery, relationOptions } from "./fields";
 
 function field(partial: Pick<FieldMeta, "name" | "type"> & Partial<FieldMeta>): FieldMeta {
   return {
@@ -93,6 +93,16 @@ describe("formValuesToBody", () => {
     ];
     const { body } = formValuesToBody({ id: 3, note: "" }, fields);
     expect(body).toEqual({ note: null });
+  });
+});
+
+describe("relationListQuery", () => {
+  it("sends search only when the related model is searchable", () => {
+    expect(relationListQuery(true, "north", 100)).toEqual({ per_page: 100, search: "north" });
+    // not searchable → no search param (it would be a no-op that hides rows)
+    expect(relationListQuery(false, "north", 100)).toEqual({ per_page: 100 });
+    // empty term → no search param
+    expect(relationListQuery(true, "", 100)).toEqual({ per_page: 100 });
   });
 });
 

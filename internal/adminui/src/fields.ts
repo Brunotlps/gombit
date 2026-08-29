@@ -81,6 +81,24 @@ export function relationOptions(rows: Row[], pkField: string, labelField: string
     });
 }
 
+/**
+ * relationListQuery builds the list query for a relation picker page. The
+ * `search` term is only sent when the related model actually supports search
+ * (has a configured Search); otherwise the picker filters the loaded page
+ * client-side and a stray `search` would be a no-op that hides valid rows.
+ */
+export function relationListQuery(
+  searchable: boolean,
+  search: string,
+  pageSize: number,
+): Record<string, string | number> {
+  const query: Record<string, string | number> = { per_page: pageSize };
+  if (searchable && search) {
+    query.search = search;
+  }
+  return query;
+}
+
 export function isWritable(field: FieldMeta): boolean {
   return !field.readonly && !isHasMany(field);
 }

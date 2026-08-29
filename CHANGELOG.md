@@ -12,6 +12,16 @@ version.
 
 ### Added
 
+- Admin relation pickers are searchable
+  ([#223](https://github.com/gombit-dev/gombit/issues/223)): the `belongs_to` and
+  `many_to_many` widgets are now MUI Autocompletes. When the related model
+  supports search, typing issues a debounced server-side `search` (so rows beyond
+  the first page are reachable) and Autocomplete's local filter is turned off;
+  otherwise it filters the loaded page client-side. An already-selected row that
+  is off the current page is fetched (`client.detail`) so it shows its label, not
+  a raw key. A model registered without a `Search` now defaults it to the model's
+  text columns (an explicit empty `Search` opts out), so search — and the picker
+  — work out of the box on the documented registration path.
 - `framework.WithRawBodyPaths` — mark webhook / server-to-server paths whose
   request body must reach the handler byte-for-byte, for signature verification
   (e.g. GitHub `X-Hub-Signature-256`). The XSS sanitizer, which re-encodes JSON
