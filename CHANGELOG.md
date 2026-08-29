@@ -12,6 +12,13 @@ version.
 
 ### Added
 
+- `framework.WithCSRFExemptPaths` — opt specific request paths out of
+  cookie-mode CSRF enforcement, for non-browser endpoints (webhooks,
+  server-to-server callbacks) that cannot echo a double-submit token and
+  authenticate themselves instead (e.g. HMAC signature verification). Safe
+  methods still bootstrap the cookie; exempt handlers must verify the caller.
+  See [`docs/auth-cookie.md`](docs/auth-cookie.md)
+  ([#226](https://github.com/gombit-dev/gombit/issues/226)).
 - `gombit version` (and `--version`), reporting version, commit, build date, Go
   toolchain, and platform. Release binaries are stamped via ldflags; `go install`
   builds fall back to module build info.

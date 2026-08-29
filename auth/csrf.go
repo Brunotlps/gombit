@@ -31,12 +31,29 @@ const csrfTokenBytes = 32
 //
 // framework.New wires this into the runtime middleware stack automatically
 // when cfg.Auth.Enabled() and cfg.Auth.EffectiveMode() == AuthModeCookie.
-func CSRFMiddleware(cfg config.Config) gin.HandlerFunc {
+//
+// exemptPaths are exact request paths that opt out of CSRF enforcement on
+// unsafe methods — for non-browser endpoints (webhooks, server-to-server
+// callbacks) that cannot participate in the double-submit defense and must
+// authenticate themselves by other means (e.g. HMAC signature verification).
+// Safe methods still bootstrap the cookie on those paths. See
+// framework.WithCSRFExemptPaths and docs/auth-cookie.md.
+func CSRFMiddleware(cfg config.Config, exemptPaths ...string) gin.HandlerFunc {
 	secret := []byte(cfg.Auth.JWTSecret)
 	authCfg := cfg.Auth
+	exempt := make(map[string]struct{}, len(exemptPaths))
+	for _, path := range exemptPaths {
+		if path = strings.TrimSpace(path); path != "" {
+			exempt[path] = struct{}{}
+		}
+	}
 	return func(c *gin.Context) {
 		if isSafeCSRFMethod(c.Request.Method) {
 			ensureCSRFCookie(c, secret, authCfg)
+			c.Next()
+			return
+		}
+		if _, ok := exempt[c.Request.URL.Path]; ok {
 			c.Next()
 			return
 		}

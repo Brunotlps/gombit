@@ -321,6 +321,47 @@ func TestCSRFRejectsStateChangingRequests(t *testing.T) {
 	})
 }
 
+// TestCSRFExemptPathThroughNew exercises WithCSRFExemptPaths end-to-end through
+// framework.New (not CSRFMiddleware directly), so dropping app.csrfExemptPaths
+// at the newRouter -> runtimeMiddlewareStack seam would fail this test.
+func TestCSRFExemptPathThroughNew(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := openSQLite(t)
+	if err := auth.Migrate(db.DB); err != nil {
+		t.Fatalf("auth.Migrate() error = %v", err)
+	}
+	cfg := config.DefaultFor(config.EnvironmentTest)
+	cfg.HTTP.Addr = "127.0.0.1:0"
+	cfg.Auth.JWTSecret = testJWTSecret
+	cfg.Auth.Mode = config.AuthModeCookie
+
+	app, err := framework.New(
+		framework.WithConfig(cfg),
+		framework.WithDatabase(db),
+		framework.WithLogger(zap.NewNop()),
+		framework.WithCSRFExemptPaths("/api/v1/webhooks/github"),
+	)
+	if err != nil {
+		t.Fatalf("framework.New() error = %v", err)
+	}
+	// An exempt webhook and a non-exempt neighbor, both registered on the raw
+	// engine (as an app would via app.Router()).
+	ok := func(c *gin.Context) { c.Status(http.StatusOK) }
+	app.Router().POST("/api/v1/webhooks/github", ok)
+	app.Router().POST("/api/v1/webhooks/other", ok)
+
+	t.Run("exempt path skips CSRF", func(t *testing.T) {
+		rec := doRequest(app, nil, http.MethodPost, "/api/v1/webhooks/github", "{}")
+		if rec.Code != http.StatusOK {
+			t.Fatalf("exempt POST status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+		}
+	})
+	t.Run("non-exempt neighbor still enforced", func(t *testing.T) {
+		rec := doRequest(app, nil, http.MethodPost, "/api/v1/webhooks/other", "{}")
+		assertCSRFRejected(t, rec)
+	})
+}
+
 func TestCSRFSafeMethodsAreExempt(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	app := newCookieAuthApp(t)
