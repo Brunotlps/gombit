@@ -89,20 +89,27 @@ token is mirrored in both the `Set-Cookie` header and the JSON body
 
 A **webhook** or other server-to-server `POST` cannot participate in the
 double-submit defense — the caller has no `gombit_csrf` cookie to echo — so in
-cookie mode it would always 403. Opt those exact paths out with
-`framework.WithCSRFExemptPaths`:
+cookie mode it would always 403. It also usually verifies a **signature over
+the raw request body** (e.g. GitHub's `X-Hub-Signature-256` HMAC), and the XSS
+input sanitizer re-encodes JSON bodies, which would break that check. Use
+`framework.WithRawBodyPaths` for these endpoints — it exempts them from **both**
+CSRF and body sanitization:
 
 ```go
 app, err := framework.New(
     framework.WithConfig(cfg),
     framework.WithDatabase(db),
-    framework.WithCSRFExemptPaths("/api/v1/webhooks/github"),
+    framework.WithRawBodyPaths("/api/v1/webhooks/github"),
 )
 ```
 
-Paths match the request path **exactly**, including the API prefix. On an
-exempt path the middleware skips CSRF enforcement for unsafe methods (safe
-methods still mint the cookie).
+Paths match the request path **exactly**, including the API prefix. On such a
+path CSRF enforcement is skipped for unsafe methods (safe methods still mint
+the cookie) and the request body reaches the handler byte-for-byte unmodified.
+
+`WithCSRFExemptPaths` is the narrower option: it skips CSRF only, leaving the
+body sanitizer in place. Use it for a non-browser endpoint that does **not**
+hash its raw body; use `WithRawBodyPaths` for signature-verifying webhooks.
 
 **Exempting a path removes a protection; it does not make the route
 credential-free.** The session cookies (`gombit_access` / `gombit_refresh`)

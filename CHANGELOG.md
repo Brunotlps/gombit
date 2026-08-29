@@ -12,6 +12,14 @@ version.
 
 ### Added
 
+- `framework.WithRawBodyPaths` — mark webhook / server-to-server paths whose
+  request body must reach the handler byte-for-byte, for signature verification
+  (e.g. GitHub `X-Hub-Signature-256`). The XSS sanitizer, which re-encodes JSON
+  bodies, is skipped for these paths, and they are CSRF-exempt too (so a
+  signature-verifying webhook needs only this one option). Fixes webhooks that
+  failed HMAC checks because the body was re-encoded before the handler saw it
+  ([#232](https://github.com/gombit-dev/gombit/issues/232)).
+
 - Admin many-to-many relationships end to end
   ([#223](https://github.com/gombit-dev/gombit/issues/223)): a `many_to_many`
   relation field round-trips as a list of related primary keys — list/detail
@@ -19,8 +27,13 @@ version.
   validation; a missing id is a 422; an empty list clears it), and
   auto-derivation (`FieldsFrom`) emits the relation instead of dropping the
   association. The framework admin SPA renders it as a multi-select backed by
-  the related model's list endpoint. `belongs_to`/`has_many` picker widgets and
-  belongs_to auto-derivation remain follow-ups on the same issue.
+  the related model's list endpoint.
+- Admin `belongs_to` picker
+  ([#223](https://github.com/gombit-dev/gombit/issues/223)): auto-derivation
+  renders a foreign-key column as a relation field (target `slug` = the related
+  table, label = its `name` column), and the SPA shows a single-select picker
+  backed by the related model's list endpoint that stores the selected primary
+  key — instead of a bare integer input. `has_many` stays read-only.
 - `gombit make resource` field grammar now supports `decimal`, `decimal(p,s)`,
   `time`, and `enum(a,b,c)` in addition to the existing scalars. `decimal` uses
   the new framework `types.Decimal` (a `shopspring/decimal` wrapper that carries

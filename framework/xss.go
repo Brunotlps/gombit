@@ -49,9 +49,22 @@ var completeHTMLTag = regexp.MustCompile(`(?i)<\s*/?[a-z][a-z0-9:-]*(?:\s[^>]*)?
 // unchanged. Non-JSON bodies (form/multipart) pass through unchanged.
 //
 // Re-encoding JSON may change key order and whitespace; callers that hash
-// the raw body must hash the sanitized bytes handlers actually receive.
-func xssMiddleware() gin.HandlerFunc {
+// the raw body must hash the sanitized bytes handlers actually receive — which
+// a webhook can't, since it signs the original bytes. exemptPaths (exact request
+// paths, from framework.WithRawBodyPaths) therefore skip sanitization entirely,
+// so their body reaches the handler unmodified for signature verification.
+func xssMiddleware(exemptPaths ...string) gin.HandlerFunc {
+	exempt := make(map[string]struct{}, len(exemptPaths))
+	for _, path := range exemptPaths {
+		if path = strings.TrimSpace(path); path != "" {
+			exempt[path] = struct{}{}
+		}
+	}
 	return func(c *gin.Context) {
+		if _, ok := exempt[c.Request.URL.Path]; ok {
+			c.Next()
+			return
+		}
 		switch c.Request.Method {
 		case http.MethodGet:
 			sanitizeQuery(c)
