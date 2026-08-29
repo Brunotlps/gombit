@@ -18,7 +18,7 @@ import (
 )
 
 func TestDefaultRuntimeMiddlewareOrder(t *testing.T) {
-	stack := runtimeMiddlewareStack(config.Default(), newHTTPMetrics(), nil)
+	stack := runtimeMiddlewareStack(config.Default(), newHTTPMetrics(), nil, nil)
 	got := make([]string, 0, len(stack))
 	for _, middleware := range stack {
 		got = append(got, middleware.name)

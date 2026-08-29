@@ -2,6 +2,7 @@ package auth_test
 
 import (
 	"encoding/json"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -360,6 +361,56 @@ func TestCSRFExemptPathThroughNew(t *testing.T) {
 		rec := doRequest(app, nil, http.MethodPost, "/api/v1/webhooks/other", "{}")
 		assertCSRFRejected(t, rec)
 	})
+}
+
+// TestRawBodyPathThroughNew verifies WithRawBodyPaths end to end: a raw-body
+// path is CSRF-exempt (no token needed) AND its JSON body reaches the handler
+// unmodified — the XSS sanitizer, which otherwise re-encodes JSON bodies, is
+// skipped — so a webhook can verify a signature over the raw body.
+func TestRawBodyPathThroughNew(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	db := openSQLite(t)
+	if err := auth.Migrate(db.DB); err != nil {
+		t.Fatalf("auth.Migrate() error = %v", err)
+	}
+	cfg := config.DefaultFor(config.EnvironmentTest)
+	cfg.HTTP.Addr = "127.0.0.1:0"
+	cfg.Auth.JWTSecret = testJWTSecret
+	cfg.Auth.Mode = config.AuthModeCookie
+
+	app, err := framework.New(
+		framework.WithConfig(cfg),
+		framework.WithDatabase(db),
+		framework.WithLogger(zap.NewNop()),
+		framework.WithRawBodyPaths("/api/v1/webhooks/github"),
+	)
+	if err != nil {
+		t.Fatalf("framework.New() error = %v", err)
+	}
+
+	// A body json-re-encoding would change (< / & escaped, <b> stripped).
+	const raw = `{"tag":"v1","body":"<b>x</b> a < b & c"}`
+	var got string
+	app.Router().POST("/api/v1/webhooks/github", func(c *gin.Context) {
+		b, _ := io.ReadAll(c.Request.Body)
+		got = string(b)
+		c.Status(http.StatusOK)
+	})
+
+	// No CSRF token attached (jar == nil): raw-body paths are CSRF-exempt too.
+	rec := doRequest(app, nil, http.MethodPost, "/api/v1/webhooks/github", raw)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200 (CSRF-exempt raw-body path); body: %s", rec.Code, rec.Body.String())
+	}
+	if got != raw {
+		t.Fatalf("handler received %q, want the body unmodified %q", got, raw)
+	}
+
+	// A neighbor path is not raw-body: CSRF is still enforced. Guards against a
+	// regression that disables CSRF globally whenever any raw-body path is set.
+	app.Router().POST("/api/v1/other", func(c *gin.Context) { c.Status(http.StatusOK) })
+	rec = doRequest(app, nil, http.MethodPost, "/api/v1/other", raw)
+	assertCSRFRejected(t, rec)
 }
 
 func TestCSRFSafeMethodsAreExempt(t *testing.T) {

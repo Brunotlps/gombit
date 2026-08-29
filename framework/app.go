@@ -54,6 +54,7 @@ type App struct {
 	shutdownTimeout  time.Duration
 	embeddedFrontend fs.FS
 	csrfExemptPaths  []string
+	rawBodyPaths     []string
 
 	mu     sync.RWMutex
 	server *http.Server
@@ -107,7 +108,7 @@ func New(options ...Option) (*App, error) {
 		})
 	}
 	if app.router == nil {
-		router, err := newRouter(app.cfg, app.csrfExemptPaths)
+		router, err := newRouter(app.cfg, app.csrfExemptPaths, app.rawBodyPaths)
 		if err != nil {
 			return nil, err
 		}
@@ -251,6 +252,25 @@ func WithShutdownTimeout(timeout time.Duration) Option {
 func WithCSRFExemptPaths(paths ...string) Option {
 	return func(app *App) error {
 		app.csrfExemptPaths = append(app.csrfExemptPaths, paths...)
+		return nil
+	}
+}
+
+// WithRawBodyPaths marks exact request paths whose request body must reach the
+// handler byte-for-byte unmodified — webhooks and other server-to-server
+// endpoints that verify a signature over the raw body (e.g. GitHub's
+// X-Hub-Signature-256 HMAC). The XSS input sanitizer, which otherwise
+// re-encodes JSON request bodies, is skipped for these paths.
+//
+// Such an endpoint also cannot participate in the cookie CSRF double-submit, so
+// raw-body paths are additionally CSRF-exempt (the union with
+// WithCSRFExemptPaths) — declaring a webhook path here is enough. The handler
+// must authenticate the caller itself. Paths match the request path exactly,
+// including the API prefix, e.g. "/api/v1/webhooks/github". No effect when a
+// custom router is supplied via WithRouter.
+func WithRawBodyPaths(paths ...string) Option {
+	return func(app *App) error {
+		app.rawBodyPaths = append(app.rawBodyPaths, paths...)
 		return nil
 	}
 }
@@ -522,7 +542,7 @@ func syncLogger(logger *zap.Logger) error {
 	return nil
 }
 
-func newRouter(cfg config.Config, csrfExemptPaths []string) (*gin.Engine, error) {
+func newRouter(cfg config.Config, csrfExemptPaths, rawBodyPaths []string) (*gin.Engine, error) {
 	router := gin.New()
 	enableMethodNotAllowed(router)
 	if err := configureTrustedProxies(router, cfg.HTTP.TrustedProxies); err != nil {
@@ -530,7 +550,7 @@ func newRouter(cfg config.Config, csrfExemptPaths []string) (*gin.Engine, error)
 	}
 
 	metrics := newHTTPMetrics()
-	router.Use(middlewareHandlers(runtimeMiddlewareStack(cfg, metrics, csrfExemptPaths))...)
+	router.Use(middlewareHandlers(runtimeMiddlewareStack(cfg, metrics, csrfExemptPaths, rawBodyPaths))...)
 	router.GET("/livez", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"data": gin.H{
@@ -562,7 +582,7 @@ func configureTrustedProxies(engine *gin.Engine, proxies []string) error {
 	return nil
 }
 
-func runtimeMiddlewareStack(cfg config.Config, metrics *httpMetrics, csrfExemptPaths []string) []namedMiddleware {
+func runtimeMiddlewareStack(cfg config.Config, metrics *httpMetrics, csrfExemptPaths, rawBodyPaths []string) []namedMiddleware {
 	stack := []namedMiddleware{
 		{name: "recovery", handler: gin.Recovery()},
 		{name: "request_context", handler: requestContextMiddleware()},
@@ -571,14 +591,18 @@ func runtimeMiddlewareStack(cfg config.Config, metrics *httpMetrics, csrfExemptP
 			name:    "security_headers",
 			handler: securityHeadersMiddleware(cfg.Environment == config.EnvironmentProduction),
 		},
-		{name: "xss", handler: xssMiddleware()},
+		// Raw-body paths (webhooks) skip input sanitization so their body reaches
+		// the handler unmodified for signature verification (WithRawBodyPaths).
+		{name: "xss", handler: xssMiddleware(rawBodyPaths...)},
 	}
 	// CSRF must run as global Gin middleware, not just on the auth Huma
 	// routes: it covers every state-changing request (M5-3), including
 	// application feature routes registered later via app.Router(). See
-	// docs/auth-cookie.md.
+	// docs/auth-cookie.md. Raw-body paths are also CSRF-exempt: a webhook that
+	// needs its raw body cannot do the double-submit either.
 	if cfg.Auth.Enabled() && cfg.Auth.EffectiveMode() == config.AuthModeCookie {
-		stack = append(stack, namedMiddleware{name: "csrf", handler: auth.CSRFMiddleware(cfg, csrfExemptPaths...)})
+		csrfExempt := append(append([]string{}, csrfExemptPaths...), rawBodyPaths...)
+		stack = append(stack, namedMiddleware{name: "csrf", handler: auth.CSRFMiddleware(cfg, csrfExempt...)})
 	}
 	stack = append(stack, namedMiddleware{name: "request_timeout", handler: requestTimeoutMiddleware(cfg.HTTP.RequestTimeout)})
 	return stack

@@ -12,6 +12,13 @@ version.
 
 ### Added
 
+- `framework.WithRawBodyPaths` — mark webhook / server-to-server paths whose
+  request body must reach the handler byte-for-byte, for signature verification
+  (e.g. GitHub `X-Hub-Signature-256`). The XSS sanitizer, which re-encodes JSON
+  bodies, is skipped for these paths, and they are CSRF-exempt too (so a
+  signature-verifying webhook needs only this one option). Fixes webhooks that
+  failed HMAC checks because the body was re-encoded before the handler saw it
+  ([#232](https://github.com/gombit-dev/gombit/issues/232)).
 - Admin many-to-many relationships end to end
   ([#223](https://github.com/gombit-dev/gombit/issues/223)): a `many_to_many`
   relation field round-trips as a list of related primary keys — list/detail

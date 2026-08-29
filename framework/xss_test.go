@@ -269,3 +269,42 @@ func TestSanitizeJSONBodyPreservesComparisonText(t *testing.T) {
 		t.Fatalf("name = %#v, want a<b (not truncated)", payload["name"])
 	}
 }
+
+func TestXSSMiddlewareRawBodyPathSkipsSanitization(t *testing.T) {
+	// A body that json re-encoding would change (< / & escaped, <b> stripped).
+	const raw = `{"tag":"v1","body":"<b>notes</b> a < b & c"}`
+
+	newEngine := func() (*gin.Engine, *string) {
+		var got string
+		eng := gin.New()
+		eng.Use(xssMiddleware("/api/v1/webhooks/github"))
+		read := func(c *gin.Context) {
+			b, _ := io.ReadAll(c.Request.Body)
+			got = string(b)
+			c.Status(http.StatusOK)
+		}
+		eng.POST("/api/v1/webhooks/github", read)
+		eng.POST("/api/v1/other", read)
+		return eng, &got
+	}
+
+	// Exempt raw-body path: the handler receives the original bytes verbatim.
+	eng, got := newEngine()
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/webhooks/github", strings.NewReader(raw))
+	req.Header.Set("Content-Type", "application/json")
+	eng.ServeHTTP(rec, req)
+	if *got != raw {
+		t.Fatalf("exempt-path body = %q, want unmodified %q", *got, raw)
+	}
+
+	// Non-exempt path: the body is sanitized/re-encoded (control).
+	eng2, got2 := newEngine()
+	rec2 := httptest.NewRecorder()
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/other", strings.NewReader(raw))
+	req2.Header.Set("Content-Type", "application/json")
+	eng2.ServeHTTP(rec2, req2)
+	if *got2 == raw {
+		t.Fatalf("non-exempt path body was not sanitized: %q", *got2)
+	}
+}
