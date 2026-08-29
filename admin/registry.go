@@ -64,6 +64,17 @@ type registered struct {
 	fieldByName map[string]*resolvedField
 	implicit    map[string]implicitColumn // created_at / updated_at when omitted from Fields
 	m2m         []*m2mBinding             // many-to-many fields synced on write (#223)
+	version     *versionField             // optimistic-lock column, if the model has one
+}
+
+// versionField describes a model's integer optimistic-locking column (named
+// "version"). When present, the admin update guards the write on the version and
+// bumps it, so concurrent PATCHes cannot silently last-write-wins (#224).
+type versionField struct {
+	name   string // json field name used in the request body
+	column string // DB column
+	get    func(inst any) int64
+	set    func(inst any, v int64)
 }
 
 type resolvedField struct {

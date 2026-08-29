@@ -122,6 +122,7 @@ func registerModel(host Host, model any, opts Options) error {
 	for i := range m.fields {
 		m.fieldByName[m.fields[i].Name] = &m.fields[i]
 	}
+	m.version = detectVersionField(sch)
 	if pk, ok := m.fieldByName[pkName]; ok && pk.Type != "" {
 		m.pkType = pk.Type
 		if pk.column != "" {

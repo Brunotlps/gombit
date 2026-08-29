@@ -66,6 +66,12 @@ func Open(cfg config.DatabaseConfig) (*DB, error) {
 		return nil, fmt.Errorf("database: open %s: %w", driver, err)
 	}
 
+	// Run model Validate hooks on every create/update, so a domain invariant
+	// enforced once is enforced on both the API and admin write paths.
+	if err := registerValidationCallback(gormDB); err != nil {
+		return nil, err
+	}
+
 	sqlDB, err := gormDB.DB()
 	if err != nil {
 		return nil, fmt.Errorf("database: sql db: %w", err)
