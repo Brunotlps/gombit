@@ -300,6 +300,28 @@ func (a *App) DB() *gorm.DB {
 	return a.db.DB
 }
 
+// Tx runs fn inside a single database transaction: it commits when fn returns
+// nil and rolls back on any error or panic. It is the framework home for
+// transactional multi-model writes (atomically update A + B + C) and for
+// cross-row invariants that must read and write consistently. Model Validate
+// hooks (database.Validator) run inside this transaction too, so an invariant
+// checked in Validate cannot commit alongside a change that violates it.
+//
+//	err := app.Tx(ctx, func(tx *gorm.DB) error {
+//	    if err := tx.Create(&a).Error; err != nil { return err }
+//	    return tx.Model(&b).Update("count", gorm.Expr("count + 1")).Error
+//	})
+func (a *App) Tx(ctx context.Context, fn func(tx *gorm.DB) error) error {
+	db := a.DB()
+	if db == nil {
+		return errors.New("framework: no database attached")
+	}
+	if fn == nil {
+		return errors.New("framework: nil transaction function")
+	}
+	return db.WithContext(ctx).Transaction(fn)
+}
+
 // Router returns the underlying Gin router escape hatch.
 func (a *App) Router() *gin.Engine {
 	a.mu.RLock()

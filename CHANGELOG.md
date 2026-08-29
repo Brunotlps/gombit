@@ -12,6 +12,18 @@ version.
 
 ### Added
 
+- A framework home for domain logic shared by the API and admin write paths
+  ([#224](https://github.com/gombit-dev/gombit/issues/224)):
+  - `database.Validator` (`Validate(ctx, tx) error`) runs via a GORM callback on
+    every create/update, so an invariant enforced once cannot be bypassed by the
+    other write surface. A returned `database.ValidationError` maps to a D10 422
+    with field detail through `database.MapPersistError`.
+  - `framework.App.Tx(ctx, fn)` — a transaction helper for multi-model writes;
+    `Validate` hooks run inside it.
+  - Optimistic locking on the admin update path: a model with an integer
+    `version` column gets a version-guarded update that returns 409 on a stale
+    write instead of silently last-write-wins.
+  - See [`docs/validation.md`](docs/validation.md).
 - `framework.WithCSRFExemptPaths` — opt specific request paths out of
   cookie-mode CSRF enforcement, for non-browser endpoints (webhooks,
   server-to-server callbacks) that cannot echo a double-submit token and
