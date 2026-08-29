@@ -28,7 +28,7 @@ instead of asking every mutating handler to re-implement it.
 | Threat | Mitigation |
 | --- | --- |
 | XSS reads the session token | Access/refresh cookies are `HttpOnly`; page JavaScript cannot read them via `document.cookie`. |
-| Cross-site request forges a mutating request | Every `POST`/`PUT`/`PATCH`/`DELETE` must echo the `gombit_csrf` cookie value as the `X-CSRF-Token` header (double-submit). A cross-origin page can trigger a cookie-bearing request but cannot read the CSRF cookie's value (browsers do not expose `Set-Cookie`/`document.cookie` across origins) or set a custom header on a simple cross-origin form submission, so it cannot produce a matching header. |
+| Cross-site request forges a mutating request | Every `POST`/`PUT`/`PATCH`/`DELETE` must echo the `gombit_csrf` cookie value as the `X-CSRF-Token` header (double-submit), **except** paths opted out via `framework.WithCSRFExemptPaths` (see [Exempting non-browser endpoints](#exempting-non-browser-endpoints-webhooks)), which must authenticate the caller themselves and must not trust the session cookie. A cross-origin page can trigger a cookie-bearing request but cannot read the CSRF cookie's value (browsers do not expose `Set-Cookie`/`document.cookie` across origins) or set a custom header on a simple cross-origin form submission, so it cannot produce a matching header. |
 | Cookie value is guessed or brute-forced | The CSRF token is 32 random bytes (`crypto/rand`) plus an HMAC-SHA256 signature over the token using `Config.Auth.JWTSecret`. `validCSRFTokenValue` checks the signature, not just cookie/header equality, so an attacker who can set *some* cookie on a subdomain ("cookie tossing") still cannot forge a token that verifies without the server secret. |
 | Session cookie is stolen off the wire | `Secure` is required in production (enforced by `config.Validate` / `gombit doctor`, see [Config](#config)) so cookies are never sent over plain HTTP once deployed. |
 | Session cookie is replayed after logout | Logout revokes the refresh token server-side ([`auth.Service.RevokeRefresh`](../auth/service.go)) and clears both cookies; a captured access JWT still fails once its short TTL (`GOMBIT_JWT_ACCESS_TTL`, default `15m`) expires, same as Bearer mode. |
@@ -60,8 +60,9 @@ headers from the endpoints below.
 auth routes) whenever `Config.Auth.Enabled()` and `EffectiveMode() ==
 AuthModeCookie`, so it covers every state-changing request in the
 app — including feature routes added later via `app.Router()` — not just
-`/auth/*`. See [`framework/app.go`](../framework/app.go)'s
-`runtimeMiddlewareStack`.
+`/auth/*`, except the exact paths passed to `framework.WithCSRFExemptPaths`
+(see [below](#exempting-non-browser-endpoints-webhooks)). See
+[`framework/app.go`](../framework/app.go)'s `runtimeMiddlewareStack`.
 
 - **Safe methods** (`GET`, `HEAD`, `OPTIONS`): the middleware ensures a
   signed `gombit_csrf` cookie exists, minting one if missing. It never
@@ -100,14 +101,23 @@ app, err := framework.New(
 ```
 
 Paths match the request path **exactly**, including the API prefix. On an
-exempt path the middleware skips enforcement for unsafe methods (safe methods
-still mint the cookie). CSRF is a defense against *ambient-credential* forgery
-by a browser; an exempt endpoint carries no session cookie, so dropping CSRF
-there loses nothing — **but it now has no authentication of its own**, so the
-handler **must** authenticate the caller another way, e.g. verifying an
-HMAC signature over the raw body (`X-Hub-Signature-256` for GitHub). Keep the
-exempt list to the specific webhook paths; never exempt a route that relies on
-the session cookie.
+exempt path the middleware skips CSRF enforcement for unsafe methods (safe
+methods still mint the cookie).
+
+**Exempting a path removes a protection; it does not make the route
+credential-free.** The session cookies (`gombit_access` / `gombit_refresh`)
+are scoped `Path=/`, so a same-site request — including one a cross-site page
+triggers — still delivers them to the exempt path. CSRF is exactly what stops a
+cross-origin page from riding those *ambient* session cookies on an unsafe
+method; drop it and any handler that trusts the session is exposed to forgery
+again.
+
+So an exempt handler **must not authenticate via the session cookie**. It must
+verify the caller by other means — e.g. an HMAC signature over the raw body
+(`X-Hub-Signature-256` for GitHub) — and ignore session identity. CSRF was
+never authentication, and exemption is safe **only** for a handler that does
+not rely on ambient session auth. Keep the exempt list to the specific
+non-browser paths, and never exempt a route that authenticates users by cookie.
 
 ## Endpoints
 

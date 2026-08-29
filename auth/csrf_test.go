@@ -66,8 +66,7 @@ func TestCSRFMiddlewareNoExemptionsRejectsAll(t *testing.T) {
 func TestCSRFMiddlewareSafeMethodBootstrapsCookie(t *testing.T) {
 	engine := csrfTestEngine("/api/v1/webhooks/github")
 
-	// GET is a safe method: it passes and mints the double-submit cookie, even
-	// on an exempt path.
+	// GET is a safe method: it passes and mints the double-submit cookie.
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/products", nil)
 	engine.ServeHTTP(rec, req)
