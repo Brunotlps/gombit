@@ -54,6 +54,24 @@ func FieldsFrom(model any) ([]Field, error) {
 			Column:   sf.DBName,
 		})
 	}
+	// Many-to-many associations are not in sch.Fields (they have no column), so
+	// they would otherwise be dropped from the admin entirely (#221/#223). Emit
+	// a relation field for each so it round-trips as a list of related ids. The
+	// target slug defaults to the related table name (the gombit slug
+	// convention); override it with an explicit admin.Field if it differs.
+	for _, rel := range sch.Relationships.Many2Many {
+		if rel == nil || rel.Field == nil || rel.FieldSchema == nil {
+			continue
+		}
+		fields = append(fields, Field{
+			Name: relationFieldName(rel.Field),
+			Type: TypeRelation,
+			Related: &Relation{
+				Kind: RelManyToMany,
+				Slug: rel.FieldSchema.Table,
+			},
+		})
+	}
 	return fields, nil
 }
 

@@ -12,6 +12,15 @@ version.
 
 ### Added
 
+- Admin many-to-many relationships end to end
+  ([#223](https://github.com/gombit-dev/gombit/issues/223)): a `many_to_many`
+  relation field round-trips as a list of related primary keys — list/detail
+  preload and read the ids, create/update sync the join table (with existence
+  validation; a missing id is a 422; an empty list clears it), and
+  auto-derivation (`FieldsFrom`) emits the relation instead of dropping the
+  association. The framework admin SPA renders it as a multi-select backed by
+  the related model's list endpoint. `belongs_to`/`has_many` picker widgets and
+  belongs_to auto-derivation remain follow-ups on the same issue.
 - `framework.WithCSRFExemptPaths` — opt specific request paths out of
   cookie-mode CSRF enforcement, for non-browser endpoints (webhooks,
   server-to-server callbacks) that cannot echo a double-submit token and

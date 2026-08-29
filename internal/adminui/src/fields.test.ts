@@ -83,3 +83,28 @@ describe("formValuesToBody", () => {
     expect(body).toEqual({ note: null });
   });
 });
+
+describe("many_to_many fields", () => {
+  const rel = (): FieldMeta => ({
+    name: "warehouses",
+    type: "relation",
+    required: false,
+    readonly: false,
+    related: { slug: "warehouses", kind: "many_to_many", label_field: "name" },
+  });
+
+  it("submits the selected ids as a numeric list", () => {
+    const { body } = formValuesToBody({ warehouses: ["1", "2", "3"] }, [rel()]);
+    expect(body.warehouses).toEqual([1, 2, 3]);
+  });
+
+  it("submits an empty list to clear the relation", () => {
+    const { body } = formValuesToBody({ warehouses: [] }, [rel()]);
+    expect(body.warehouses).toEqual([]);
+  });
+
+  it("ignores non-numeric junk in the list", () => {
+    const { body } = formValuesToBody({ warehouses: ["4", "x", 5] }, [rel()]);
+    expect(body.warehouses).toEqual([4, 5]);
+  });
+});

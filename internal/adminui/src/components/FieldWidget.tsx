@@ -1,9 +1,12 @@
+import { useEffect, useState } from "react";
 import { Controller, type Control, type FieldValues } from "react-hook-form";
 
-import { Checkbox, FormControlLabel, TextField } from "@mui/material";
+import { Checkbox, FormControlLabel, MenuItem, TextField } from "@mui/material";
 
-import type { FieldMeta } from "../api/types";
-import { isHasMany } from "../fields";
+import { useApiClient } from "../api/client";
+import { apiResourcePath } from "../api/paths";
+import type { FieldMeta, Row } from "../api/types";
+import { isHasMany, isManyToMany } from "../fields";
 
 type Props = {
   field: FieldMeta;
@@ -11,9 +14,15 @@ type Props = {
   disabled?: boolean;
 };
 
+type Option = { id: number; label: string };
+
 export function FieldWidget({ field, control, disabled }: Props) {
   const readOnly = disabled || field.readonly || isHasMany(field);
   const label = fieldLabel(field);
+
+  if (isManyToMany(field)) {
+    return <RelationMultiSelect field={field} control={control} disabled={disabled} />;
+  }
 
   if (field.type === "boolean") {
     return (
@@ -63,6 +72,81 @@ export function FieldWidget({ field, control, disabled }: Props) {
           }
         />
       )}
+    />
+  );
+}
+
+/**
+ * RelationMultiSelect renders a many-to-many field as a multi-select backed by
+ * the related model's admin list endpoint, showing the related label field and
+ * submitting the selected ids (#223).
+ */
+function RelationMultiSelect({ field, control, disabled }: Props) {
+  const client = useApiClient();
+  const slug = field.related?.slug ?? "";
+  const labelField = field.related?.label_field ?? "";
+  const [options, setOptions] = useState<Option[]>([]);
+  const [loadError, setLoadError] = useState("");
+
+  useEffect(() => {
+    if (!slug) {
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      try {
+        const env = await client.get<Row[]>(apiResourcePath(slug), { per_page: 100 });
+        if (cancelled) {
+          return;
+        }
+        const rows = Array.isArray(env.data) ? env.data : [];
+        setOptions(
+          rows.map((r) => ({
+            id: Number(r.id),
+            label: labelField && r[labelField] != null ? String(r[labelField]) : `#${String(r.id)}`,
+          })),
+        );
+      } catch (err: unknown) {
+        if (!cancelled) {
+          setLoadError(err instanceof Error ? err.message : "failed to load options");
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [client, slug, labelField]);
+
+  return (
+    <Controller
+      name={field.name}
+      control={control}
+      render={({ field: rhf }) => {
+        const selected = Array.isArray(rhf.value) ? rhf.value.map((v) => String(v)) : [];
+        return (
+          <TextField
+            select
+            label={fieldLabel(field)}
+            fullWidth
+            disabled={disabled || field.readonly}
+            value={selected}
+            onChange={(event) => {
+              const raw = event.target.value as unknown as string[] | string;
+              const list = Array.isArray(raw) ? raw : [raw];
+              rhf.onChange(list.map((v) => Number(v)));
+            }}
+            helperText={loadError || `Select related ${slug}`}
+            error={!!loadError}
+            slotProps={{ select: { multiple: true } }}
+          >
+            {options.map((option) => (
+              <MenuItem key={option.id} value={String(option.id)}>
+                {option.label}
+              </MenuItem>
+            ))}
+          </TextField>
+        );
+      }}
     />
   );
 }

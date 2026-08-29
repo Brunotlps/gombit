@@ -4,6 +4,25 @@ export function isHasMany(field: FieldMeta): boolean {
   return field.type === "relation" && field.related?.kind === "has_many";
 }
 
+export function isManyToMany(field: FieldMeta): boolean {
+  return field.type === "relation" && field.related?.kind === "many_to_many";
+}
+
+/** toIdList coerces a form value into the numeric id list a m2m field submits. */
+export function toIdList(raw: unknown): number[] {
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  const out: number[] = [];
+  for (const v of raw) {
+    const n = Number(v);
+    if (!Number.isNaN(n)) {
+      out.push(Math.trunc(n));
+    }
+  }
+  return out;
+}
+
 export function isWritable(field: FieldMeta): boolean {
   return !field.readonly && !isHasMany(field);
 }
@@ -33,6 +52,9 @@ export function emptyFormValue(field: FieldMeta): unknown {
   if (field.type === "boolean") {
     return false;
   }
+  if (isManyToMany(field)) {
+    return [];
+  }
   if (field.type === "json") {
     return "";
   }
@@ -53,6 +75,12 @@ export function formValuesToBody(values: Row, fields: FieldMeta[]): { body: Row;
   const jsonErrors: Record<string, string> = {};
   for (const field of writableFields(fields)) {
     const raw = values[field.name];
+    if (isManyToMany(field)) {
+      // Send the id list so the data plane syncs the join table. An empty
+      // list clears the relation; omission is not possible from the form.
+      body[field.name] = toIdList(raw);
+      continue;
+    }
     if (field.type === "json") {
       const text = raw === undefined || raw === null ? "" : String(raw).trim();
       if (text === "") {
@@ -158,6 +186,9 @@ export function datetimeLocalToRFC3339(raw: string): string {
 function valueToForm(field: FieldMeta, raw: unknown): unknown {
   if (field.type === "boolean") {
     return Boolean(raw);
+  }
+  if (isManyToMany(field)) {
+    return toIdList(raw);
   }
   if (field.type === "json") {
     if (raw === undefined || raw === null || raw === "") {

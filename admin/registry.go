@@ -63,6 +63,7 @@ type registered struct {
 	fields      []resolvedField
 	fieldByName map[string]*resolvedField
 	implicit    map[string]implicitColumn // created_at / updated_at when omitted from Fields
+	m2m         []*m2mBinding             // many-to-many fields synced on write (#223)
 }
 
 type resolvedField struct {
