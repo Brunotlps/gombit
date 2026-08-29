@@ -123,6 +123,10 @@ func Config() huma.Config {
 	config.OpenAPIPath = openAPIPath
 	config.DocsPath = ""
 	config.SchemasPath = ""
+	// Match the runtime adapter (contract.HumaConfigFor): drop the
+	// SchemaLinkTransformer so the emitted document has no off-contract
+	// $schema property. See #225.
+	config.CreateHooks = nil
 	return config
 }
 

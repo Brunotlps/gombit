@@ -524,6 +524,7 @@ func syncLogger(logger *zap.Logger) error {
 
 func newRouter(cfg config.Config, csrfExemptPaths []string) (*gin.Engine, error) {
 	router := gin.New()
+	enableMethodNotAllowed(router)
 	if err := configureTrustedProxies(router, cfg.HTTP.TrustedProxies); err != nil {
 		return nil, err
 	}

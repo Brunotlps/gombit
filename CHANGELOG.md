@@ -46,6 +46,23 @@ version.
 
 ### Fixed
 
+- An unsupported HTTP method on a known route now returns `405 Method Not
+  Allowed` with an `Allow` header (and the D10 envelope, code
+  `method_not_allowed`) instead of `404`, so clients can distinguish a missing
+  resource from an unsupported method. A genuinely unknown path still returns
+  the 404-style fallback ([#225](https://github.com/gombit-dev/gombit/issues/225)).
+- Response bodies and generated request types no longer carry Huma's
+  off-contract `$schema` key; the D10 envelope is exactly `{data, meta?}` /
+  `{error}`. Regenerated `openapi.json` and the sample TS client
+  ([#225](https://github.com/gombit-dev/gombit/issues/225)).
+- The generated `.env` / `.env.example` now quotes `GOMBIT_DATABASE_DSN`, so a
+  DSN containing `&`/`?` survives `set -a; . ./.env` instead of being truncated.
+  `config.Load` strips one layer of matching quotes, so the runtime value is
+  unchanged ([#225](https://github.com/gombit-dev/gombit/issues/225)).
+- `gombit make resource` derives route paths (and TS client method names) with
+  GORM's pluralizer (`jinzhu/inflection`), so irregular nouns agree with the
+  table name: `Mouse` → `/mice`, `Person` → `/people`, `Analysis` → `/analyses`
+  ([#225](https://github.com/gombit-dev/gombit/issues/225)).
 - Concurrent `POST /auth/refresh` of the same still-valid token no longer
   family-revokes the winner's new session (two tabs / parallel curls)
   ([#127](https://github.com/gombit-dev/gombit/issues/127)).

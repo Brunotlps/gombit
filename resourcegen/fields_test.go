@@ -148,6 +148,26 @@ func TestParseResourceName(t *testing.T) {
 		t.Fatalf("Box HTTPPath = %q, Boxe HTTPPath = %q, want both /boxes", box.HTTPPath, boxe.HTTPPath)
 	}
 
+	// Irregular nouns: the route pluralizer must agree with GORM's table
+	// pluralizer (both go through jinzhu/inflection). See #225 item 4.
+	for _, tc := range []struct {
+		name     string
+		wantPath string
+	}{
+		{"Mouse", "/mice"},
+		{"Person", "/people"},
+		{"Analysis", "/analyses"},
+		{"Category", "/categories"},
+	} {
+		got, err := parseResourceName(tc.name)
+		if err != nil {
+			t.Fatalf("%s: %v", tc.name, err)
+		}
+		if got.HTTPPath != tc.wantPath {
+			t.Fatalf("%s HTTPPath = %q, want %q (must match GORM table name)", tc.name, got.HTTPPath, tc.wantPath)
+		}
+	}
+
 	_, err = parseResourceName("platform")
 	if err == nil || !strings.Contains(err.Error(), "reserved") {
 		t.Fatalf("platform error = %v, want reserved", err)
