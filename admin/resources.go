@@ -183,8 +183,8 @@ func (h *handlers) updateResource(ctx context.Context, input *patchInput) (*rowO
 		return nil, contract.WithContext(ctx, contract.Internal("admin database is not attached"))
 	}
 	// A model with an optimistic-lock version column takes the version-guarded
-	// path. (A model with both a version column and m2m fields is not a
-	// supported combination yet; updateVersioned does not sync m2m.)
+	// path. Register refuses a model that has both a version column and m2m
+	// fields, so this path never needs to sync a join table.
 	if m.version != nil {
 		return h.updateVersioned(ctx, m, inst, input, db)
 	}

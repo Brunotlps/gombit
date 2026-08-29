@@ -123,6 +123,13 @@ func registerModel(host Host, model any, opts Options) error {
 		m.fieldByName[m.fields[i].Name] = &m.fields[i]
 	}
 	m.version = detectVersionField(sch)
+	// The optimistic-lock update path (updateVersioned) and the many-to-many
+	// join sync are separate write paths; combining them on one model would
+	// silently drop the m2m write on a versioned PATCH. Refuse the combination
+	// at registration rather than accept-and-discard at request time (#223).
+	if m.version != nil && len(m.m2m) > 0 {
+		return fmt.Errorf("admin: model %q has both a version column and many_to_many field(s), which is not supported yet", opts.Slug)
+	}
 	if pk, ok := m.fieldByName[pkName]; ok && pk.Type != "" {
 		m.pkType = pk.Type
 		if pk.column != "" {

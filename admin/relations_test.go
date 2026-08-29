@@ -209,6 +209,39 @@ func TestManyToManyRejectsRequired(t *testing.T) {
 	}
 }
 
+type relVersionedEngine struct {
+	ID         uint           `gorm:"primaryKey" json:"id"`
+	Name       string         `json:"name"`
+	Version    int            `json:"version"`
+	Warehouses []relWarehouse `gorm:"many2many:versioned_engine_warehouses;" json:"warehouses"`
+}
+
+func (relVersionedEngine) TableName() string { return "versioned_engines" }
+
+// TestManyToManyWithVersionRejectedAtRegister guards the merge regression the
+// review caught: a model with both a version column and m2m fields would route
+// to the version path and silently drop the m2m write. Registration must refuse
+// the combination instead of accepting a write it discards.
+func TestManyToManyWithVersionRejectedAtRegister(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	app := newCookieApp(t)
+	if err := app.DB().AutoMigrate(&relWarehouse{}, &relVersionedEngine{}); err != nil {
+		t.Fatalf("AutoMigrate: %v", err)
+	}
+	err := admin.Register(app, relVersionedEngine{}, admin.Options{
+		Slug: "versioned-engines",
+		Fields: []admin.Field{
+			{Name: "id", Type: admin.TypeInteger, ReadOnly: true},
+			{Name: "name", Type: admin.TypeString, Required: true},
+			{Name: "version", Type: admin.TypeInteger, ReadOnly: true},
+			{Name: "warehouses", Type: admin.TypeRelation, Related: &admin.Relation{Kind: admin.RelManyToMany, Slug: "warehouses"}},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "version column and many_to_many") {
+		t.Fatalf("Register error = %v, want rejection of version + m2m combination", err)
+	}
+}
+
 func createWarehouse(t *testing.T, app *framework.App, jar *cookieJar, name string) int64 {
 	t.Helper()
 	rec := doRequest(app, jar, http.MethodPost, "/api/v1/admin/resources/warehouses",
