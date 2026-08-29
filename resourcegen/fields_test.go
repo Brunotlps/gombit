@@ -104,7 +104,7 @@ func TestParseFields(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			fields, err := parseFields([]string{tt.spec})
+			fields, err := parseFields([]string{tt.spec}, "widget")
 			if tt.wantErr != "" {
 				if err == nil {
 					t.Fatal("parseFields() error = nil, want error")
@@ -132,16 +132,95 @@ func TestParseFields(t *testing.T) {
 
 func TestParseFieldsDuplicate(t *testing.T) {
 	t.Parallel()
-	_, err := parseFields([]string{"title:string", "title:int"})
+	_, err := parseFields([]string{"title:string", "title:int"}, "widget")
 	if err == nil || !strings.Contains(err.Error(), "duplicate") {
 		t.Fatalf("error = %v, want duplicate", err)
+	}
+}
+
+func TestParseRelationFields(t *testing.T) {
+	t.Parallel()
+	fields, err := parseFields([]string{
+		"engine:belongs_to:Engine",
+		"parts:has_many:Part",
+		"warehouses:many_to_many:Warehouse",
+	}, "rental")
+	if err != nil {
+		t.Fatalf("parseFields: %v", err)
+	}
+	want := []struct {
+		name, kind, target, pkg, goType string
+	}{
+		{"engine", string(FieldBelongsTo), "Engine", "engine", "engine.Engine"},
+		{"parts", string(FieldHasMany), "Part", "part", "[]part.Part"},
+		{"warehouses", string(FieldManyToMany), "Warehouse", "warehouse", "[]warehouse.Warehouse"},
+	}
+	for i, w := range want {
+		f := fields[i]
+		if string(f.Type) != w.kind || f.Target != w.target || f.TargetPkg != w.pkg || f.GoType != w.goType {
+			t.Fatalf("field[%d] = %+v, want kind=%s target=%s pkg=%s goType=%s", i, f, w.kind, w.target, w.pkg, w.goType)
+		}
+	}
+	// belongs_to is in the DTO (as its FK); the collection relations are not.
+	if !fields[0].inDTO() || fields[1].inDTO() || fields[2].inDTO() {
+		t.Fatalf("inDTO = %v/%v/%v, want true/false/false", fields[0].inDTO(), fields[1].inDTO(), fields[2].inDTO())
+	}
+	if fields[0].fkGoName() != "EngineID" || fields[0].fkJSONName() != "engine_id" {
+		t.Fatalf("belongs_to FK names = %s/%s, want EngineID/engine_id", fields[0].fkGoName(), fields[0].fkJSONName())
+	}
+}
+
+func TestParseRelationErrors(t *testing.T) {
+	t.Parallel()
+	for _, spec := range []string{"engine:belongs_to", "warehouses:many_to_many:"} {
+		if _, err := parseFields([]string{spec}, "rental"); err == nil {
+			t.Fatalf("parseFields(%q) error = nil, want a missing-target error", spec)
+		}
+	}
+}
+
+func TestParseRelationSamePackage(t *testing.T) {
+	t.Parallel()
+	// Self-referential relations are rejected: a belongs_to onto the same model
+	// would need a nullable FK (a uint root stores 0, which fails the self-FK),
+	// and has_many / many_to_many need explicit join keys. All three are refused.
+	for _, spec := range []string{
+		"parent:belongs_to:Category",
+		"children:has_many:Category",
+		"related:many_to_many:Category",
+	} {
+		if _, err := parseFields([]string{spec}, "category"); err == nil {
+			t.Fatalf("parseFields(%q) in its own package error = nil, want a self-reference rejection", spec)
+		}
+	}
+	// The same target from a different package is fine and stays qualified.
+	other, err := parseFields([]string{"parent:belongs_to:Category"}, "product")
+	if err != nil {
+		t.Fatalf("parseFields cross-pkg: %v", err)
+	}
+	if other[0].GoType != "category.Category" {
+		t.Fatalf("cross-pkg belongs_to GoType = %q, want category.Category", other[0].GoType)
+	}
+}
+
+func TestParseBelongsToFKCollision(t *testing.T) {
+	t.Parallel()
+	// belongs_to:Engine synthesizes EngineID/engine_id; a separate engine_id
+	// column would emit the field twice. Both orderings must be rejected.
+	for _, specs := range [][]string{
+		{"engine:belongs_to:Engine", "engine_id:uint"},
+		{"engine_id:uint", "engine:belongs_to:Engine"},
+	} {
+		if _, err := parseFields(specs, "rental"); err == nil || !strings.Contains(err.Error(), "duplicate") {
+			t.Fatalf("parseFields(%v) error = %v, want duplicate", specs, err)
+		}
 	}
 }
 
 func TestParseEnumFieldDetails(t *testing.T) {
 	t.Parallel()
 	// Enum values are case-sensitive and preserve declared order.
-	fields, err := parseFields([]string{"status:enum(Draft,Published,Archived)"})
+	fields, err := parseFields([]string{"status:enum(Draft,Published,Archived)"}, "widget")
 	if err != nil {
 		t.Fatalf("parseFields() error = %v", err)
 	}
@@ -160,7 +239,7 @@ func TestParseEnumFieldDetails(t *testing.T) {
 
 func TestParseDecimalPrecision(t *testing.T) {
 	t.Parallel()
-	fields, err := parseFields([]string{"amount:decimal", "price:decimal(10,2):required"})
+	fields, err := parseFields([]string{"amount:decimal", "price:decimal(10,2):required"}, "widget")
 	if err != nil {
 		t.Fatalf("parseFields() error = %v", err)
 	}
@@ -180,7 +259,7 @@ func TestParseDecimalPrecision(t *testing.T) {
 
 func TestParseDuplicateEnumValueRejected(t *testing.T) {
 	t.Parallel()
-	_, err := parseFields([]string{"status:enum(a,b,a)"})
+	_, err := parseFields([]string{"status:enum(a,b,a)"}, "widget")
 	if err == nil || !strings.Contains(err.Error(), "duplicate enum value") {
 		t.Fatalf("error = %v, want duplicate enum value", err)
 	}

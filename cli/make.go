@@ -48,18 +48,35 @@ Field grammar (design §27 subset):
 
   name:type[:required][,unique][,index]
 
-Supported types: string, text, int, int64, bool, uint, decimal, time, enum.
+Supported types: string, text, int, int64, bool, uint, decimal, time, enum,
+belongs_to, has_many, many_to_many.
 
   decimal            money/exact numeric (types.Decimal; decimal(19,4) column).
   decimal(p,s)       pin precision/scale, e.g. decimal(10,2).
   time               time.Time (RFC3339 in JSON).
   enum(a,b,c)        string column validated against the listed values.
 
+Relations use name:kind:Target, where Target is a model in internal/<target>/:
+
+  engine:belongs_to:Engine        FK (EngineID) + Engine association; the API
+                                  DTO exposes engine_id.
+  parts:has_many:Part             Parts []part.Part; read via the admin. The
+                                  child (Part) must carry the RentalID FK.
+  warehouses:many_to_many:Warehouse  join table + Warehouses association.
+
+The generated CRUD handler stays thin: belongs_to is exposed as its FK;
+many_to_many / has_many are generated on the model, not in the REST handler.
+The admin picks them up — many_to_many is editable through a relation widget,
+has_many is shown read-only. Self-referential relations (a target equal to the
+resource itself) are not supported yet and are rejected: they need a nullable
+foreign key / explicit join keys. Point relations at a different package.
+
 Examples:
 
   gombit make resource Widget name:string:required price:int
   gombit make resource Rental price:decimal:required starts_at:time \
-    status:enum(requested,confirmed,active,returned,cancelled)
+    status:enum(requested,confirmed,active,returned,cancelled) \
+    engine:belongs_to:Engine warehouses:many_to_many:Warehouse
   gombit make resource Invoice --service --repo --dry-run
   gombit make resource Widget --force
 

@@ -351,6 +351,9 @@ accepted as the opposite of `required`.
 | `decimal(p,s)` | `types.Decimal` | `decimal(p,s)`, e.g. `decimal(10,2)` |
 | `time` | `time.Time` | RFC3339 date-time in JSON |
 | `enum(a,b,c)` | `string` | sized varchar; validated against the listed values (Huma `enum` tag) |
+| `belongs_to:Target` | FK `TargetID uint` + `Target target.Target` | DTO exposes `target_id`; admin renders a picker |
+| `has_many:Target` | `[]target.Target` | model-only, read via the admin; the child must carry the parent FK |
+| `many_to_many:Target` | `[]target.Target` (`many2many:` join) | model-only, edited via the admin |
 
 `types.Decimal` is the framework money/decimal type. Because a single Go type
 flows through the model, the handler DTO, the OpenAPI/TS contract, and GORM,
@@ -360,9 +363,24 @@ field **without** `:required` becomes a pointer (`*time.Time` / `*types.Decimal`
 on the model and DTO, because those value types cannot be submitted empty — the
 generated forms send `null` for a blank optional value. Enum values are
 case-sensitive and validated at the API layer; no database CHECK constraint is
-added (portable across SQLite/PostgreSQL/MySQL). Relationships
-(`belongs_to`/`has_many`/`many_to_many`) are tracked separately in
-[#222](https://github.com/gombit-dev/gombit/issues/222) part (b).
+added (portable across SQLite/PostgreSQL/MySQL).
+
+**Relations** use `name:kind:Target`, where `Target` is a model in
+`internal/<target>/` (imported as `target.Target`). `belongs_to` generates the
+foreign key (`EngineID uint`) plus the association and exposes `engine_id` in
+the REST DTO; `has_many` and `many_to_many` generate the association on the model
+(the join table for m2m), not in the thin REST handler. In the admin,
+`many_to_many` is editable through a relation widget and `has_many` is shown
+read-only. A `has_many` child model must carry the parent foreign key itself
+(e.g. `RentalID`); the generator does not edit the child (that would be an
+import cycle).
+
+Self-referential relations (a target equal to the resource itself, e.g.
+`parent:belongs_to:Category` on `Category`) are not supported yet and are
+rejected at parse time: a self-referential `belongs_to` needs a nullable foreign
+key so a tree root stores `NULL` rather than `0` (which references no row and
+fails the self-FK), and `has_many` / `many_to_many` onto the same model need
+explicit join keys. Point relations at a different feature-package for now.
 
 Example:
 
@@ -370,7 +388,9 @@ Example:
 gombit make resource Rental \
   price:decimal:required \
   starts_at:time \
-  status:enum(requested,confirmed,active,returned,cancelled)
+  status:enum(requested,confirmed,active,returned,cancelled) \
+  engine:belongs_to:Engine \
+  warehouses:many_to_many:Warehouse
 ```
 
 ### Idempotency
