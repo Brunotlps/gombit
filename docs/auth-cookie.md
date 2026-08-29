@@ -84,6 +84,31 @@ token is mirrored in both the `Set-Cookie` header and the JSON body
 (`{"data": {"csrf_token": "..."}}`) so the SPA does not need to parse
 `document.cookie` itself.
 
+### Exempting non-browser endpoints (webhooks)
+
+A **webhook** or other server-to-server `POST` cannot participate in the
+double-submit defense — the caller has no `gombit_csrf` cookie to echo — so in
+cookie mode it would always 403. Opt those exact paths out with
+`framework.WithCSRFExemptPaths`:
+
+```go
+app, err := framework.New(
+    framework.WithConfig(cfg),
+    framework.WithDatabase(db),
+    framework.WithCSRFExemptPaths("/api/v1/webhooks/github"),
+)
+```
+
+Paths match the request path **exactly**, including the API prefix. On an
+exempt path the middleware skips enforcement for unsafe methods (safe methods
+still mint the cookie). CSRF is a defense against *ambient-credential* forgery
+by a browser; an exempt endpoint carries no session cookie, so dropping CSRF
+there loses nothing — **but it now has no authentication of its own**, so the
+handler **must** authenticate the caller another way, e.g. verifying an
+HMAC signature over the raw body (`X-Hub-Signature-256` for GitHub). Keep the
+exempt list to the specific webhook paths; never exempt a route that relies on
+the session cookie.
+
 ## Endpoints
 
 Same paths and D10 envelopes as Bearer mode, but the request/response shape

@@ -53,6 +53,7 @@ type App struct {
 	stopHooks        []Hook
 	shutdownTimeout  time.Duration
 	embeddedFrontend fs.FS
+	csrfExemptPaths  []string
 
 	mu     sync.RWMutex
 	server *http.Server
@@ -106,7 +107,7 @@ func New(options ...Option) (*App, error) {
 		})
 	}
 	if app.router == nil {
-		router, err := newRouter(app.cfg)
+		router, err := newRouter(app.cfg, app.csrfExemptPaths)
 		if err != nil {
 			return nil, err
 		}
@@ -236,6 +237,20 @@ func WithShutdownTimeout(timeout time.Duration) Option {
 			return errors.New("framework: shutdown timeout must be positive")
 		}
 		app.shutdownTimeout = timeout
+		return nil
+	}
+}
+
+// WithCSRFExemptPaths marks exact request paths that opt out of cookie-mode
+// CSRF enforcement on unsafe methods. Use it for non-browser endpoints that
+// cannot participate in the double-submit defense — webhooks, server-to-server
+// callbacks — which must authenticate themselves by other means (e.g. HMAC
+// signature verification). Paths match the request path exactly, including the
+// API prefix, e.g. "/api/v1/webhooks/github". No effect in JWT mode or when a
+// custom router is supplied via WithRouter.
+func WithCSRFExemptPaths(paths ...string) Option {
+	return func(app *App) error {
+		app.csrfExemptPaths = append(app.csrfExemptPaths, paths...)
 		return nil
 	}
 }
@@ -482,14 +497,14 @@ func syncLogger(logger *zap.Logger) error {
 	return nil
 }
 
-func newRouter(cfg config.Config) (*gin.Engine, error) {
+func newRouter(cfg config.Config, csrfExemptPaths []string) (*gin.Engine, error) {
 	router := gin.New()
 	if err := configureTrustedProxies(router, cfg.HTTP.TrustedProxies); err != nil {
 		return nil, err
 	}
 
 	metrics := newHTTPMetrics()
-	router.Use(middlewareHandlers(runtimeMiddlewareStack(cfg, metrics))...)
+	router.Use(middlewareHandlers(runtimeMiddlewareStack(cfg, metrics, csrfExemptPaths))...)
 	router.GET("/livez", func(c *gin.Context) {
 		c.JSON(http.StatusOK, gin.H{
 			"data": gin.H{
@@ -521,7 +536,7 @@ func configureTrustedProxies(engine *gin.Engine, proxies []string) error {
 	return nil
 }
 
-func runtimeMiddlewareStack(cfg config.Config, metrics *httpMetrics) []namedMiddleware {
+func runtimeMiddlewareStack(cfg config.Config, metrics *httpMetrics, csrfExemptPaths []string) []namedMiddleware {
 	stack := []namedMiddleware{
 		{name: "recovery", handler: gin.Recovery()},
 		{name: "request_context", handler: requestContextMiddleware()},
@@ -537,7 +552,7 @@ func runtimeMiddlewareStack(cfg config.Config, metrics *httpMetrics) []namedMidd
 	// application feature routes registered later via app.Router(). See
 	// docs/auth-cookie.md.
 	if cfg.Auth.Enabled() && cfg.Auth.EffectiveMode() == config.AuthModeCookie {
-		stack = append(stack, namedMiddleware{name: "csrf", handler: auth.CSRFMiddleware(cfg)})
+		stack = append(stack, namedMiddleware{name: "csrf", handler: auth.CSRFMiddleware(cfg, csrfExemptPaths...)})
 	}
 	stack = append(stack, namedMiddleware{name: "request_timeout", handler: requestTimeoutMiddleware(cfg.HTTP.RequestTimeout)})
 	return stack
