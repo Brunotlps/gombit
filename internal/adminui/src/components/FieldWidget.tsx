@@ -5,8 +5,7 @@ import { Checkbox, FormControlLabel, MenuItem, TextField } from "@mui/material";
 
 import { useApiClient } from "../api/client";
 import { useCatalog } from "../app/providers";
-import { apiResourcePath } from "../api/paths";
-import type { FieldMeta, Row } from "../api/types";
+import type { FieldMeta } from "../api/types";
 import { isHasMany, isManyToMany, toIdList } from "../fields";
 
 type Props = {
@@ -106,12 +105,14 @@ function RelationMultiSelect({ field, control, disabled }: Props) {
     let cancelled = false;
     void (async () => {
       try {
-        const env = await client.get<Row[]>(apiResourcePath(slug), { per_page: relationPageSize });
+        // Use the data-plane list endpoint (client.list -> /api/v1/admin/...);
+        // a bare /admin/{slug} hits the SPA embed fallback, not the API.
+        const env = await client.list(slug, { per_page: relationPageSize });
         if (cancelled) {
           return;
         }
         const rows = Array.isArray(env.data) ? env.data : [];
-        setTruncated(rows.length >= relationPageSize);
+        setTruncated((env.meta?.total ?? rows.length) > relationPageSize);
         setOptions(
           rows
             .filter((r) => r[pkField] != null)
