@@ -4,15 +4,6 @@
       "CreateWidgetBody": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/CreateWidgetBody.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "color": {
             "description": "Optional display color",
             "examples": [
@@ -56,15 +47,6 @@
       "ErrorModel": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/ErrorModel.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "detail": {
             "description": "A human-readable explanation specific to this occurrence of the problem.",
             "examples": [
@@ -120,15 +102,6 @@
       "SuccessEnvelopeListWidget": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/SuccessEnvelopeListWidget.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "data": {
             "items": {
               "$ref": "#/components/schemas/Widget"
@@ -147,15 +120,6 @@
       "SuccessEnvelopeWidget": {
         "additionalProperties": false,
         "properties": {
-          "$schema": {
-            "description": "A URL to the JSON Schema for this object.",
-            "examples": [
-              "https://example.com/SuccessEnvelopeWidget.json"
-            ],
-            "format": "uri",
-            "readOnly": true,
-            "type": "string"
-          },
           "data": {
             "$ref": "#/components/schemas/Widget"
           }

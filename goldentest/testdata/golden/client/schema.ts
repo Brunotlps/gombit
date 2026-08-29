@@ -47,22 +47,10 @@ export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
         DataMetaListSampleWidgetPageMeta: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/DataMetaListSampleWidgetPageMeta.json
-             */
-            readonly $schema?: string;
             data: components["schemas"]["SampleWidget"][] | null;
             meta?: components["schemas"]["PageMeta"];
         };
         DataSampleWidget: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/DataSampleWidget.json
-             */
-            readonly $schema?: string;
             data: components["schemas"]["SampleWidget"];
         };
         ErrorBody: {
@@ -74,12 +62,6 @@ export interface components {
             request_id?: string;
         };
         ErrorEnvelope: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/ErrorEnvelope.json
-             */
-            readonly $schema?: string;
             error: components["schemas"]["ErrorBody"];
         };
         PageMeta: {
@@ -91,12 +73,6 @@ export interface components {
             total: number;
         };
         SampleCreateBody: {
-            /**
-             * Format: uri
-             * @description A URL to the JSON Schema for this object.
-             * @example https://example.com/SampleCreateBody.json
-             */
-            readonly $schema?: string;
             /** @example green */
             color?: string;
             /** @example Second widget */

@@ -174,8 +174,15 @@ error to 404 or every `Create()` error to 500.
 Gin middleware may also emit D10 errors that are not §41 categories.
 `contract.PayloadTooLarge` (`error.code` `payload_too_large`, HTTP 413) is
 used by XSS JSON sanitizer buffering (see [`docs/router.md`](router.md));
-cookie CSRF uses `Authorization` (403). Do not treat 413 as a handler-level
-§41 category or add it to the table above.
+cookie CSRF uses `Authorization` (403). An unsupported method on a known
+route yields `contract.MethodNotAllowed` (`error.code` `method_not_allowed`,
+HTTP 405) with an `Allow` header listing the methods the path supports — the
+router distinguishes this from a genuinely unknown path (404). Do not treat
+413 or 405 as a handler-level §41 category or add them to the table above.
+
+Response bodies carry only the D10 shape (`{data, meta?}` / `{error}`). Huma's
+`$schema` link property is disabled at the adapter, so neither responses nor the
+generated TS request types include a `$schema` key.
 
 `WithFields` attaches D10 `fields` without forcing the code to
 `validation_error` (for example a `conflict` with a field detail). Huma tag
