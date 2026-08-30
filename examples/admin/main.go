@@ -8,6 +8,8 @@ import (
 	"github.com/gombit-dev/gombit/auth"
 	"github.com/gombit-dev/gombit/config"
 	"github.com/gombit-dev/gombit/database"
+	"github.com/gombit-dev/gombit/examples/admin/internal/part"
+	"github.com/gombit-dev/gombit/examples/admin/internal/warehouse"
 	"github.com/gombit-dev/gombit/examples/admin/internal/widget"
 	"github.com/gombit-dev/gombit/framework"
 )
@@ -34,16 +36,25 @@ func main() {
 		_ = db.Close()
 		log.Fatal(err)
 	}
-	if err := widget.RegisterAdmin(app); err != nil {
-		_ = db.Close()
-		log.Fatal(err)
+	// Register every model. Order is not significant: the belongs_to /
+	// many_to_many pickers resolve against the target slug at request time (the
+	// SPA calls the target's list endpoint), not at Register time.
+	for _, register := range []func(*framework.App) error{
+		warehouse.RegisterAdmin,
+		part.RegisterAdmin,
+		widget.RegisterAdmin,
+	} {
+		if err := register(app); err != nil {
+			_ = db.Close()
+			log.Fatal(err)
+		}
 	}
 
 	app.OnStart(func(ctx context.Context) error {
 		if err := auth.Migrate(db.DB); err != nil {
 			return err
 		}
-		if err := db.AutoMigrate(&widget.Widget{}); err != nil {
+		if err := db.AutoMigrate(&warehouse.Warehouse{}, &part.Part{}, &widget.Widget{}); err != nil {
 			return err
 		}
 		svc, err := auth.NewService(db.DB, cfg)
