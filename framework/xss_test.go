@@ -23,19 +23,74 @@ func TestStripHTML(t *testing.T) {
 		in   string
 		want string
 	}{
+		// Baseline: tags stripped, closed dangerous elements discarded.
 		{name: "plain", in: "hello", want: "hello"},
 		{name: "script discarded", in: `<script>alert(1)</script>hi`, want: "hi"},
 		{name: "bold stripped", in: `<b>hi</b>`, want: "hi"},
 		{name: "img stripped", in: `x<img src=x onerror=alert(0)>y`, want: "xy"},
-		{name: "unclosed script fail-closed", in: `<script src=x>alert(1)`, want: ""},
 		{name: "nested markup", in: `<div><b>a</b><i>b</i></div>`, want: "ab"},
-		// Incomplete "<"+letter is not a tag (golang.org/x/net/html would
-		// otherwise eat the rest of the string: "a<b" → "a").
+		{name: "empty closed skip element", in: `<script></script>`, want: ""},
+
+		// #201: a dangerous element that never closes strips the tag but
+		// keeps the text that follows, instead of truncating the value.
+		{name: "unclosed script keeps trailing text", in: `<script src=x>alert(1)`, want: "alert(1)"},
+		{name: "unclosed script keeps surrounding text", in: `hi<script>bye`, want: "hibye"},
+		{name: "unclosed textarea after closed script", in: `<script>a</script>b<textarea>c`, want: "bc"},
+		{name: "doubled unclosed skip of same tag", in: `<script><script>x`, want: "x"},
+		{name: "doubly unclosed wrapper still recovers the innermost plain text", in: `<textarea><script>alert(1)`, want: "alert(1)"},
+		{name: "self-closing skip tag does not enter skip mode", in: `<script/>after`, want: "after"},
+		{name: "stray end tag closes the real open, extra one is a no-op", in: `<textarea>a</textarea></textarea>b`, want: "b"},
+
+		// The recovered text is re-parsed, so a dangerous element that does
+		// find its own close inside it still loses its content — an unclosed
+		// ancestor is not a way to smuggle a closed one's body out.
+		{name: "nested skip: inner closes, its content is still discarded", in: `<script><textarea>x</textarea>y`, want: "y"},
+		{name: "nested skip, outer closes, all content discarded", in: `<script><textarea>x</textarea>y</script>z`, want: "z"},
+		{name: "unclosed wrapper: inner script that does close is still fully discarded", in: `<textarea><script>alert(1)</script>`, want: ""},
+
+		// ...and live markup in that recovered text is stripped, never
+		// emitted. completeHTMLTag must not gate this path: it misses a ">"
+		// inside a quoted attribute value, and an attribute with no leading
+		// whitespace (`<script/src=x>`, which HTML5 reads as `<script src=x>`).
+		// Every case here is markup that regexp rejects or truncates and the
+		// tokenizer parses correctly.
+		{name: "unclosed wrapper cannot smuggle a live img onerror tag", in: `<noscript>x<img src=x onerror=alert(1)>y`, want: "xy"},
+		{name: "unclosed wrapper: quoted attribute containing > does not defeat the strip", in: `<noscript><img src=x onerror="if(1>0){alert(document.cookie)}">`, want: ""},
+		{name: "unclosed wrapper: slash-separated start tag is still stripped", in: `<textarea><script/src=x>body`, want: "body"},
+		{name: "unclosed wrapper: slash-separated non-skip tag is still stripped", in: `<script><img/src=x>y`, want: "y"},
+		{name: "unclosed wrapper: slash-separated tag with an event handler is still stripped", in: `<noscript><img/src=x onerror=alert(1)>y`, want: "y"},
+		{name: "unclosed wrapper: slash-separated tag with a quoted > is still stripped", in: `<textarea><img/src=x onerror="if(1>0){alert(1)}">z`, want: "z"},
+		{name: "unclosed wrapper: closed slash-separated skip element discards its body", in: `<textarea><script/src=x>a</script>b`, want: "b"},
+
+		// object/embed are ordinary elements, not raw text, so they really
+		// can nest: each open skip element needs its own checkpoint into
+		// skipBuf, which one shared depth counter cannot provide.
+		{name: "nested object, inner closes, outer closes: all discarded", in: `<object><object>x</object>y</object>z`, want: "z"},
+		{name: "nested object, inner closes, outer never closes: inner content still discarded", in: `<object><object>x</object>y`, want: "y"},
+
+		// maxUnclosedSkipRecursion (4) bounds the re-tokenizing, which would
+		// otherwise be quadratic in a chain this deep. Past the cap the tail
+		// reverts to the pre-#201 discard.
+		{name: "unclosed chain within the recursion budget still recovers text", in: `<script><script><script><script>x`, want: "x"},
+		{name: "unclosed chain past the recursion budget falls back to discard", in: `<script><script><script><script><script><script>x`, want: ""},
+
+		// #118: `"<" + letter` without a complete tag is left alone, or the
+		// tokenizer would eat the rest of the string ("a<b" → "a").
 		{name: "comparison a<b", in: "a<b", want: "a<b"},
 		{name: "comparison a<b>c without real tag name", in: "a < b", want: "a < b"},
 		{name: "less-than number", in: "score < 10", want: "score < 10"},
 		{name: "greater-than only", in: "a>b", want: "a>b"},
 		{name: "complete tag still stripped", in: "foo <bar> baz", want: "foo  baz"},
+		// That protection covers the submitted string only. Text recovered
+		// from a raw-text element is unparsed markup, not something the user
+		// typed, so it is re-parsed in full: `"<" + letter` through the next
+		// ">" is a tag there, which can swallow more than a stray bracket.
+		{name: "comparison text inside raw text is not protected by the #118 gate", in: `<textarea>a<b`, want: "a"},
+		{name: "code-like text inside raw text loses what parses as a tag", in: `<script>if (a<b && c>d) return`, want: "if (ad) return"},
+		// Only `"<" + letter` opens a tag, so the common comparison shapes
+		// still survive the re-parse intact.
+		{name: "comparison before a number inside raw text survives", in: `<textarea>score <10`, want: "score <10"},
+		{name: "spaced comparison inside raw text survives", in: `<textarea>price < 10`, want: "price < 10"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

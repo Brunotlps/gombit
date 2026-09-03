@@ -241,38 +241,97 @@ func sanitizeJSONValue(value any, fieldName string) bool {
 	return changed
 }
 
-// stripHTML removes HTML tags and discards content inside dangerous elements.
-// Plain strings without "<" or ">" are returned unchanged. Strings that
-// contain "<" / ">" but no complete tag (no closing ">", e.g. "a<b") are
-// also returned unchanged so comparison text is not truncated.
+// stripHTML removes HTML tags and discards the content of dangerous elements
+// (xssSkipElementContent). Strings holding no "<" or ">" are returned
+// unchanged, and so are strings that hold them without forming a complete tag
+// ("a<b"): golang.org/x/net/html reads `"<" + letter` as a start tag and would
+// silently eat the rest of the string (issue #118).
 //
-// An unclosed skip element (for example `<script src=x>...`) discards the
-// remainder of the string — fail-closed for truncated markup. Self-closing
-// skip tags do not enter skip mode.
+// An unclosed dangerous element strips the tag but keeps the text that follows
+// (issue #201); stripHTMLUnclosed does that work.
 func stripHTML(s string) string {
 	if !strings.ContainsAny(s, "<>") {
 		return s
 	}
+	// The #118 gate covers the string the user actually submitted, and only
+	// that one — stripHTMLUnclosed explains why recovered skip content must
+	// never be admitted by it.
 	if !completeHTMLTag.MatchString(s) {
+		return s
+	}
+	return stripHTMLUnclosed(s, maxUnclosedSkipRecursion)
+}
+
+const maxUnclosedSkipRecursion = 4
+
+// stripHTMLUnclosed tokenizes s, buffering the text of open skip elements so
+// that one which never closes can flush that text instead of dropping it
+// (issue #201), and re-tokenizes what it flushes, at most budget times.
+//
+// Text seen while skipDepth > 0 goes to skipBuf. skipStarts is a stack of
+// offsets into skipBuf, one per open skip element, each recording skipBuf's
+// length when that element opened; the element's matching close pops the
+// offset and truncates back to it, discarding exactly that element's content
+// however deep it sits inside other still-open skip elements. A single shared
+// depth counter is not enough: script/style/textarea/noscript/iframe are HTML
+// "raw text" elements and can never really nest, but object and embed are
+// ordinary elements and can — in `<object><object>x</object>y`, the inner
+// close must discard "x" whether or not the outer one ever closes.
+//
+// Whatever is still buffered at EOF goes back through this function rather
+// than being written out verbatim. It has to: a raw-text element missing its
+// closing tag makes the tokenizer hand back everything up to EOF as one
+// opaque, never-parsed TextToken, so the buffer can still hold complete tags.
+// Re-tokenizing applies the same skip logic to them, so a dangerous element
+// that does find its close inside the buffer is still discarded.
+//
+// That second pass must use the tokenizer, never completeHTMLTag. The regexp
+// is the #118 gate for user-typed comparison text, not a stripper; as an
+// admission gate it would emit live every tag it fails to recognize, and it
+// misses two classes the tokenizer handles — an attribute not preceded by
+// whitespace (`<script/src=x>`, where HTML5 reconsumes the "/" and reads
+// `<script src=x>`), and a ">" inside a quoted attribute value
+// (`onerror="if(1>0){...}"`), which ends the match early and leaks the rest of
+// the tag as text. Anything still holding "<" or ">" is therefore
+// re-tokenized unconditionally, which costs the #118 protection inside
+// recovered text: every `"<" + letter` through the next ">" goes, so
+// `<script>if (a<b && c>d) return` yields "if (ad) return". That is markup
+// smuggled through a raw-text element, not the comparison text #118 covers.
+//
+// budget bounds the re-tokenizing: each unclosed raw-text tag buys one more
+// round on a string only one tag shorter, so an unbounded chain
+// (`<script><script>...`) would be quadratic in input size. Past the cap the
+// tail reverts to the pre-#201 default and is discarded; legitimate content
+// does not nest this deep.
+func stripHTMLUnclosed(s string, budget int) string {
+	if !strings.ContainsAny(s, "<>") {
 		return s
 	}
 
 	var b strings.Builder
 	b.Grow(len(s))
+	var skipBuf []byte
+	var skipStarts []int
 	tokenizer := html.NewTokenizer(strings.NewReader(s))
 	skipDepth := 0
 	for {
 		switch tokenizer.Next() {
 		case html.ErrorToken:
+			if skipDepth > 0 && budget > 0 {
+				b.WriteString(stripHTMLUnclosed(string(skipBuf), budget-1))
+			}
 			return b.String()
 		case html.TextToken:
 			if skipDepth == 0 {
 				b.Write(tokenizer.Text())
+			} else {
+				skipBuf = append(skipBuf, tokenizer.Text()...)
 			}
 		case html.StartTagToken:
 			name, _ := tokenizer.TagName()
 			if _, skip := xssSkipElementContent[string(name)]; skip {
 				skipDepth++
+				skipStarts = append(skipStarts, len(skipBuf))
 			}
 		case html.SelfClosingTagToken:
 			// Self-closing skip tags have no body; do not raise skipDepth.
@@ -280,6 +339,9 @@ func stripHTML(s string) string {
 			name, _ := tokenizer.TagName()
 			if _, skip := xssSkipElementContent[string(name)]; skip && skipDepth > 0 {
 				skipDepth--
+				start := skipStarts[len(skipStarts)-1]
+				skipStarts = skipStarts[:len(skipStarts)-1]
+				skipBuf = skipBuf[:start]
 			}
 		}
 	}
