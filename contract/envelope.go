@@ -1,5 +1,7 @@
 package contract
 
+import "github.com/gombit-dev/gombit/types"
+
 // Data is the D10 success envelope without meta: {"data": ...}.
 type Data[T any] struct {
 	Data T `json:"data"`
@@ -30,6 +32,26 @@ type PageMeta struct {
 	Page    int   `json:"page"`
 	PerPage int   `json:"per_page"`
 	Total   int64 `json:"total"`
+}
+
+// ListMeta is PageMeta plus optional server-side aggregates. It is the meta
+// type for list endpoints whose resource declares aggregatable fields (issue
+// #272): a request may ask for SUM/AVG/MIN/MAX over declared numeric columns
+// via ?aggregate=sum:total,avg:total, computed over the same filtered/searched
+// set as the list, before pagination.
+//
+// Aggregates is keyed "<func>:<field>" (e.g. "sum:total") with types.Decimal
+// values — canonical decimal strings. Precision follows the driver: exact for a
+// decimal SUM and all integer aggregates on Postgres/MySQL (and integer SUM/MIN/
+// MAX on SQLite); SQLite computes AVG and fractional decimal SUM in float, so
+// those may round. See the database package's Aggregate and docs/contract.md.
+// When no ?aggregate= is requested the map is nil and omitempty drops it, so the
+// response is byte-identical to a PageMeta envelope.
+type ListMeta struct {
+	Page       int                      `json:"page"`
+	PerPage    int                      `json:"per_page"`
+	Total      int64                    `json:"total"`
+	Aggregates map[string]types.Decimal `json:"aggregates,omitempty" doc:"Server-side aggregates keyed \"<func>:<field>\", present when ?aggregate= is requested"`
 }
 
 const (
