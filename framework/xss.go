@@ -185,15 +185,64 @@ func sanitizeJSONBody(c *gin.Context) {
 	c.Request.Header.Set("Content-Length", strconv.FormatInt(int64(len(cleaned)), 10))
 }
 
+// jsonMediaType is the only media type the sanitizer decodes. Its length
+// doubles as the fast-path prefix window below.
+const jsonMediaType = "application/json"
+
+// isJSONContentType reports whether contentType names the JSON media type.
+//
+// mime.ParseMediaType is not free: it allocates its parameter map
+// unconditionally on the success path (mime/mediatype.go), so even the exact
+// string "application/json" costs one alloc on every POST/PUT/PATCH carrying a
+// body. The fast path below skips that parse for the two shapes that carry
+// essentially all real traffic (issue #269).
+//
+// The fast path never returns false, and it returns true only where the media
+// type is unambiguously "application/json": the whole string, or everything
+// before the ';' that ends the subtype. Everything else is delegated to
+// isJSONContentTypeSlow, which stays the only place a content type is actually
+// decided — a longer subtype ("application/jsonx"), a structured suffix
+// ("application/vnd.api+json"), a cased spelling with no parameters
+// ("Application/JSON", accepted there via ToLower), leading whitespace, a tab
+// delimiter, an unparseable tail ("application/json bogus"), and the empty
+// string. FuzzIsJSONContentType asserts that the two never disagree.
 func isJSONContentType(contentType string) bool {
+	if contentType == jsonMediaType {
+		return true
+	}
+	// Only ';' is accepted as the delimiter. It is the one byte that ends the
+	// subtype under RFC 2045 grammar, so "application/json" before it is the
+	// media type no matter how the parameters that follow are spelled — even
+	// malformed ones, which the slow path still accepts. A space does not carry
+	// that guarantee: "application/json bogus" fails the media-type parse
+	// outright and survives only through the prefix fallback below, so
+	// accelerating it would make this path depend on that fallback's exact
+	// looseness. It is left to the slow path deliberately.
+	if len(contentType) > len(jsonMediaType) &&
+		contentType[len(jsonMediaType)] == ';' &&
+		strings.EqualFold(contentType[:len(jsonMediaType)], jsonMediaType) {
+		return true
+	}
+	return isJSONContentTypeSlow(contentType)
+}
+
+// isJSONContentTypeSlow is the full-parse decision, unchanged from before the
+// fast path landed: it stays the single place a content type is actually
+// decided.
+func isJSONContentTypeSlow(contentType string) bool {
 	if contentType == "" {
 		return false
 	}
 	mediaType, _, err := mime.ParseMediaType(contentType)
 	if err != nil {
-		return strings.HasPrefix(strings.ToLower(strings.TrimSpace(contentType)), "application/json")
+		// A malformed parameter ("application/json; charset", no "=") fails the
+		// parse even though the media type itself is fine, so fall back to a
+		// prefix match and still sanitize those bodies. Deliberately fail-safe:
+		// an over-eager yes only costs a decode, and an undecodable body is
+		// handed to the handler untouched (sanitizeJSONBody above).
+		return strings.HasPrefix(strings.ToLower(strings.TrimSpace(contentType)), jsonMediaType)
 	}
-	return strings.EqualFold(mediaType, "application/json")
+	return strings.EqualFold(mediaType, jsonMediaType)
 }
 
 // sanitizeJSONValue strips HTML from every string in value in place and reports
