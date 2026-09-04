@@ -126,6 +126,92 @@ func TestSanitizeJSONValueNestedArray(t *testing.T) {
 	}
 }
 
+func TestIsJSONContentType(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		in   string
+		want bool
+	}{
+		{name: "exact", in: "application/json", want: true},
+		{name: "charset parameter", in: "application/json; charset=utf-8", want: true},
+		{name: "charset parameter without space", in: "application/json;charset=utf-8", want: true},
+		{name: "space before parameters", in: "application/json ; charset=utf-8", want: true},
+		{name: "uppercase", in: "Application/JSON", want: true},
+		{name: "uppercase with parameter", in: "APPLICATION/JSON; charset=utf-8", want: true},
+		{name: "leading space", in: " application/json", want: true},
+		{name: "trailing tab", in: "application/json\t", want: true},
+		// Fails checkMediaTypeDisposition outright and is accepted only by the
+		// prefix fallback. Pinned because that is precisely why the fast path
+		// does not accelerate a space delimiter: this case must keep being
+		// decided by isJSONContentTypeSlow alone.
+		{name: "unparseable tail after subtype", in: "application/json bogus", want: true},
+		{name: "longer subtype", in: "application/jsonx", want: false},
+		{name: "structured suffix", in: "application/vnd.api+json", want: false},
+		{name: "not json", in: "text/plain", want: false},
+		{name: "form encoded", in: "application/x-www-form-urlencoded", want: false},
+		{name: "empty", in: "", want: false},
+		// A parameter with no "=" fails mime.ParseMediaType, so the fallback
+		// prefix-matches the raw header and still sanitizes the body.
+		{name: "malformed parameter on json", in: "application/json; charset", want: true},
+		// Characterization, not a guarantee: the same fallback also accepts a
+		// subtype the exact-parse path rejects ("application/jsonx" alone is
+		// false above). Fail-safe, per isJSONContentTypeSlow. Pinned here so
+		// the issue #269 fast path cannot shift it by accident — not because
+		// the asymmetry is desirable.
+		{name: "malformed parameter widens the match", in: "application/jsonx; charset", want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := isJSONContentType(tt.in)
+			if got != tt.want {
+				t.Fatalf("isJSONContentType(%q) = %v, want %v", tt.in, got, tt.want)
+			}
+			// Issue #269's contract: the fast path only short-circuits, it never
+			// decides a case differently from the full parse behind it.
+			if slow := isJSONContentTypeSlow(tt.in); got != slow {
+				t.Fatalf("isJSONContentType(%q) = %v but isJSONContentTypeSlow = %v: fast path diverged", tt.in, got, slow)
+			}
+		})
+	}
+}
+
+// FuzzIsJSONContentType is the machine-checked form of issue #269's acceptance
+// criterion. That criterion is a universal claim — the fast path must return
+// what the full parse would return for *any* header value — and a finite table
+// is evidence, not proof. Keeping isJSONContentTypeSlow as a callable function
+// is what makes the differential property expressible at all; the seed corpus
+// alone runs under a plain `go test`.
+func FuzzIsJSONContentType(f *testing.F) {
+	seeds := []string{
+		"application/json",
+		"application/json; charset=utf-8",
+		"APPLICATION/JSON;charset=utf-8",
+		"application/json ; charset=utf-8",
+		"application/json bogus",
+		"application/json; charset",
+		"application/jsonx",
+		"application/jsonx; charset",
+		"application/vnd.api+json",
+		" application/json",
+		"application/json\t",
+		"application/json;",
+		"application/json; a=b; a=c",
+		"text/plain",
+		"",
+	}
+	for _, seed := range seeds {
+		f.Add(seed)
+	}
+	f.Fuzz(func(t *testing.T, contentType string) {
+		if fast, slow := isJSONContentType(contentType), isJSONContentTypeSlow(contentType); fast != slow {
+			t.Fatalf("isJSONContentType(%q) = %v, isJSONContentTypeSlow(%q) = %v: fast path diverged", contentType, fast, contentType, slow)
+		}
+	})
+}
+
 func TestSanitizeJSONBodyInvalidJSONPassthrough(t *testing.T) {
 	t.Parallel()
 
