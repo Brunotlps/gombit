@@ -14,10 +14,21 @@ change reviewed, and the bar a change has to clear.
 | Go | 1.25+ (`go.mod` is authoritative) | everything |
 | A C toolchain | gcc/clang, or Xcode CLT on macOS | SQLite (`mattn/go-sqlite3` is cgo-only) |
 | Node.js | 22+ | frontend, admin UI, TypeScript client generation |
-| Atlas | Community Edition | `gombit db makemigrations` / `migrate` and the migration tests |
+| Atlas | Community Edition, pinned by CI | `gombit db makemigrations` / `migrate` and the migration tests |
 | Docker | any recent | PostgreSQL and MySQL test matrices |
 
 ```bash
+curl -sSf https://atlasgo.sh | sh -s -- --community
+```
+
+That installs whatever `latest` resolves to, which has been a canary build
+before now. CI pins Atlas through the `ATLAS_VERSION` variable at the top of
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml), and the installer reads
+that same variable — so to match CI when reproducing a migration or conformance
+failure, export the pinned version first:
+
+```bash
+export ATLAS_VERSION=<the version pinned in ci.yml>
 curl -sSf https://atlasgo.sh | sh -s -- --community
 ```
 
