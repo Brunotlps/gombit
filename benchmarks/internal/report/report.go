@@ -139,7 +139,7 @@ func writeStatusBanner(b *strings.Builder, meta metadata.Metadata) {
 		b.WriteString("> ## ⚠️ UNPUBLISHABLE DEVELOPMENT RUN\n>\n")
 		b.WriteString("> Generated from a **dirty working tree** (uncommitted changes), so these ")
 		b.WriteString("numbers are **not reproducible** and must not be cited. Commit the tree and ")
-		b.WriteString("re-run the suite (`" + rerunChain + "`) before publishing.\n\n")
+		b.WriteString("re-run " + rerunAdvice(meta) + " before publishing.\n\n")
 	}
 	if reduced, diffs := reducedFrom(meta); reduced {
 		b.WriteString("> ### Reduced development snapshot\n>\n")
@@ -157,6 +157,36 @@ func writeStatusBanner(b *strings.Builder, meta metadata.Metadata) {
 // lands in a separate slice / PR #204); the banner must only name targets that
 // exist in the tree it ships in, or its remediation command 404s.
 const rerunChain = "make benchmark-crud-all benchmark-footprint benchmark-micro benchmark-report"
+
+// groupTargets maps a measurement group to the make target that reproduces it.
+var groupTargets = map[string]string{
+	metadata.GroupMicrobench: "benchmark-micro",
+	metadata.GroupCRUD:       "benchmark-crud-all",
+	metadata.GroupFootprint:  "benchmark-footprint",
+}
+
+// rerunAdvice names the smallest set of targets that actually has to be re-run.
+// Once provenance is per group, telling someone to re-run the hours-long CRUD
+// sweep because the seconds-long microbenchmark was measured dirty would
+// re-impose the exact cost coupling per-group provenance removed (issue #266).
+// It falls back to the whole chain whenever the dirt cannot be pinned to
+// specific groups — a dirty top-level record, or a pre-groups snapshot — since
+// then any group may be affected and over-prescribing is the safe direction.
+func rerunAdvice(meta metadata.Metadata) string {
+	if meta.GitDirty != nil && *meta.GitDirty {
+		return "the suite (`" + rerunChain + "`)"
+	}
+	var targets []string
+	for _, g := range metadata.KnownGroups {
+		if p, ok := meta.Groups[g]; ok && p.GitDirty != nil && *p.GitDirty {
+			targets = append(targets, groupTargets[g])
+		}
+	}
+	if len(targets) == 0 {
+		return "the suite (`" + rerunChain + "`)"
+	}
+	return "the affected group(s) (`make " + strings.Join(targets, " ") + " benchmark-report`)"
+}
 
 // reducedFrom reports whether meta's protocol is narrower than (differs from)
 // CanonicalProtocol, and a human-readable list of the differing dimensions. A

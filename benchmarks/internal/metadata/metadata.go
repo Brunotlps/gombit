@@ -83,10 +83,31 @@ func (p Provenance) Empty() bool {
 // toolchain; the rest are run parameters the orchestrator supplies via
 // Options because they are choices, not facts about the machine.
 //
-// The top-level discovered fields describe the collection that wrote them.
-// Groups is the per-measurement-group refinement: which commit and host each
-// table's data actually came from, so refreshing one group does not restamp
-// the others (issue #266).
+// # Which field answers "when was this measured?"
+//
+// Groups does, per measurement group. It is the authoritative provenance: each
+// group records the commit, host and toolchain ITS OWN data was produced at,
+// and the report captions each table from it.
+//
+// The top-level discovered fields (Timestamp, GitCommit, GitDirty, the host
+// block, GoVersion) describe the collection that wrote them — in practice the
+// last whole-snapshot producer, which is the CRUD sweep. They are deliberately
+// NOT a summary of the newest group, and a group-only stamp does not advance
+// them (see StampGroup). Two consequences worth stating plainly:
+//
+//   - After a group-only refresh, the top-level GitCommit is OLDER than the
+//     refreshed group's. That is correct, not stale bookkeeping: it still names
+//     the state the whole-snapshot collection ran at, and re-pointing it at the
+//     microbenchmark's commit would make the CRUD and footprint tables claim a
+//     commit and host they never ran on — trading one wrong caption for another.
+//   - Ask Groups, never the top level, when you want a specific table's
+//     provenance. GroupProvenance does this for you, falling back to the top
+//     level only for snapshots written before Groups existed, where the fallback
+//     is exact because one run produced everything.
+//
+// The shape is additive, so SchemaVersion stays 1 and older readers keep
+// parsing: they see the flat fields they always saw, plus a `groups` object
+// they can ignore.
 type Metadata struct {
 	SchemaVersion int    `json:"schema_version"`
 	Timestamp     string `json:"timestamp"`

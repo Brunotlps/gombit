@@ -174,6 +174,28 @@ by one run, on one host, under one toolchain.
 A snapshot with no `groups` key predates this and is read with its top-level
 block as every group's provenance, which for a single-run snapshot is exact.
 
+#### Reading `metadata.json`: `groups` is authoritative, the top level is not
+
+`groups.<name>` is the answer to "when, where and at which commit was *this
+table* measured". The flat top-level fields (`git_commit`, `timestamp`,
+`cpu_model`, `go_version`, …) describe the last **whole-snapshot** collection,
+which in practice is the CRUD sweep.
+
+A group-only refresh — `make benchmark-micro`, `make benchmark-footprint` —
+stamps its own group and **deliberately leaves the top-level fields alone**. So
+after refreshing the microbenchmark you will see a top-level `git_commit` that
+is *older* than `groups.microbench.git_commit`. That is correct. Advancing it
+would make the CRUD and footprint tables — whose rows did not change — claim a
+commit and a host they never ran on, which is the same misattribution in the
+opposite direction.
+
+The practical rule: **read `groups.<name>` for a table's provenance; read the
+top level only for the shared run parameters** (database, resource limits, sweep
+protocol, load generator) and as the fallback for pre-`groups` snapshots.
+
+The shape is additive, so `schema_version` stays `1`: a reader that predates
+`groups` still sees exactly the flat fields it always saw.
+
 ## How not to interpret these results
 
 - **This is not a language or framework leaderboard.** The apps differ in
