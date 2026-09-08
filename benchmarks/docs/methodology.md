@@ -196,6 +196,21 @@ protocol, load generator) and as the fallback for pre-`groups` snapshots.
 The shape is additive, so `schema_version` stays `1`: a reader that predates
 `groups` still sees exactly the flat fields it always saw.
 
+#### Known limitation: the `crud` group is per-sweep, not per-app
+
+The CRUD table is six independently produced app runs, but they share one
+`groups.crud` entry: `run-crud` stamps the group once per app and the last
+writer wins. Re-run a single app after a full sweep — `make benchmark-crud-all
+APPS=gombit` — and the table is captioned with that re-run's commit while the
+other five rows still come from the earlier sweep.
+
+This is the same misattribution described above, one level finer, and it is not
+new: the top-level block behaved this way before per-group provenance existed.
+It is left as-is deliberately, because the provenance granularity matches the
+report's granularity — one caption per table. Refreshing a single app and then
+publishing the table is therefore **not** a supported operation the way
+refreshing the whole microbenchmark group is; re-run the whole sweep.
+
 ## How not to interpret these results
 
 - **This is not a language or framework leaderboard.** The apps differ in

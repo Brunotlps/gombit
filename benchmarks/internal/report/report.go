@@ -383,7 +383,12 @@ func writeFootprintTable(b *strings.Builder, prints []footprint.Footprint, meta 
 // produced at three different commits is the misattribution issue #266 fixes.
 func writeMethodology(b *strings.Builder, meta metadata.Metadata) {
 	b.WriteString("### How these were measured\n\n")
-	if meta.GitCommit == "" && meta.CPUModel == "" && len(meta.Groups) == 0 {
+	// Keyed on what this block actually prints, not on the commit/host it no
+	// longer prints. A snapshot that has group provenance but no shared run
+	// parameters — what `make benchmark-micro` alone produces in a fresh
+	// OUT_DIR — has nothing to say here, and must say so rather than render a
+	// row of em-dashes with a "0 trials" that reads as a measured fact.
+	if !hasSharedRunParameters(meta) {
 		b.WriteString("_Run metadata not yet recorded._\n\n")
 		return
 	}
@@ -398,6 +403,21 @@ func writeMethodology(b *strings.Builder, meta metadata.Metadata) {
 		seconds(meta.DurationSeconds), seconds(meta.WarmupSeconds))
 	fmt.Fprintf(b, "- **Load generator:** %s. Full method: [benchmarks/docs/methodology.md](benchmarks/docs/methodology.md).\n\n",
 		orDash(meta.BenchmarkTool))
+}
+
+// hasSharedRunParameters reports whether anything the methodology block prints
+// was recorded: the database, the resource limits, the sweep protocol, or the
+// load generator.
+func hasSharedRunParameters(meta metadata.Metadata) bool {
+	return meta.PostgresVersion != "" ||
+		meta.ResourceLimits != "" ||
+		len(meta.ResourceLimitsByFramework) > 0 ||
+		meta.PostgresResourceLimits != "" ||
+		meta.BenchmarkTool != "" ||
+		len(meta.Concurrency) > 0 ||
+		meta.Trials != 0 ||
+		meta.DurationSeconds != 0 ||
+		meta.WarmupSeconds != 0
 }
 
 // writeResourceLimits renders the applied cgroup budgets. The authoritative

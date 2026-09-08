@@ -111,9 +111,15 @@ func TestRenderCRUDCarriesTailsAndCoVFlag(t *testing.T) {
 	if !strings.Contains(out, "not* a quality score") {
 		t.Errorf("footprint caption should not call CPU 'lower is better':\n%s", out)
 	}
+	// Host, commit and toolchain are published per table (writeProvenance); the
+	// shared block carries only what the whole snapshot has in common.
+	for _, want := range []string{"Test CPU", "8 logical CPUs", "kernel 5.15-wsl", "abcdef123456"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("table provenance caption missing %q\n%s", want, out)
+		}
+	}
 	for _, want := range []string{
-		"Test CPU", "8 logical CPUs", "kernel 5.15-wsl", "abcdef123456", "postgres:16.4-alpine",
-		"methodology.md",
+		"postgres:16.4-alpine", "methodology.md",
 		// The actual protocol must be printed so a reduced run can't wear the canonical sweep.
 		"concurrency 1/10/100 VUs, 3 trials × 10s each (warm-up 3s)",
 	} {
@@ -417,6 +423,26 @@ func TestDirtyTopLevelStillPrescribesTheWholeChain(t *testing.T) {
 		if banner := bannerOf(Render(nil, nil, nil, meta)); !strings.Contains(banner, rerunChain) {
 			t.Errorf("%s: must fall back to the full rerun chain:\n%s", name, banner)
 		}
+	}
+}
+
+// A snapshot that has group provenance but no shared run parameters — what
+// `make benchmark-micro` alone produces in a fresh OUT_DIR — must say so, not
+// render a row of em-dashes whose "0 trials" reads as a measured fact.
+func TestMethodologyIsHonestWhenOnlyGroupProvenanceExists(t *testing.T) {
+	meta := metadata.StampGroup(metadata.Metadata{}, metadata.GroupMicrobench,
+		metadata.Provenance{GitCommit: "abc123def456", CPUModel: "Dev CPU", Timestamp: "2026-09-08T00:00:00Z"})
+	out := Render(nil, nil, taxLadder(), meta)
+
+	if !strings.Contains(out, "_Run metadata not yet recorded._") {
+		t.Errorf("a snapshot with no shared run parameters must say so:\n%s", out)
+	}
+	if strings.Contains(out, "0 trials") {
+		t.Errorf("an unrecorded protocol must not render as a measured 0:\n%s", out)
+	}
+	// The table itself still gets its caption — the group provenance is real.
+	if !strings.Contains(out, "abc123def456") {
+		t.Errorf("the framework-tax caption must still name the group's commit:\n%s", out)
 	}
 }
 

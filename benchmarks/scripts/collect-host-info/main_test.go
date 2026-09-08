@@ -160,3 +160,53 @@ func TestParseKeyValsFailsClosed(t *testing.T) {
 		}
 	}
 }
+
+// The no -group path rewrites the whole snapshot, but must still carry every
+// group's provenance forward. Dropping it would silently re-point all three
+// README captions at this collection's host via the report's legacy fallback —
+// and this command measured nothing (issue #266).
+func TestCarryGroupsPreservesProvenanceAcrossAWholeSnapshotRewrite(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "metadata.json")
+	clean := false
+	writeFixture(t, path, metadata.Metadata{
+		SchemaVersion: metadata.SchemaVersion,
+		Groups: map[string]metadata.Provenance{
+			metadata.GroupMicrobench: {GitCommit: "aaaa1111", CPUModel: "Micro Host", GitDirty: &clean},
+			metadata.GroupCRUD:       {GitCommit: "bbbb2222", CPUModel: "CRUD Host", GitDirty: &clean},
+		},
+	})
+
+	collected := metadata.Metadata{
+		SchemaVersion: metadata.SchemaVersion,
+		GitCommit:     "cccc3333",
+		CPUModel:      "Metadata-only Host",
+		Groups:        map[string]metadata.Provenance{},
+	}
+	got, err := carryGroups(path, collected)
+	if err != nil {
+		t.Fatalf("carryGroups: %v", err)
+	}
+
+	if got.Groups[metadata.GroupMicrobench].GitCommit != "aaaa1111" ||
+		got.Groups[metadata.GroupCRUD].GitCommit != "bbbb2222" {
+		t.Errorf("group provenance was destroyed by a whole-snapshot rewrite: %+v", got.Groups)
+	}
+	// This collection's own fields still win — it is a rewrite, not a merge.
+	if got.GitCommit != "cccc3333" || got.CPUModel != "Metadata-only Host" {
+		t.Errorf("the collection's own top-level block should be written: %+v", got)
+	}
+}
+
+// A fresh OUT_DIR has nothing to carry; the rewrite must succeed rather than
+// fail on the missing file.
+func TestCarryGroupsOnMissingFileIsNotAnError(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "metadata.json")
+	got, err := carryGroups(path, metadata.Metadata{GitCommit: "cccc3333"})
+	if err != nil {
+		t.Fatalf("carryGroups on a missing file: %v", err)
+	}
+	if len(got.Groups) != 0 {
+		t.Errorf("Groups = %v, want empty", got.Groups)
+	}
+}

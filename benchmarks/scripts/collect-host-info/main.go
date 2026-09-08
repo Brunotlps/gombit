@@ -16,6 +16,10 @@
 //
 //	go run ./benchmarks/scripts/collect-host-info -group microbench \
 //	  -out benchmarks/results/latest/metadata.json
+//
+// Either way, per-group provenance already on disk survives: this command
+// measures nothing itself, so it never deletes the record of measurements other
+// targets did run.
 package main
 
 import (
@@ -82,11 +86,17 @@ func main() {
 		Trials:            *trials,
 	})
 
-	if *group != "" {
+	// Whichever path runs, what is already on disk survives it: a group stamp
+	// changes only its own group, and a whole-snapshot rewrite still carries
+	// every group's provenance forward.
+	switch {
+	case *group != "":
 		m, err = stampGroup(*out, *group, m)
-		if err != nil {
-			fatalf("%v", err)
-		}
+	case *out != "":
+		m, err = carryGroups(*out, m)
+	}
+	if err != nil {
+		fatalf("%v", err)
 	}
 
 	if err := write(*out, m); err != nil {
@@ -98,26 +108,62 @@ func main() {
 // of the snapshot already at path. Everything else in that file — the top-level
 // block, the CRUD run parameters, the other groups — is preserved verbatim, so
 // a cheap single-group refresh cannot re-caption measurements it did not run.
+func stampGroup(path, group string, collected metadata.Metadata) (metadata.Metadata, error) {
+	existing, err := readSnapshot(path)
+	if err != nil {
+		return metadata.Metadata{}, err
+	}
+	return metadata.StampGroup(existing, group, collected.Provenance()), nil
+}
+
+// carryGroups preserves the per-group provenance already on disk across a
+// whole-snapshot rewrite (the no -group path, `make benchmark-metadata`).
+//
+// collect-host-info measures nothing itself, so it has no standing to delete
+// the record of measurements other targets did run. Dropping Groups here would
+// not merely lose data: the report's fallback treats a group with no entry as
+// "this snapshot predates per-group provenance, so the top-level block IS its
+// provenance", which is only exact when one run produced everything. After a
+// wipe that premise is false but the fallback still fires, re-captioning all
+// three tables with the host and commit of a collection that measured nothing
+// (issue #266).
+//
+// It deliberately preserves ONLY Groups. This target's existing behavior of
+// replacing the version maps and limit verdicts is untouched here — changing
+// that is a separate question from the provenance invariant.
+func carryGroups(path string, collected metadata.Metadata) (metadata.Metadata, error) {
+	existing, err := readSnapshot(path)
+	if err != nil {
+		return metadata.Metadata{}, err
+	}
+	for name, prov := range existing.Groups {
+		collected = metadata.StampGroup(collected, name, prov)
+	}
+	return collected, nil
+}
+
+// readSnapshot returns the metadata.json already at path.
 //
 // A missing file is not an error: the first target to run in a fresh OUT_DIR
-// stamps its group into an otherwise-empty record. A file that exists but does
-// not parse IS an error — silently replacing a corrupt snapshot would discard
-// whatever hours-long run produced it.
-func stampGroup(path, group string, collected metadata.Metadata) (metadata.Metadata, error) {
-	existing := metadata.Metadata{SchemaVersion: metadata.SchemaVersion}
+// starts a new record. A file that exists but does not parse IS an error —
+// silently replacing a corrupt snapshot would discard whatever hours-long run
+// produced it.
+func readSnapshot(path string) (metadata.Metadata, error) {
 	// path is the operator-supplied -out flag, not untrusted input — G304 does
 	// not apply.
 	f, err := os.Open(path) //nolint:gosec
-	switch {
-	case err == nil:
-		defer func() { _ = f.Close() }()
-		if existing, err = metadata.ReadJSON(f); err != nil {
-			return metadata.Metadata{}, fmt.Errorf("read %s: %w", path, err)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return metadata.Metadata{SchemaVersion: metadata.SchemaVersion}, nil
 		}
-	case !os.IsNotExist(err):
 		return metadata.Metadata{}, fmt.Errorf("read %s: %w", path, err)
 	}
-	return metadata.StampGroup(existing, group, collected.Provenance()), nil
+	defer func() { _ = f.Close() }()
+	existing, err := metadata.ReadJSON(f)
+	if err != nil {
+		return metadata.Metadata{}, fmt.Errorf("read %s: %w", path, err)
+	}
+	return existing, nil
 }
 
 func fatalf(format string, args ...any) {
