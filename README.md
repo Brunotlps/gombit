@@ -214,12 +214,12 @@ Per-request overhead of each layer on the same machine for the **validated typed
 
 | stack | ns/op | B/op | allocs/op | vs net/http |
 | --- | ---: | ---: | ---: | ---: |
-| net/http | 2427 | 1643 | 18 | 1.0× |
-| Gin | 4722 | 1864 | 26 | 1.9× |
-| Huma + Gin | 7576 | 2059 | 31 | 3.1× |
-| Gombit | 22974 | 7525 | 93 | 9.5× |
+| net/http | 1729 | 2097 | 21 | 1.0× |
+| Gin | 3118 | 2323 | 29 | 1.8× |
+| Huma + Gin | 4453 | 2313 | 37 | 2.6× |
+| Gombit | 7738 | 5711 | 59 | 4.5× |
 
-_Measured at `88442ae706f4`, 2026-08-27T21:57:34Z — Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz, 8 logical CPUs, 7.2 GiB RAM (linux/amd64, kernel 7.0.0-30-generic), go1.27.0._
+_Measured at `788460777111`, 2026-09-08T22:00:14Z — 11th Gen Intel(R) Core(TM) i5-11400H @ 2.70GHz, 12 logical CPUs, 7.5 GiB RAM (linux/amd64, kernel 7.1.1-76070101-generic), go1.26.1._
 
 ### PostgreSQL CRUD read — `GET /api/projects?page=1&limit=20`
 
