@@ -146,6 +146,34 @@ published table always carries the conditions it was produced under — and the
 report labels it a reduced or unpublishable run when those conditions fall short
 of the canonical protocol or a clean tree.
 
+### Provenance is recorded per measurement group
+
+`results/latest/` looks like one artifact but holds three independently produced
+groups, and they cost wildly different amounts to produce:
+
+| group | target | cost |
+| --- | --- | --- |
+| `microbench` (framework tax) | `make benchmark-micro` | ~40s, pure Go, no Docker |
+| `crud` (PostgreSQL CRUD read) | `make benchmark-crud-all` | hours: 6 containers × the full sweep |
+| `footprint` (operational footprint) | `make benchmark-footprint` | minutes, Docker |
+
+Each target stamps its own `git_commit`, timestamp, host and Go toolchain under
+`metadata.json`'s `groups` key, and the report captions each table with that
+group's provenance. A single snapshot-wide commit could not describe all three
+without misattributing at least two: a cheap microbenchmark refresh would either
+have to claim the hours-long CRUD sweep ran at the new commit, or publish its own
+fresh numbers under the old one.
+
+The Go toolchain is part of a group's provenance because it moves the numbers on
+its own. The framework-tax ladder's `net/http` rung is stdlib plus the harness —
+no Gombit code can affect it — and it has still shifted by 3 allocs/op between
+toolchain releases with no source change. **Never splice a refreshed row onto
+stale baseline rows:** the four rungs are only comparable when they were produced
+by one run, on one host, under one toolchain.
+
+A snapshot with no `groups` key predates this and is read with its top-level
+block as every group's provenance, which for a single-run snapshot is exact.
+
 ## How not to interpret these results
 
 - **This is not a language or framework leaderboard.** The apps differ in
@@ -161,9 +189,11 @@ of the canonical protocol or a clean tree.
   load generator competes with the app for the same cores. High-concurrency
   rows measure "app + k6 sharing 2 vCPU", which is deliberately conservative but
   not the same as "app alone on 2 vCPU".
-- **It is one machine, one run.** A single snapshot on one host. The committed
-  `metadata.json` names that host; numbers from different hardware are not
-  comparable. Re-run on your own hardware before drawing operational
+- **It is one machine per table, and the tables are separate runs.** Each table
+  is a single snapshot on one host; the committed `metadata.json` names that host
+  per measurement group and the README caption repeats it under each table.
+  Numbers from different hardware — including from a *different table here* — are
+  not comparable. Re-run on your own hardware before drawing operational
   conclusions.
 - **Memory is the container working set**, from `docker stats` (cgroup usage
   minus reclaimable cache) — a deployment-footprint proxy for RSS, not a precise

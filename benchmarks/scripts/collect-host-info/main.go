@@ -5,6 +5,17 @@
 // as flags by the orchestrator that knows them.
 //
 //	go run ./benchmarks/scripts/collect-host-info -out benchmarks/results/latest/metadata.json
+//
+// With -group it switches to stamp mode: it records the current commit, host
+// and toolchain as that measurement group's provenance in an existing
+// metadata.json and changes nothing else. That is what lets a target which
+// produces only one of the three groups — `make benchmark-micro`,
+// `make benchmark-footprint` — say when and where its own numbers came from
+// without restamping the hours-long CRUD sweep it shares the file with
+// (issue #266):
+//
+//	go run ./benchmarks/scripts/collect-host-info -group microbench \
+//	  -out benchmarks/results/latest/metadata.json
 package main
 
 import (
@@ -20,6 +31,7 @@ import (
 
 func main() {
 	out := flag.String("out", "", "output file for metadata.json (default: stdout)")
+	group := flag.String("group", "", "stamp this measurement group's provenance into an existing -out file, leaving every other field untouched ("+strings.Join(metadata.KnownGroups, "|")+")")
 	postgres := flag.String("postgres-version", "", "PostgreSQL version under test")
 	benchmarkTool := flag.String("benchmark-tool", "", "load generator name+version, e.g. 'k6 0.55.0'")
 	resourceLimits := flag.String("resource-limits", "", "documented resource limits for this run")
@@ -30,6 +42,19 @@ func main() {
 	frameworkVersions := flag.String("framework-versions", "", "comma-separated framework=version pairs, e.g. 'gombit=v0.1.0,gin-gorm=v1.11.0'")
 	runtimeVersions := flag.String("runtime-versions", "", "comma-separated runtime=version pairs, e.g. 'go=1.25.7,node=24'")
 	flag.Parse()
+
+	// Fail closed on an unknown group: a typo'd -group would otherwise write a
+	// phantom entry no reader looks at, leaving the table it meant to stamp
+	// silently on the stale top-level fallback — the exact failure mode
+	// per-group provenance exists to end.
+	if *group != "" {
+		if !metadata.ValidGroup(*group) {
+			fatalf("-group %q: must be one of %s", *group, strings.Join(metadata.KnownGroups, ", "))
+		}
+		if *out == "" {
+			fatalf("-group requires -out: stamping a group means updating an existing metadata.json in place")
+		}
+	}
 
 	concurrencyLevels, err := parseIntList(*concurrency)
 	if err != nil {
@@ -45,6 +70,7 @@ func main() {
 	}
 
 	m := metadata.Collect(context.Background(), metadata.Options{
+		Group:             *group,
 		PostgresVersion:   *postgres,
 		FrameworkVersions: frameworks,
 		RuntimeVersions:   runtimes,
@@ -56,9 +82,42 @@ func main() {
 		Trials:            *trials,
 	})
 
+	if *group != "" {
+		m, err = stampGroup(*out, *group, m)
+		if err != nil {
+			fatalf("%v", err)
+		}
+	}
+
 	if err := write(*out, m); err != nil {
 		fatalf("%v", err)
 	}
+}
+
+// stampGroup reduces a full collection to just its group entry, applied on top
+// of the snapshot already at path. Everything else in that file — the top-level
+// block, the CRUD run parameters, the other groups — is preserved verbatim, so
+// a cheap single-group refresh cannot re-caption measurements it did not run.
+//
+// A missing file is not an error: the first target to run in a fresh OUT_DIR
+// stamps its group into an otherwise-empty record. A file that exists but does
+// not parse IS an error — silently replacing a corrupt snapshot would discard
+// whatever hours-long run produced it.
+func stampGroup(path, group string, collected metadata.Metadata) (metadata.Metadata, error) {
+	existing := metadata.Metadata{SchemaVersion: metadata.SchemaVersion}
+	// path is the operator-supplied -out flag, not untrusted input — G304 does
+	// not apply.
+	f, err := os.Open(path) //nolint:gosec
+	switch {
+	case err == nil:
+		defer func() { _ = f.Close() }()
+		if existing, err = metadata.ReadJSON(f); err != nil {
+			return metadata.Metadata{}, fmt.Errorf("read %s: %w", path, err)
+		}
+	case !os.IsNotExist(err):
+		return metadata.Metadata{}, fmt.Errorf("read %s: %w", path, err)
+	}
+	return metadata.StampGroup(existing, group, collected.Provenance()), nil
 }
 
 func fatalf(format string, args ...any) {

@@ -21,6 +21,18 @@ func crudRow(fw string, conc, trial int, rps, p50, p95, p99 float64) result.Resu
 	}
 }
 
+// taxLadder is a complete four-rung headline-scenario ladder — the minimum the
+// framework-tax table will publish (a missing rung renders "incomplete"
+// instead).
+func taxLadder() []microbench.Row {
+	return []microbench.Row{
+		{Stack: "nethttp", Scenario: "valid-post", NsPerOp: []float64{800}},
+		{Stack: "gin", Scenario: "valid-post", NsPerOp: []float64{900}},
+		{Stack: "huma", Scenario: "valid-post", NsPerOp: []float64{1000}},
+		{Stack: "gombit", Scenario: "valid-post", NsPerOp: []float64{3000}},
+	}
+}
+
 func TestRenderCRUDCarriesTailsAndCoVFlag(t *testing.T) {
 	results := []result.Result{
 		// Both frameworks at the headline concurrency (100). gin-gorm is stable;
@@ -254,6 +266,108 @@ func TestEmptyProtocolIsNotReduced(t *testing.T) {
 	out := Render(nil, nil, nil, metadata.Metadata{})
 	if strings.Contains(out, "Reduced development snapshot") {
 		t.Errorf("empty render must not carry the reduced banner:\n%s", out)
+	}
+}
+
+// Each table must be captioned with the commit and host that produced IT. The
+// three groups are measured by different targets at different costs, so a
+// single global commit line vouched for numbers that never ran at it — the
+// misattribution issue #266 fixes.
+func TestEachTableCarriesItsOwnProvenance(t *testing.T) {
+	meta := canonicalMeta()
+	clean := false
+	meta.Groups = map[string]metadata.Provenance{
+		metadata.GroupMicrobench: {
+			GitCommit: "1111111111111111", Timestamp: "2026-09-08T10:00:00Z", GitDirty: &clean,
+			CPUModel: "Micro CPU", LogicalCPUs: 12, GoVersion: "go1.26.1", OS: "linux", Arch: "amd64", Kernel: "7.1-dev",
+		},
+		metadata.GroupCRUD: {
+			GitCommit: "2222222222222222", Timestamp: "2026-08-27T21:57:34Z", GitDirty: &clean,
+			CPUModel: "CRUD CPU", LogicalCPUs: 8, GoVersion: "go1.25.7", OS: "linux", Arch: "amd64", Kernel: "7.0-old",
+		},
+		metadata.GroupFootprint: {
+			GitCommit: "3333333333333333", Timestamp: "2026-08-28T09:00:00Z", GitDirty: &clean,
+			CPUModel: "Footprint CPU", LogicalCPUs: 8, GoVersion: "go1.25.7", OS: "linux", Arch: "amd64", Kernel: "7.0-old",
+		},
+	}
+	out := Render(
+		[]result.Result{crudRow("gombit", 100, 1, 1000, 5, 10, 20)},
+		[]footprint.Footprint{{Framework: "gombit", Variant: footprint.VariantContainer}},
+		taxLadder(),
+		meta,
+	)
+
+	// Each caption must appear under its own table, in table order.
+	sections := []struct{ heading, commit, cpu string }{
+		{"### Framework tax", "1111111111", "Micro CPU"},
+		{"### PostgreSQL CRUD read", "2222222222", "CRUD CPU"},
+		{"### Operational footprint", "3333333333", "Footprint CPU"},
+	}
+	for i, s := range sections {
+		start := strings.Index(out, s.heading)
+		if start < 0 {
+			t.Fatalf("missing heading %q:\n%s", s.heading, out)
+		}
+		end := len(out)
+		if i+1 < len(sections) {
+			end = strings.Index(out, sections[i+1].heading)
+		}
+		section := out[start:end]
+		if !strings.Contains(section, s.commit) || !strings.Contains(section, s.cpu) {
+			t.Errorf("%s must be captioned with %s / %s:\n%s", s.heading, s.commit, s.cpu, section)
+		}
+		for _, other := range sections {
+			if other.commit != s.commit && strings.Contains(section, other.commit) {
+				t.Errorf("%s carries another group's commit %s:\n%s", s.heading, other.commit, section)
+			}
+		}
+	}
+	// The old single global commit line must be gone — reintroducing it is the
+	// defect, not a cosmetic regression.
+	if strings.Contains(out, "**Commit / date:**") {
+		t.Errorf("the snapshot-wide commit line must not return:\n%s", out)
+	}
+}
+
+// A snapshot written before per-group provenance has no groups entry, and its
+// top-level block IS every group's provenance — one run produced everything —
+// so it must keep rendering with that commit under all three tables.
+func TestLegacySnapshotFallsBackToTopLevelProvenance(t *testing.T) {
+	meta := canonicalMeta()
+	meta.Timestamp = "2026-08-27T21:57:34Z"
+	meta.GoVersion = "go1.27.0"
+	out := Render(
+		[]result.Result{crudRow("gombit", 100, 1, 1000, 5, 10, 20)},
+		[]footprint.Footprint{{Framework: "gombit", Variant: footprint.VariantContainer}},
+		taxLadder(),
+		meta,
+	)
+	if n := strings.Count(out, "abcdef123456"); n != 3 {
+		t.Errorf("legacy snapshot must caption all three tables with its one commit, got %d:\n%s", n, out)
+	}
+	if !strings.Contains(out, "go1.27.0") {
+		t.Errorf("legacy caption must still name the toolchain:\n%s", out)
+	}
+}
+
+// A table with no data has no provenance to state — it renders the honest "not
+// yet recorded" line and nothing else.
+func TestPlaceholderTablesCarryNoProvenance(t *testing.T) {
+	out := Render(nil, nil, nil, canonicalMeta())
+	if strings.Contains(out, "_Measured at ") {
+		t.Errorf("a snapshot with no data must not caption its placeholders:\n%s", out)
+	}
+}
+
+// One group measured against uncommitted source taints the whole block: a
+// reader skimming a table cannot tell which group produced it.
+func TestDirtyGroupStampsUnpublishableEvenWhenTopLevelIsClean(t *testing.T) {
+	meta := canonicalMeta()
+	dirty := true
+	meta.Groups = map[string]metadata.Provenance{metadata.GroupMicrobench: {GitDirty: &dirty}}
+	out := Render(nil, nil, nil, meta)
+	if !strings.Contains(out, "UNPUBLISHABLE DEVELOPMENT RUN") {
+		t.Errorf("a group measured on a dirty tree must stamp the block unpublishable:\n%s", out)
 	}
 }
 

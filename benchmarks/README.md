@@ -107,7 +107,13 @@ honest "not applied" default unless you pass
 
 `go run ./benchmarks/scripts/collect-host-info` prints the reproducibility
 metadata (git SHA + dirty state, OS/kernel/arch, CPU/RAM, Go/Docker/Compose
-versions, plus the run parameters passed as flags) as `metadata.json`. The
+versions, plus the run parameters passed as flags) as `metadata.json`. With
+`-group <microbench|crud|footprint>` it instead stamps just that measurement
+group's provenance into an existing `metadata.json`, leaving every other field
+alone — that is how a target producing only one of the three groups records when
+and where its own numbers came from without restamping the others (see
+[methodology.md](docs/methodology.md#provenance-is-recorded-per-measurement-group)).
+The
 canonical results shape lives in
 [`benchmarks/internal/result`](internal/result) (JSON + CSV encoders); the
 Markdown report is always generated from that, never the other way around.
