@@ -70,8 +70,10 @@ the root README's `## Performance` block (and `summary.md`) from those files, an
 runs the same regenerate-then-diff on every PR. The full method and the required
 "How not to interpret these results" caveats live in
 [docs/methodology.md](docs/methodology.md). A committed `results/latest/`
-snapshot already backs the README numbers, but from a **reduced run on a single
-dev host** (recorded in `metadata.json` and printed in the README block); still
+snapshot already backs the README numbers, but from **reduced runs on dev
+hosts** — each measurement group records its own commit, host and toolchain
+under `metadata.json`'s `groups` key, and the README prints it beneath that
+group's table, so the tables need not share a host; still
 scoped to later phases: the embedded-Gombit single-binary footprint variant, the
 other `make benchmark-*` workloads, extending `fairness_test.go` to all six, and
 re-running the full canonical sweep on dedicated hardware. The CI integration is
