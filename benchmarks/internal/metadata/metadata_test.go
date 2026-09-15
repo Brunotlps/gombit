@@ -140,37 +140,9 @@ func TestCollectGitStatusErrorIsUnknownNotClean(t *testing.T) {
 	}
 }
 
-// A collection that names its measurement group must file the very same
-// commit/host/toolchain facts under that group, so a group-aware reader and a
-// flat-shape reader never disagree about what ran.
-func TestCollectFilesProvenanceUnderItsGroup(t *testing.T) {
-	run := func(_ context.Context, name string, args ...string) (string, error) {
-		if name == "git" && args[0] == "rev-parse" {
-			return "cafebabe0001", nil
-		}
-		return "", nil
-	}
-	m := Collect(context.Background(), Options{Run: run, Group: GroupMicrobench})
-
-	prov, ok := m.Groups[GroupMicrobench]
-	if !ok {
-		t.Fatalf("Groups is missing the %q entry: %+v", GroupMicrobench, m.Groups)
-	}
-	if prov != m.Provenance() {
-		t.Errorf("group provenance %+v differs from the top-level block %+v", prov, m.Provenance())
-	}
-	if prov.GoVersion != runtime.Version() {
-		t.Errorf("group GoVersion = %q, want %q", prov.GoVersion, runtime.Version())
-	}
-	if len(m.Groups) != 1 {
-		t.Errorf("a single-group collection must file exactly one entry, got %v", m.Groups)
-	}
-}
-
-// The whole-snapshot path (`make benchmark-metadata`) attributes its collection
-// to no group. Groups must still serialize as {} rather than null: "no group
-// recorded" is a collected fact, not a dropped field.
-func TestCollectWithoutGroupRecordsEmptyNonNilGroups(t *testing.T) {
+// Collect files no unit entry: stamping is owned by whichever producer wrote the
+// rows. A collection that measured nothing must claim nothing.
+func TestCollectFilesNoUnitAndKeepsGroupsNonNil(t *testing.T) {
 	m := Collect(context.Background(), Options{Run: func(context.Context, string, ...string) (string, error) {
 		return "", nil
 	}})
@@ -178,77 +150,75 @@ func TestCollectWithoutGroupRecordsEmptyNonNilGroups(t *testing.T) {
 		t.Fatal("Groups = nil, want an empty non-nil map")
 	}
 	if len(m.Groups) != 0 {
-		t.Errorf("Groups = %v, want empty when no group is named", m.Groups)
+		t.Errorf("Groups = %v, want empty", m.Groups)
+	}
+	if m.Provenance().GoVersion != runtime.Version() {
+		t.Errorf("Provenance().GoVersion = %q, want %q", m.Provenance().GoVersion, runtime.Version())
 	}
 }
 
-// The invariant the whole per-group design rests on: a cheap single-group
-// refresh records its own provenance and touches nothing else. If this ever
-// regresses, refreshing the seconds-long microbenchmark silently re-captions
-// the hours-long CRUD sweep it shares metadata.json with (issue #266).
-func TestStampGroupLeavesEveryOtherFieldAlone(t *testing.T) {
-	clean := false
-	crud := Provenance{GitCommit: "aaaa1111", CPUModel: "Old Bench Host", GitDirty: &clean}
-	existing := Metadata{
-		SchemaVersion:             SchemaVersion,
-		Timestamp:                 "2026-08-27T21:57:34Z",
-		GitCommit:                 "aaaa1111",
-		CPUModel:                  "Old Bench Host",
-		PostgresVersion:           "postgres:16.4-alpine",
-		FrameworkVersions:         map[string]string{"rails": "8.1.3.1"},
-		ResourceLimitsByFramework: map[string]string{"rails": "enforced"},
-		PostgresResourceLimits:    "enforced",
-		DurationSeconds:           30,
-		WarmupSeconds:             10,
-		Concurrency:               []int{1, 10, 100, 500, 1000},
-		Trials:                    5,
-		Groups:                    map[string]Provenance{GroupCRUD: crud},
-	}
+// THE regression this round exists for. Every one of these data files merges
+// row-wise and subset runs are supported, so re-measuring ONE unit must leave
+// every sibling's provenance exactly as it was. A group-wide stamp here is what
+// let `APPS=gombit make benchmark-footprint` relabel five untouched rows.
+func TestStampUnitRefreshesOneUnitAndLeavesSiblingsAlone(t *testing.T) {
+	commitA := Provenance{GitCommit: "aaaa1111", CPUModel: "Bench Host", Timestamp: "2026-09-01T00:00:00Z"}
+	apps := []string{"django", "gin-gorm", "gombit", "laravel", "nestjs", "rails"}
 
-	got := StampGroup(existing, GroupMicrobench, Provenance{GitCommit: "bbbb2222", CPUModel: "New Dev Host"})
+	meta := Metadata{SchemaVersion: SchemaVersion, PostgresVersion: "postgres:16.4-alpine", Trials: 5}
+	for _, app := range apps {
+		meta = StampUnit(meta, GroupFootprint, app, commitA)
+	}
+	// Another group must be untouched too.
+	meta = StampUnit(meta, GroupCRUD, "gombit", commitA)
 
-	if got.Groups[GroupCRUD] != crud {
-		t.Errorf("the CRUD group was disturbed: %+v, want %+v", got.Groups[GroupCRUD], crud)
+	// `APPS=gombit make benchmark-footprint` at a later commit.
+	commitB := Provenance{GitCommit: "bbbb2222", CPUModel: "Dev Host", Timestamp: "2026-09-08T00:00:00Z"}
+	got := StampUnit(meta, GroupFootprint, "gombit", commitB)
+
+	if got.Groups[GroupFootprint]["gombit"].GitCommit != "bbbb2222" {
+		t.Errorf("the re-measured unit = %+v, want the new commit", got.Groups[GroupFootprint]["gombit"])
 	}
-	if got.Groups[GroupMicrobench].GitCommit != "bbbb2222" {
-		t.Errorf("microbench group = %+v, want the stamped commit", got.Groups[GroupMicrobench])
+	for _, app := range apps {
+		if app == "gombit" {
+			continue
+		}
+		if c := got.Groups[GroupFootprint][app].GitCommit; c != "aaaa1111" {
+			t.Errorf("untouched footprint unit %q = %q, want the original commit — a subset run relabelled a row it never measured", app, c)
+		}
 	}
-	// Every field the microbench run knows nothing about must be untouched.
-	if got.GitCommit != "aaaa1111" || got.Timestamp != "2026-08-27T21:57:34Z" || got.CPUModel != "Old Bench Host" {
-		t.Errorf("the top-level block was restamped: %+v", got)
+	if got.Groups[GroupCRUD]["gombit"].GitCommit != "aaaa1111" {
+		t.Errorf("a sibling GROUP was disturbed: %+v", got.Groups[GroupCRUD])
 	}
-	if got.Trials != 5 || got.DurationSeconds != 30 || len(got.Concurrency) != 5 {
-		t.Errorf("the CRUD protocol was overwritten: %+v", got)
+	// Shared run parameters and the top-level block stay put.
+	if got.PostgresVersion != "postgres:16.4-alpine" || got.Trials != 5 || got.GitCommit != "" {
+		t.Errorf("stamping touched fields it does not own: %+v", got)
 	}
-	if got.PostgresVersion != "postgres:16.4-alpine" || got.PostgresResourceLimits != "enforced" ||
-		got.FrameworkVersions["rails"] != "8.1.3.1" || got.ResourceLimitsByFramework["rails"] != "enforced" {
-		t.Errorf("shared run parameters were overwritten: %+v", got)
-	}
-	// The input must not be mutated in place — callers hold the value they read.
-	if len(existing.Groups) != 1 {
-		t.Errorf("StampGroup mutated its argument's Groups: %v", existing.Groups)
+	// The input value must not be mutated in place.
+	if meta.Groups[GroupFootprint]["gombit"].GitCommit != "aaaa1111" {
+		t.Error("StampUnit mutated its argument")
 	}
 }
 
 // Merge is the multi-app path: each run-crud invocation writes the whole record,
-// so an earlier app's contributions — including its group provenance — must
+// so an earlier app's contributions — including its unit provenance — must
 // survive the next app's write.
-func TestMergeUnionsMapsAndKeepsEveryGroup(t *testing.T) {
+func TestMergeUnionsMapsAndKeepsEveryUnit(t *testing.T) {
 	existing := Metadata{
 		FrameworkVersions:         map[string]string{"rails": "8.1.3.1"},
 		RuntimeVersions:           map[string]string{"ruby": "3.3.12"},
 		ResourceLimitsByFramework: map[string]string{"rails": "partial: memory unset"},
 		PostgresResourceLimits:    "enforced",
-		Groups: map[string]Provenance{
-			GroupCRUD:      {GitCommit: "aaaa1111"},
-			GroupFootprint: {GitCommit: "cccc3333"},
+		Groups: map[string]map[string]Provenance{
+			GroupCRUD:      {"rails": {GitCommit: "aaaa1111"}, "gombit": {GitCommit: "aaaa1111"}},
+			GroupFootprint: {"rails": {GitCommit: "cccc3333"}},
 		},
 	}
 	incoming := Metadata{
 		FrameworkVersions:         map[string]string{"gombit": "v0.1.3"},
 		RuntimeVersions:           map[string]string{"go": "go1.26.1"},
 		ResourceLimitsByFramework: map[string]string{"gombit": "enforced"},
-		Groups:                    map[string]Provenance{GroupCRUD: {GitCommit: "dddd4444"}},
+		Groups:                    map[string]map[string]Provenance{GroupCRUD: {"gombit": {GitCommit: "dddd4444"}}},
 	}
 
 	got := Merge(existing, incoming)
@@ -259,63 +229,99 @@ func TestMergeUnionsMapsAndKeepsEveryGroup(t *testing.T) {
 	if got.RuntimeVersions["ruby"] != "3.3.12" || got.RuntimeVersions["go"] != "go1.26.1" {
 		t.Errorf("RuntimeVersions = %v, want both runtimes", got.RuntimeVersions)
 	}
-	// A partial verdict on one app must not be erased by another's enforced.
 	if got.ResourceLimitsByFramework["rails"] != "partial: memory unset" {
 		t.Errorf("ResourceLimitsByFramework = %v, want rails' partial preserved", got.ResourceLimitsByFramework)
 	}
-	// An empty Postgres verdict means "this run did not re-check", not "unknown".
 	if got.PostgresResourceLimits != "enforced" {
 		t.Errorf("PostgresResourceLimits = %q, want the prior verdict preserved", got.PostgresResourceLimits)
 	}
-	// A group is replaced only by a producer of that same group.
-	if got.Groups[GroupCRUD].GitCommit != "dddd4444" {
-		t.Errorf("crud group = %+v, want the incoming producer's commit", got.Groups[GroupCRUD])
+	// Only the unit the incoming producer measured moves.
+	if got.Groups[GroupCRUD]["gombit"].GitCommit != "dddd4444" {
+		t.Errorf("crud/gombit = %+v, want the incoming commit", got.Groups[GroupCRUD]["gombit"])
 	}
-	if got.Groups[GroupFootprint].GitCommit != "cccc3333" {
-		t.Errorf("footprint group = %+v, want the untouched prior commit", got.Groups[GroupFootprint])
+	if got.Groups[GroupCRUD]["rails"].GitCommit != "aaaa1111" {
+		t.Errorf("crud/rails = %+v, want the untouched prior commit", got.Groups[GroupCRUD]["rails"])
+	}
+	if got.Groups[GroupFootprint]["rails"].GitCommit != "cccc3333" {
+		t.Errorf("footprint/rails = %+v, want the untouched prior commit", got.Groups[GroupFootprint]["rails"])
+	}
+	// Merge must not alias the input maps.
+	existing.Groups[GroupCRUD]["rails"] = Provenance{GitCommit: "mutated"}
+	if got.Groups[GroupCRUD]["rails"].GitCommit != "aaaa1111" {
+		t.Error("Merge aliased the existing Groups map instead of copying it")
 	}
 }
 
-// A snapshot written before per-group provenance existed has no groups entry,
-// and its top-level block IS every group's provenance — one run produced the
-// whole file — so the fallback is exact, not a guess.
-func TestGroupProvenanceFallsBackToTopLevelForLegacySnapshots(t *testing.T) {
+// UnitsProvenance is what the renderer asks: are these rows comparable with each
+// other, and if not, what did each one actually run at?
+func TestUnitsProvenanceReportsUniformityAcrossTheRenderedUnits(t *testing.T) {
+	a := Provenance{GitCommit: "aaaa1111", CPUModel: "Host"}
+	meta := StampUnit(StampUnit(Metadata{}, GroupFootprint, "rails", a), GroupFootprint, "gombit", a)
+
+	if _, uniform := meta.UnitsProvenance(GroupFootprint, []string{"rails", "gombit"}); !uniform {
+		t.Error("two units measured at the same commit must be uniform")
+	}
+
+	b := Provenance{GitCommit: "bbbb2222", CPUModel: "Host"}
+	meta = StampUnit(meta, GroupFootprint, "gombit", b)
+	provs, uniform := meta.UnitsProvenance(GroupFootprint, []string{"rails", "gombit"})
+	if uniform {
+		t.Error("units measured at different commits must NOT be uniform")
+	}
+	if provs["rails"].GitCommit != "aaaa1111" || provs["gombit"].GitCommit != "bbbb2222" {
+		t.Errorf("per-unit provenance = %+v", provs)
+	}
+
+	// Clean-tree pointers collected separately must compare equal: uniformity is
+	// about the recorded values, not about *bool identity.
+	c1, c2 := false, false
+	meta = StampUnit(Metadata{}, GroupCRUD, "rails", Provenance{GitCommit: "x", GitDirty: &c1})
+	meta = StampUnit(meta, GroupCRUD, "gombit", Provenance{GitCommit: "x", GitDirty: &c2})
+	if _, uniform := meta.UnitsProvenance(GroupCRUD, []string{"rails", "gombit"}); !uniform {
+		t.Error("identical provenance with distinct *bool addresses must count as uniform")
+	}
+}
+
+// A snapshot written before per-unit provenance has no entry, and its top-level
+// block IS every unit's provenance — one run produced the whole file — so the
+// fallback is exact, not a guess, and such a snapshot still renders uniform.
+func TestUnitProvenanceFallsBackToTopLevelForLegacySnapshots(t *testing.T) {
 	legacy := Metadata{GitCommit: "aaaa1111", CPUModel: "Old Bench Host", GoVersion: "go1.27.0"}
-	for _, g := range KnownGroups {
-		if got := legacy.GroupProvenance(g); got != legacy.Provenance() {
-			t.Errorf("GroupProvenance(%q) = %+v, want the top-level block", g, got)
-		}
+	if got := legacy.UnitProvenance(GroupCRUD, "rails"); got != legacy.Provenance() {
+		t.Errorf("UnitProvenance = %+v, want the top-level block", got)
 	}
-	// Once a group is stamped, only that group leaves the fallback.
-	stamped := StampGroup(legacy, GroupMicrobench, Provenance{GitCommit: "bbbb2222"})
-	if stamped.GroupProvenance(GroupMicrobench).GitCommit != "bbbb2222" {
-		t.Error("a stamped group must use its own provenance, not the fallback")
+	if _, uniform := legacy.UnitsProvenance(GroupCRUD, []string{"rails", "gombit"}); !uniform {
+		t.Error("a legacy snapshot must render as one uniform caption, exactly as before")
 	}
-	if stamped.GroupProvenance(GroupCRUD).GitCommit != "aaaa1111" {
-		t.Error("an unstamped group must still fall back to the top-level block")
+	// Once one unit is stamped, only that unit leaves the fallback.
+	stamped := StampUnit(legacy, GroupCRUD, "gombit", Provenance{GitCommit: "bbbb2222"})
+	if stamped.UnitProvenance(GroupCRUD, "gombit").GitCommit != "bbbb2222" {
+		t.Error("a stamped unit must use its own provenance")
+	}
+	if stamped.UnitProvenance(GroupCRUD, "rails").GitCommit != "aaaa1111" {
+		t.Error("an unstamped unit must still fall back to the top-level block")
 	}
 }
 
-// One group measured against uncommitted source taints the whole block: a
-// reader skimming a table cannot tell which group produced it.
-func TestAnyDirtySeesGroupDirtEvenWhenTopLevelIsClean(t *testing.T) {
+// One unit measured against uncommitted source taints the whole block: a reader
+// skimming a table cannot tell which row produced it.
+func TestAnyDirtySeesUnitDirtEvenWhenTopLevelIsClean(t *testing.T) {
 	clean, dirty := false, true
-	m := Metadata{GitDirty: &clean, Groups: map[string]Provenance{
-		GroupCRUD:       {GitDirty: &clean},
-		GroupMicrobench: {GitDirty: &dirty},
+	m := Metadata{GitDirty: &clean, Groups: map[string]map[string]Provenance{
+		GroupCRUD:       {"rails": {GitDirty: &clean}},
+		GroupMicrobench: {"gin": {GitDirty: &dirty}},
 	}}
 	if !m.AnyDirty() {
-		t.Error("AnyDirty = false, want true when a group was measured dirty")
+		t.Error("AnyDirty = false, want true when a unit was measured dirty")
 	}
-	m.Groups[GroupMicrobench] = Provenance{GitDirty: &clean}
+	m.Groups[GroupMicrobench]["gin"] = Provenance{GitDirty: &clean}
 	if m.AnyDirty() {
 		t.Error("AnyDirty = true, want false when nothing is dirty")
 	}
-	// Unknown (nil) is not dirt — it is unknown, and the reduced/unknown case is
-	// not what this banner is for.
-	m.Groups[GroupMicrobench] = Provenance{}
+	// Unknown (nil) is not dirt — it is unknown.
+	m.Groups[GroupMicrobench]["gin"] = Provenance{}
 	if m.AnyDirty() {
-		t.Error("AnyDirty = true, want false when a group's dirtiness is unknown")
+		t.Error("AnyDirty = true, want false when dirtiness is unknown")
 	}
 }
 

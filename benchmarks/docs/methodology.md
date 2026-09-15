@@ -157,12 +157,31 @@ groups, and they cost wildly different amounts to produce:
 | `crud` (PostgreSQL CRUD read) | `make benchmark-crud-all` | hours: 6 containers × the full sweep |
 | `footprint` (operational footprint) | `make benchmark-footprint` | minutes, Docker |
 
-Each target stamps its own `git_commit`, timestamp, host and Go toolchain under
-`metadata.json`'s `groups` key, and the report captions each table with that
-group's provenance. A single snapshot-wide commit could not describe all three
-without misattributing at least two: a cheap microbenchmark refresh would either
-have to claim the hours-long CRUD sweep ran at the new commit, or publish its own
-fresh numbers under the old one.
+Provenance is recorded per **unit**, not per group. A unit is the merge key of
+that group's data file — the thing a single run can replace on its own:
+
+| group | unit | recorded by |
+| --- | --- | --- |
+| `microbench` | stack (`nethttp`/`gin`/`huma`/`gombit`) | `scripts/microbench` |
+| `crud` | framework | `scripts/run-crud` |
+| `footprint` | framework | `scripts/footprint` |
+
+**The program that writes the row writes the provenance.** All three of these
+files merge row-wise, and subset runs are supported (`APPS="gin-gorm gombit"`),
+so a group-wide stamp would let a run that replaced ONE row relabel a whole
+table: six footprint rows measured at commit A, then
+`APPS=gombit make benchmark-footprint` at B, would caption five untouched rows
+as B. Keying provenance to the same unit the data merges on makes that state
+unrepresentable rather than merely detectable.
+
+The report derives each table's caption from the units that table actually
+publishes. When they agree it collapses to one line; when they disagree it
+refuses to make a table-wide claim and states each unit instead — the same shape
+the per-app resource-limit verdicts use, for the same reason.
+
+A single snapshot-wide commit could not describe the three groups either: a cheap
+microbenchmark refresh would have to claim the hours-long CRUD sweep ran at the
+new commit, or publish its own fresh numbers under the old one.
 
 The Go toolchain is part of a group's provenance because it moves the numbers on
 its own. The framework-tax ladder's `net/http` rung is stdlib plus the harness —
@@ -172,44 +191,35 @@ stale baseline rows:** the four rungs are only comparable when they were produce
 by one run, on one host, under one toolchain.
 
 A snapshot with no `groups` key predates this and is read with its top-level
-block as every group's provenance, which for a single-run snapshot is exact.
+block as every unit's provenance, which for a single-run snapshot is exact — such
+a snapshot still renders one caption per table, exactly as before.
+
+The footprint unit is the **framework**, not `(framework, variant)`: the
+published table renders container rows only. When the embedded single-binary
+variant is wired it must get its own unit key.
 
 #### Reading `metadata.json`: `groups` is authoritative, the top level is not
 
-`groups.<name>` is the answer to "when, where and at which commit was *this
-table* measured". The flat top-level fields (`git_commit`, `timestamp`,
+`groups.<group>.<unit>` is the answer to "when, where and at which commit was
+*this row* measured". The flat top-level fields (`git_commit`, `timestamp`,
 `cpu_model`, `go_version`, …) describe the last **whole-snapshot** collection,
 which in practice is the CRUD sweep.
 
-A group-only refresh — `make benchmark-micro`, `make benchmark-footprint` —
-stamps its own group and **deliberately leaves the top-level fields alone**. So
-after refreshing the microbenchmark you will see a top-level `git_commit` that
-is *older* than `groups.microbench.git_commit`. That is correct. Advancing it
+A partial refresh — `make benchmark-micro`, `make benchmark-footprint`,
+`APPS=gombit make benchmark-crud-all` — stamps only the units it measured and
+**deliberately leaves the top-level fields alone**. So after refreshing the
+microbenchmark you will see a top-level `git_commit` that is *older* than the
+entries under `groups.microbench`. That is correct. Advancing it
 would make the CRUD and footprint tables — whose rows did not change — claim a
 commit and a host they never ran on, which is the same misattribution in the
 opposite direction.
 
-The practical rule: **read `groups.<name>` for a table's provenance; read the
-top level only for the shared run parameters** (database, resource limits, sweep
+The practical rule: **read `groups.<group>.<unit>` for a row's provenance; read
+the top level only for the shared run parameters** (database, resource limits, sweep
 protocol, load generator) and as the fallback for pre-`groups` snapshots.
 
 The shape is additive, so `schema_version` stays `1`: a reader that predates
 `groups` still sees exactly the flat fields it always saw.
-
-#### Known limitation: the `crud` group is per-sweep, not per-app
-
-The CRUD table is six independently produced app runs, but they share one
-`groups.crud` entry: `run-crud` stamps the group once per app and the last
-writer wins. Re-run a single app after a full sweep — `make benchmark-crud-all
-APPS=gombit` — and the table is captioned with that re-run's commit while the
-other five rows still come from the earlier sweep.
-
-This is the same misattribution described above, one level finer, and it is not
-new: the top-level block behaved this way before per-group provenance existed.
-It is left as-is deliberately, because the provenance granularity matches the
-report's granularity — one caption per table. Refreshing a single app and then
-publishing the table is therefore **not** a supported operation the way
-refreshing the whole microbenchmark group is; re-run the whole sweep.
 
 ## How not to interpret these results
 

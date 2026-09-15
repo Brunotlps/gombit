@@ -9,12 +9,14 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
 	"os"
 	"path/filepath"
 
+	"github.com/gombit-dev/gombit/benchmarks/internal/metadata"
 	"github.com/gombit-dev/gombit/benchmarks/internal/microbench"
 )
 
@@ -70,8 +72,26 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "microbench: %v\n", err)
 		return 1
 	}
+	// Stamp THIS stack's provenance, and only this stack's. microbench.Merge
+	// replaces a stack whole and leaves the others alone, so provenance has to
+	// move at the same granularity: a stack-wide run that relabelled the whole
+	// ladder would caption three untouched stacks with a commit they never ran
+	// at (issue #266, review round 2).
+	if err := metadata.StampUnitFile(
+		metadata.SiblingPath(*out), metadata.GroupMicrobench, *stack, collectProvenance(),
+	); err != nil {
+		_, _ = fmt.Fprintf(stderr, "microbench: %v\n", err)
+		return 1
+	}
+
 	_, _ = fmt.Fprintf(stdout, "microbench: merged %d %s rows into %s\n", len(rows), *stack, *out)
 	return 0
+}
+
+// collectProvenance records the source state and machine this row set was
+// measured on, via the same discovery the whole-snapshot collector uses.
+func collectProvenance() metadata.Provenance {
+	return metadata.Collect(context.Background(), metadata.Options{}).Provenance()
 }
 
 func readExisting(path string) ([]microbench.Row, error) {

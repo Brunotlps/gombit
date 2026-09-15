@@ -71,9 +71,9 @@ runs the same regenerate-then-diff on every PR. The full method and the required
 "How not to interpret these results" caveats live in
 [docs/methodology.md](docs/methodology.md). A committed `results/latest/`
 snapshot already backs the README numbers, but from **reduced runs on dev
-hosts** — each measurement group records its own commit, host and toolchain
-under `metadata.json`'s `groups` key, and the README prints it beneath that
-group's table, so the tables need not share a host; still
+hosts** — each measured unit records its own commit, host and toolchain under
+`metadata.json`'s `groups` key, and the README prints it beneath that unit's
+table, so the tables need not share a host; still
 scoped to later phases: the embedded-Gombit single-binary footprint variant, the
 other `make benchmark-*` workloads, extending `fairness_test.go` to all six, and
 re-running the full canonical sweep on dedicated hardware. The CI integration is
@@ -109,11 +109,11 @@ honest "not applied" default unless you pass
 
 `go run ./benchmarks/scripts/collect-host-info` prints the reproducibility
 metadata (git SHA + dirty state, OS/kernel/arch, CPU/RAM, Go/Docker/Compose
-versions, plus the run parameters passed as flags) as `metadata.json`. With
-`-group <microbench|crud|footprint>` it instead stamps just that measurement
-group's provenance into an existing `metadata.json`, leaving every other field
-alone — that is how a target producing only one of the three groups records when
-and where its own numbers came from without restamping the others (see
+versions, plus the run parameters passed as flags) as `metadata.json`. It
+measures nothing itself, so it never files per-unit provenance and never deletes
+it: each row-writer (`scripts/microbench`, `scripts/footprint`, `scripts/run-crud`)
+stamps the unit it measured under `metadata.json`'s `groups` key, and the report
+captions each table from the units that table publishes (see
 [methodology.md](docs/methodology.md#provenance-is-recorded-per-measurement-group)).
 The
 canonical results shape lives in

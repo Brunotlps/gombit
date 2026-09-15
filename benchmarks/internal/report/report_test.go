@@ -275,27 +275,25 @@ func TestEmptyProtocolIsNotReduced(t *testing.T) {
 	}
 }
 
-// Each table must be captioned with the commit and host that produced IT. The
-// three groups are measured by different targets at different costs, so a
-// single global commit line vouched for numbers that never ran at it — the
-// misattribution issue #266 fixes.
+// Each table must be captioned with the commit and host that produced IT.
 func TestEachTableCarriesItsOwnProvenance(t *testing.T) {
 	meta := canonicalMeta()
 	clean := false
-	meta.Groups = map[string]metadata.Provenance{
-		metadata.GroupMicrobench: {
-			GitCommit: "1111111111111111", Timestamp: "2026-09-08T10:00:00Z", GitDirty: &clean,
-			CPUModel: "Micro CPU", LogicalCPUs: 12, GoVersion: "go1.26.1", OS: "linux", Arch: "amd64", Kernel: "7.1-dev",
-		},
-		metadata.GroupCRUD: {
-			GitCommit: "2222222222222222", Timestamp: "2026-08-27T21:57:34Z", GitDirty: &clean,
-			CPUModel: "CRUD CPU", LogicalCPUs: 8, GoVersion: "go1.25.7", OS: "linux", Arch: "amd64", Kernel: "7.0-old",
-		},
-		metadata.GroupFootprint: {
-			GitCommit: "3333333333333333", Timestamp: "2026-08-28T09:00:00Z", GitDirty: &clean,
-			CPUModel: "Footprint CPU", LogicalCPUs: 8, GoVersion: "go1.25.7", OS: "linux", Arch: "amd64", Kernel: "7.0-old",
-		},
+	host := func(commit, ts, cpu, gov string) metadata.Provenance {
+		return metadata.Provenance{
+			GitCommit: commit, Timestamp: ts, GitDirty: &clean,
+			CPUModel: cpu, LogicalCPUs: 8, GoVersion: gov, OS: "linux", Arch: "amd64", Kernel: "7.0",
+		}
 	}
+	meta.Groups = map[string]map[string]metadata.Provenance{
+		metadata.GroupMicrobench: {},
+		metadata.GroupCRUD:       {"gombit": host("2222222222222222", "2026-08-27T21:57:34Z", "CRUD CPU", "go1.25.7")},
+		metadata.GroupFootprint:  {"gombit": host("3333333333333333", "2026-08-28T09:00:00Z", "Footprint CPU", "go1.25.7")},
+	}
+	for _, s := range stackLadder {
+		meta.Groups[metadata.GroupMicrobench][s.key] = host("1111111111111111", "2026-09-08T10:00:00Z", "Micro CPU", "go1.26.1")
+	}
+
 	out := Render(
 		[]result.Result{crudRow("gombit", 100, 1, 1000, 5, 10, 20)},
 		[]footprint.Footprint{{Framework: "gombit", Variant: footprint.VariantContainer}},
@@ -303,7 +301,6 @@ func TestEachTableCarriesItsOwnProvenance(t *testing.T) {
 		meta,
 	)
 
-	// Each caption must appear under its own table, in table order.
 	sections := []struct{ heading, commit, cpu string }{
 		{"### Framework tax", "1111111111", "Micro CPU"},
 		{"### PostgreSQL CRUD read", "2222222222", "CRUD CPU"},
@@ -328,16 +325,83 @@ func TestEachTableCarriesItsOwnProvenance(t *testing.T) {
 			}
 		}
 	}
-	// The old single global commit line must be gone — reintroducing it is the
-	// defect, not a cosmetic regression.
 	if strings.Contains(out, "**Commit / date:**") {
 		t.Errorf("the snapshot-wide commit line must not return:\n%s", out)
 	}
+	// All units within each table agree, so each caption is a single claim.
+	if strings.Contains(out, "not measured together") {
+		t.Errorf("uniform units must collapse to one caption per table:\n%s", out)
+	}
 }
 
-// A snapshot written before per-group provenance has no groups entry, and its
-// top-level block IS every group's provenance — one run produced everything —
-// so it must keep rendering with that commit under all three tables.
+// THE regression this round exists for, at the rendering layer. `APPS=gombit
+// make benchmark-footprint` replaces one row and preserves five; the table must
+// NOT then be captioned with the re-run's commit. Without per-unit provenance
+// this test cannot even be written — which is why the previous round's tests
+// only proved the representation agreed with itself.
+func TestSubsetRefreshIsNotPublishedUnderATableWideCaption(t *testing.T) {
+	clean := false
+	commitA := metadata.Provenance{GitCommit: "aaaa11112222", Timestamp: "2026-09-01T00:00:00Z", GitDirty: &clean, CPUModel: "Bench Host"}
+	commitB := metadata.Provenance{GitCommit: "bbbb33334444", Timestamp: "2026-09-08T00:00:00Z", GitDirty: &clean, CPUModel: "Dev Host"}
+
+	apps := []string{"django", "gin-gorm", "gombit", "laravel", "nestjs", "rails"}
+	meta := canonicalMeta()
+	rows := make([]footprint.Footprint, 0, len(apps))
+	for _, app := range apps {
+		meta = metadata.StampUnit(meta, metadata.GroupFootprint, app, commitA)
+		rows = append(rows, footprint.Footprint{Framework: app, Variant: footprint.VariantContainer})
+	}
+	// Re-measure exactly one app at a later commit.
+	meta = metadata.StampUnit(meta, metadata.GroupFootprint, "gombit", commitB)
+
+	out := Render(nil, rows, nil, meta)
+	section := out[strings.Index(out, "### Operational footprint"):]
+
+	if !strings.Contains(section, "not measured together") {
+		t.Errorf("a table whose rows come from different commits must say so:\n%s", section)
+	}
+	// Both commits must appear, attributed to the right apps — and neither may
+	// stand alone as the table's caption.
+	if !strings.Contains(section, "gombit at `bbbb33334444`") {
+		t.Errorf("the re-measured app must be attributed to its own commit:\n%s", section)
+	}
+	for _, app := range []string{"django", "rails"} {
+		if !strings.Contains(section, app+" at `aaaa11112222`") {
+			t.Errorf("untouched app %q must keep its original commit:\n%s", app, section)
+		}
+	}
+	if strings.Contains(section, "_Measured at `bbbb33334444`") {
+		t.Errorf("the subset run's commit must never caption the whole table:\n%s", section)
+	}
+}
+
+// The same rule, applied to CRUD — which the previous round covered with a prose
+// warning instead of code.
+func TestCrudSubsetRefreshAlsoRefusesATableWideCaption(t *testing.T) {
+	clean := false
+	meta := canonicalMeta()
+	meta = metadata.StampUnit(meta, metadata.GroupCRUD, "rails",
+		metadata.Provenance{GitCommit: "aaaa11112222", Timestamp: "2026-09-01T00:00:00Z", GitDirty: &clean})
+	meta = metadata.StampUnit(meta, metadata.GroupCRUD, "gombit",
+		metadata.Provenance{GitCommit: "bbbb33334444", Timestamp: "2026-09-08T00:00:00Z", GitDirty: &clean})
+
+	out := Render([]result.Result{
+		crudRow("rails", 100, 1, 900, 5, 10, 20),
+		crudRow("gombit", 100, 1, 1000, 5, 10, 20),
+	}, nil, nil, meta)
+	section := out[strings.Index(out, "### PostgreSQL CRUD read"):strings.Index(out, "### Operational footprint")]
+
+	if !strings.Contains(section, "not measured together") {
+		t.Errorf("a CRUD table mixing commits must say so:\n%s", section)
+	}
+	if !strings.Contains(section, "rails at `aaaa11112222`") || !strings.Contains(section, "gombit at `bbbb33334444`") {
+		t.Errorf("each app must be attributed to its own commit:\n%s", section)
+	}
+}
+
+// A snapshot written before per-unit provenance has no entry, and its top-level
+// block IS every unit's provenance — one run produced everything — so it must
+// keep rendering exactly as it did, with one caption per table.
 func TestLegacySnapshotFallsBackToTopLevelProvenance(t *testing.T) {
 	meta := canonicalMeta()
 	meta.Timestamp = "2026-08-27T21:57:34Z"
@@ -351,13 +415,15 @@ func TestLegacySnapshotFallsBackToTopLevelProvenance(t *testing.T) {
 	if n := strings.Count(out, "abcdef123456"); n != 3 {
 		t.Errorf("legacy snapshot must caption all three tables with its one commit, got %d:\n%s", n, out)
 	}
+	if strings.Contains(out, "not measured together") {
+		t.Errorf("a legacy snapshot is one run; it must not be reported as mixed:\n%s", out)
+	}
 	if !strings.Contains(out, "go1.27.0") {
 		t.Errorf("legacy caption must still name the toolchain:\n%s", out)
 	}
 }
 
-// A table with no data has no provenance to state — it renders the honest "not
-// yet recorded" line and nothing else.
+// A table with no data has no provenance to state.
 func TestPlaceholderTablesCarryNoProvenance(t *testing.T) {
 	out := Render(nil, nil, nil, canonicalMeta())
 	if strings.Contains(out, "_Measured at ") {
@@ -365,43 +431,49 @@ func TestPlaceholderTablesCarryNoProvenance(t *testing.T) {
 	}
 }
 
-// One group measured against uncommitted source taints the whole block: a
-// reader skimming a table cannot tell which group produced it. The remediation
-// must name only the group that has to be re-run — prescribing the hours-long
-// CRUD sweep because the seconds-long microbenchmark was dirty would re-impose
-// the cost coupling per-group provenance removed.
-func TestDirtyGroupStampsUnpublishableAndNamesOnlyThatGroupsTarget(t *testing.T) {
+// A snapshot that has unit provenance but no shared run parameters — what
+// `make benchmark-micro` alone produces in a fresh OUT_DIR — must say so, not
+// render a row of em-dashes whose "0 trials" reads as a measured fact.
+func TestMethodologyIsHonestWhenOnlyUnitProvenanceExists(t *testing.T) {
+	meta := metadata.Metadata{}
+	for _, s := range stackLadder {
+		meta = metadata.StampUnit(meta, metadata.GroupMicrobench, s.key,
+			metadata.Provenance{GitCommit: "abc123def456", CPUModel: "Dev CPU", Timestamp: "2026-09-08T00:00:00Z"})
+	}
+	out := Render(nil, nil, taxLadder(), meta)
+
+	if !strings.Contains(out, "_Run metadata not yet recorded._") {
+		t.Errorf("a snapshot with no shared run parameters must say so:\n%s", out)
+	}
+	if strings.Contains(out, "0 trials") {
+		t.Errorf("an unrecorded protocol must not render as a measured 0:\n%s", out)
+	}
+	if !strings.Contains(out, "abc123def456") {
+		t.Errorf("the framework-tax caption must still name the units' commit:\n%s", out)
+	}
+}
+
+// One unit measured against uncommitted source taints the whole block, and the
+// remediation must name only the group that has to be re-run.
+func TestDirtyUnitStampsUnpublishableAndNamesOnlyThatGroupsTarget(t *testing.T) {
 	meta := canonicalMeta()
 	dirty, clean := true, false
-	meta.Groups = map[string]metadata.Provenance{
-		metadata.GroupMicrobench: {GitDirty: &dirty},
-		metadata.GroupCRUD:       {GitDirty: &clean},
+	meta = metadata.StampUnit(meta, metadata.GroupMicrobench, "gin", metadata.Provenance{GitDirty: &dirty})
+	meta = metadata.StampUnit(meta, metadata.GroupCRUD, "rails", metadata.Provenance{GitDirty: &clean})
+
+	banner := bannerOf(Render(nil, nil, nil, meta))
+	if !strings.Contains(banner, "UNPUBLISHABLE DEVELOPMENT RUN") {
+		t.Errorf("a unit measured on a dirty tree must stamp the block unpublishable:\n%s", banner)
 	}
-	out := Render(nil, nil, nil, meta)
-	if !strings.Contains(out, "UNPUBLISHABLE DEVELOPMENT RUN") {
-		t.Errorf("a group measured on a dirty tree must stamp the block unpublishable:\n%s", out)
-	}
-	// Scope the target assertions to the banner: the empty-data placeholders
-	// further down legitimately name every group's target.
-	banner := bannerOf(out)
 	if !strings.Contains(banner, "`make benchmark-micro benchmark-report`") {
-		t.Errorf("remediation must name the dirty group's target:\n%s", banner)
+		t.Errorf("remediation must name the dirty unit's group target:\n%s", banner)
 	}
 	if strings.Contains(banner, "benchmark-crud-all") {
 		t.Errorf("remediation must not prescribe re-running the clean CRUD sweep:\n%s", banner)
 	}
 }
 
-// bannerOf returns everything before the generated-by line — i.e. the status
-// banners only, excluding the tables and their placeholders.
-func bannerOf(out string) string {
-	if i := strings.Index(out, "_Generated by"); i >= 0 {
-		return out[:i]
-	}
-	return out
-}
-
-// When the dirt cannot be pinned to a group — a dirty top-level record, or a
+// When the dirt cannot be pinned to a unit — a dirty top-level record, or a
 // snapshot with no groups at all — any group may be affected, so the banner
 // falls back to the full chain rather than under-prescribing.
 func TestDirtyTopLevelStillPrescribesTheWholeChain(t *testing.T) {
@@ -412,12 +484,11 @@ func TestDirtyTopLevelStillPrescribesTheWholeChain(t *testing.T) {
 			m.GitDirty = &dirty
 			return m
 		}(),
-		"dirty top level beside a clean group": func() metadata.Metadata {
+		"dirty top level beside a clean unit": func() metadata.Metadata {
 			m := canonicalMeta()
 			m.GitDirty = &dirty
 			clean := false
-			m.Groups = map[string]metadata.Provenance{metadata.GroupMicrobench: {GitDirty: &clean}}
-			return m
+			return metadata.StampUnit(m, metadata.GroupMicrobench, "gin", metadata.Provenance{GitDirty: &clean})
 		}(),
 	} {
 		if banner := bannerOf(Render(nil, nil, nil, meta)); !strings.Contains(banner, rerunChain) {
@@ -426,24 +497,13 @@ func TestDirtyTopLevelStillPrescribesTheWholeChain(t *testing.T) {
 	}
 }
 
-// A snapshot that has group provenance but no shared run parameters — what
-// `make benchmark-micro` alone produces in a fresh OUT_DIR — must say so, not
-// render a row of em-dashes whose "0 trials" reads as a measured fact.
-func TestMethodologyIsHonestWhenOnlyGroupProvenanceExists(t *testing.T) {
-	meta := metadata.StampGroup(metadata.Metadata{}, metadata.GroupMicrobench,
-		metadata.Provenance{GitCommit: "abc123def456", CPUModel: "Dev CPU", Timestamp: "2026-09-08T00:00:00Z"})
-	out := Render(nil, nil, taxLadder(), meta)
-
-	if !strings.Contains(out, "_Run metadata not yet recorded._") {
-		t.Errorf("a snapshot with no shared run parameters must say so:\n%s", out)
+// bannerOf returns everything before the generated-by line — i.e. the status
+// banners only, excluding the tables and their placeholders.
+func bannerOf(out string) string {
+	if i := strings.Index(out, "_Generated by"); i >= 0 {
+		return out[:i]
 	}
-	if strings.Contains(out, "0 trials") {
-		t.Errorf("an unrecorded protocol must not render as a measured 0:\n%s", out)
-	}
-	// The table itself still gets its caption — the group provenance is real.
-	if !strings.Contains(out, "abc123def456") {
-		t.Errorf("the framework-tax caption must still name the group's commit:\n%s", out)
-	}
+	return out
 }
 
 func TestResourceLimitsPerFrameworkRendered(t *testing.T) {

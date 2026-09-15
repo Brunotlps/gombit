@@ -14,6 +14,7 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"io"
@@ -23,6 +24,7 @@ import (
 	"strings"
 
 	"github.com/gombit-dev/gombit/benchmarks/internal/footprint"
+	"github.com/gombit-dev/gombit/benchmarks/internal/metadata"
 )
 
 func main() {
@@ -79,6 +81,24 @@ func run(args []string, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "footprint: %v\n", err)
 		return 1
 	}
+
+	// Stamp THIS framework's provenance, and only this one. mergeIntoFiles
+	// replaces a single (framework, variant) row and preserves the rest, and
+	// `APPS=gombit make benchmark-footprint` is a supported subset run — so a
+	// table-wide stamp here would caption five untouched rows with a commit they
+	// never ran at (issue #266, review round 2).
+	//
+	// The unit is the framework, not (framework, variant): the published table
+	// renders container rows only. When the embedded variant is wired it needs
+	// its own unit key — see benchmarks/docs/methodology.md.
+	if err := metadata.StampUnitFile(
+		metadata.SiblingPath(*out), metadata.GroupFootprint, row.Framework,
+		metadata.Collect(context.Background(), metadata.Options{}).Provenance(),
+	); err != nil {
+		_, _ = fmt.Fprintf(stderr, "footprint: %v\n", err)
+		return 1
+	}
+
 	_, _ = fmt.Fprintf(stdout, "footprint: recorded %s/%s (cold-start median %.0fms over %d runs, idle %d B) into %s\n",
 		row.Framework, row.Variant, row.ColdStart.MedianMs, row.ColdStart.Runs, row.IdleRSSBytes, *out)
 	return 0

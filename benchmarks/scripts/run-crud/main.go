@@ -155,10 +155,6 @@ func run(cfg runConfig, k6run k6Runner) error {
 	}
 
 	meta := metadata.Collect(context.Background(), metadata.Options{
-		// This is the CRUD sweep's own provenance: the commit and host the
-		// containerized load test ran at, which the microbenchmark and footprint
-		// groups sharing metadata.json are free to differ from (issue #266).
-		Group:             metadata.GroupCRUD,
 		PostgresVersion:   cfg.postgresVersion,
 		FrameworkVersions: map[string]string{cfg.framework: cfg.frameworkVersion},
 		RuntimeVersions:   map[string]string{cfg.runtimeName: cfg.runtimeVersion},
@@ -179,6 +175,12 @@ func run(cfg runConfig, k6run k6Runner) error {
 		Concurrency:               cfg.concurrency,
 		Trials:                    cfg.trials,
 	})
+	// This app's own provenance, filed under this app alone. run-crud replaces
+	// one framework's rows and preserves the others, and APPS= subsetting is a
+	// supported run, so stamping the whole crud group here would caption every
+	// other app's rows with a commit they never ran at (issue #266, round 2).
+	meta = metadata.StampUnit(meta, metadata.GroupCRUD, cfg.framework, meta.Provenance())
+
 	if err := writeOutputs(cfg.outDir, cfg.framework, rows, meta); err != nil {
 		return err
 	}

@@ -98,23 +98,72 @@ func Render(results []result.Result, prints []footprint.Footprint, micro []micro
 }
 
 // writeProvenance captions a rendered table with the source state and machine
-// that produced it. It is written per table, not once per snapshot, because the
-// three groups are produced by different targets at different times: a single
-// snapshot-wide commit line silently vouched for measurements that never ran at
-// that commit, which is how the framework-tax table came to publish pre-PERF-1
-// numbers under a caption implying otherwise (issue #266).
+// that produced it, derived from the units that table actually publishes.
+//
+// It is written per table, not once per snapshot, because the measurement groups
+// are produced by different targets at different times: a single snapshot-wide
+// commit line silently vouched for measurements that never ran at that commit,
+// which is how the framework-tax table came to publish pre-PERF-1 numbers under
+// a caption implying otherwise (issue #266).
+//
+// And it is derived per UNIT, not per group, because these data files merge
+// row-wise and subset runs are supported. Six footprint rows measured at commit
+// A, then `APPS=gombit make benchmark-footprint` at B, must not caption the five
+// untouched rows as B. When the units disagree the caption refuses to make one
+// table-wide claim and states each unit instead — the same shape writeResourceLimits
+// uses for per-app limit verdicts, and for the same reason.
 //
 // It is called only after a table actually rendered — a "not yet recorded"
 // placeholder has no provenance to state.
-func writeProvenance(b *strings.Builder, prov metadata.Provenance) {
+func writeProvenance(b *strings.Builder, meta metadata.Metadata, group string, units []string) {
+	sorted := uniqueSorted(units)
+	if len(sorted) == 0 {
+		// No rows were published, so there is nothing to attribute. Callers only
+		// reach here after rendering a table, but a caption that invented a
+		// provenance for an empty table would be exactly the wrong failure.
+		return
+	}
+	provs, uniform := meta.UnitsProvenance(group, sorted)
+	if uniform {
+		writeProvenanceLine(b, provs[sorted[0]])
+		return
+	}
+
+	parts := make([]string, len(sorted))
+	for i, u := range sorted {
+		p := provs[u]
+		parts[i] = fmt.Sprintf("%s at `%s`%s (%s)", u, short(p.GitCommit), dirtySuffix(p.GitDirty), orDash(p.Timestamp))
+	}
+	fmt.Fprintf(b, "_**Rows were not measured together** — this table mixes source states, so its rows "+
+		"are not comparable with each other: %s._\n\n", strings.Join(parts, "; "))
+}
+
+// uniqueSorted de-duplicates and orders unit names so a caption lists each unit
+// once, in a stable order (the generated Markdown is diffed by CI).
+func uniqueSorted(units []string) []string {
+	seen := make(map[string]bool, len(units))
+	out := make([]string, 0, len(units))
+	for _, u := range units {
+		if u == "" || seen[u] {
+			continue
+		}
+		seen[u] = true
+		out = append(out, u)
+	}
+	sort.Strings(out)
+	return out
+}
+
+// writeProvenanceLine states one provenance in full. It carries the whole host
+// description the shared "How these were measured" block used to print once:
+// dropping kernel/arch/RAM to shorten the caption would leave a published table
+// without enough metadata to reproduce it, which is the invariant
+// benchmarks/internal/metadata exists to hold.
+func writeProvenanceLine(b *strings.Builder, prov metadata.Provenance) {
 	if prov.Empty() {
 		b.WriteString("_Measured at an unrecorded commit and host — this data predates run metadata._\n\n")
 		return
 	}
-	// Carries the full host description the shared "How these were measured"
-	// block used to print once: dropping kernel/arch/RAM to shorten the caption
-	// would leave a published table without enough metadata to reproduce it,
-	// which is the invariant benchmarks/internal/metadata exists to hold.
 	fmt.Fprintf(b, "_Measured at `%s`%s, %s — %s, %d logical CPUs, %.1f GiB RAM (%s/%s, kernel %s), %s._\n\n",
 		short(prov.GitCommit), dirtySuffix(prov.GitDirty), orDash(prov.Timestamp),
 		orDash(prov.CPUModel), prov.LogicalCPUs, gib(prov.RAMBytes),
@@ -178,8 +227,11 @@ func rerunAdvice(meta metadata.Metadata) string {
 	}
 	var targets []string
 	for _, g := range metadata.KnownGroups {
-		if p, ok := meta.Groups[g]; ok && p.GitDirty != nil && *p.GitDirty {
-			targets = append(targets, groupTargets[g])
+		for _, p := range meta.Groups[g] {
+			if p.GitDirty != nil && *p.GitDirty {
+				targets = append(targets, groupTargets[g])
+				break
+			}
 		}
 	}
 	if len(targets) == 0 {
@@ -282,10 +334,15 @@ func writeFrameworkTaxTable(b *strings.Builder, micro []microbench.Row, meta met
 	}
 	b.WriteString("\n")
 	// The four rungs are only comparable against each other when they share a
-	// toolchain: the stdlib-only net/http rung has itself moved by 3 allocs/op
-	// across Go releases with no source change. Naming the toolchain here is what
-	// stops a refreshed Gombit row from being read against stale baselines.
-	writeProvenance(b, meta.GroupProvenance(metadata.GroupMicrobench))
+	// commit and a toolchain: the stdlib-only net/http rung has itself moved by
+	// 3 allocs/op across Go releases with no source change. microbench.Merge
+	// replaces one stack at a time, so the caption is derived from all four and
+	// says so loudly if they diverge.
+	stacks := make([]string, len(stackLadder))
+	for i, s := range stackLadder {
+		stacks[i] = s.key
+	}
+	writeProvenance(b, meta, metadata.GroupMicrobench, stacks)
 }
 
 func writeCRUDTable(b *strings.Builder, results []result.Result, meta metadata.Metadata) {
@@ -322,7 +379,14 @@ func writeCRUDTable(b *strings.Builder, results []result.Result, meta metadata.M
 			g.LatencyP50.Median, g.LatencyP95.Median, g.LatencyP99.Median)
 	}
 	b.WriteString("\n")
-	writeProvenance(b, meta.GroupProvenance(metadata.GroupCRUD))
+	// Units are the frameworks this table publishes, not every framework in the
+	// file: run-crud replaces one app's rows at a time and APPS= subsetting is a
+	// supported run, so the caption must be derived from exactly what is rendered.
+	frameworks := make([]string, len(rows))
+	for i, g := range rows {
+		frameworks[i] = g.Framework
+	}
+	writeProvenance(b, meta, metadata.GroupCRUD, frameworks)
 }
 
 // pickConcurrency returns HeadlineConcurrency if any crud-list group has it,
@@ -372,7 +436,11 @@ func writeFootprintTable(b *strings.Builder, prints []footprint.Footprint, meta 
 			f.CPUPercentUnderLoad, mib(f.ImageSizeBytes))
 	}
 	b.WriteString("\n")
-	writeProvenance(b, meta.GroupProvenance(metadata.GroupFootprint))
+	frameworks := make([]string, len(rows))
+	for i, f := range rows {
+		frameworks[i] = f.Framework
+	}
+	writeProvenance(b, meta, metadata.GroupFootprint, frameworks)
 }
 
 // writeMethodology prints what is genuinely shared by the whole snapshot: the

@@ -34,7 +34,7 @@ const (
 )
 
 // KnownGroups is every valid group name. Producers validate against it so a
-// typo'd -group writes a phantom entry no reader ever looks at, instead of
+// typo'd group writes a phantom entry no reader ever looks at, instead of
 // silently leaving the table it meant to stamp on the stale fallback.
 var KnownGroups = []string{GroupMicrobench, GroupCRUD, GroupFootprint}
 
@@ -85,23 +85,23 @@ func (p Provenance) Empty() bool {
 //
 // # Which field answers "when was this measured?"
 //
-// Groups does, per measurement group. It is the authoritative provenance: each
-// group records the commit, host and toolchain ITS OWN data was produced at,
-// and the report captions each table from it.
+// Groups does, per measurement UNIT. It is the authoritative provenance: each
+// unit records the commit, host and toolchain ITS OWN rows were produced at,
+// and the report captions each table from the units that table publishes.
 //
 // The top-level discovered fields (Timestamp, GitCommit, GitDirty, the host
 // block, GoVersion) describe the collection that wrote them — in practice the
 // last whole-snapshot producer, which is the CRUD sweep. They are deliberately
-// NOT a summary of the newest group, and a group-only stamp does not advance
-// them (see StampGroup). Two consequences worth stating plainly:
+// NOT a summary of the newest unit, and stamping a unit does not advance them
+// (see StampUnit). Two consequences worth stating plainly:
 //
-//   - After a group-only refresh, the top-level GitCommit is OLDER than the
-//     refreshed group's. That is correct, not stale bookkeeping: it still names
+//   - After a partial refresh, the top-level GitCommit is OLDER than the
+//     refreshed unit's. That is correct, not stale bookkeeping: it still names
 //     the state the whole-snapshot collection ran at, and re-pointing it at the
 //     microbenchmark's commit would make the CRUD and footprint tables claim a
 //     commit and host they never ran on — trading one wrong caption for another.
-//   - Ask Groups, never the top level, when you want a specific table's
-//     provenance. GroupProvenance does this for you, falling back to the top
+//   - Ask Groups, never the top level, when you want a table's provenance.
+//     UnitProvenance and UnitsProvenance do this for you, falling back to the top
 //     level only for snapshots written before Groups existed, where the fallback
 //     is exact because one run produced everything.
 //
@@ -149,12 +149,27 @@ type Metadata struct {
 	Concurrency               []int             `json:"concurrency"`
 	Trials                    int               `json:"trials"`
 
-	// Groups maps a group name (Group*) to the provenance of that group's own
-	// measurement. A group with no entry predates per-group stamping; readers
-	// fall back to the top-level block, which for a single-run snapshot is
-	// exactly that group's provenance. Empty ({}) rather than null so "no group
-	// recorded" is a collected fact, not a dropped field.
-	Groups map[string]Provenance `json:"groups"`
+	// Groups maps a group name (Group*) to the provenance of each UNIT it
+	// measured. A unit is that group's merge key — the thing a single run can
+	// replace on its own:
+	//
+	//	microbench -> stack      (microbench.Merge replaces a stack whole)
+	//	crud       -> framework  (run-crud replaces one app's rows)
+	//	footprint  -> framework  (footprint.Merge keys on framework+variant)
+	//
+	// Provenance is per unit, not per group, because every one of those files is
+	// merged row-wise and subset runs are supported (`APPS="gin-gorm gombit"`).
+	// A group-wide stamp would let a run that replaced ONE row relabel the whole
+	// table: six rows measured at A, `APPS=gombit make benchmark-footprint` at B,
+	// and five untouched rows would be captioned B. Keying provenance to the same
+	// unit the data merges on makes that state unrepresentable rather than merely
+	// detectable.
+	//
+	// A unit with no entry predates per-unit stamping; readers fall back to the
+	// top-level block, which for a single-run snapshot is exactly its provenance.
+	// Empty ({}) rather than null so "nothing recorded" is a collected fact, not
+	// a dropped field.
+	Groups map[string]map[string]Provenance `json:"groups"`
 }
 
 // Provenance returns the top-level commit/host/toolchain block as a Provenance
@@ -174,15 +189,52 @@ func (m Metadata) Provenance() Provenance {
 	}
 }
 
-// GroupProvenance returns the provenance to attribute group's data to. A
-// snapshot written before per-group stamping has no entry, and its top-level
-// block *is* that group's provenance — one run produced the whole file — so the
+// UnitProvenance returns the provenance to attribute one unit's data to. A
+// snapshot written before per-unit stamping has no entry, and its top-level
+// block *is* that unit's provenance — one run produced the whole file — so the
 // fallback is exact, not a guess.
-func (m Metadata) GroupProvenance(group string) Provenance {
-	if p, ok := m.Groups[group]; ok {
+func (m Metadata) UnitProvenance(group, unit string) Provenance {
+	if p, ok := m.Groups[group][unit]; ok {
 		return p
 	}
 	return m.Provenance()
+}
+
+// UnitsProvenance returns each unit's provenance and whether they are all
+// identical. Callers rendering a table pass the units that table actually
+// publishes: uniform means one honest caption covers every row, and anything
+// else means the rows were not measured together and must be captioned
+// individually.
+func (m Metadata) UnitsProvenance(group string, units []string) (map[string]Provenance, bool) {
+	out := make(map[string]Provenance, len(units))
+	uniform := true
+	var first Provenance
+	for i, u := range units {
+		p := m.UnitProvenance(group, u)
+		out[u] = p
+		switch {
+		case i == 0:
+			first = p
+		case !p.sameAs(first):
+			uniform = false
+		}
+	}
+	return out, uniform
+}
+
+// sameAs compares two provenances by value. GitDirty is a pointer, so it is
+// compared by what it points at — two separately-collected records of the same
+// clean tree must count as the same provenance, not as different ones because
+// they hold different *bool addresses.
+func (p Provenance) sameAs(other Provenance) bool {
+	if (p.GitDirty == nil) != (other.GitDirty == nil) {
+		return false
+	}
+	if p.GitDirty != nil && *p.GitDirty != *other.GitDirty {
+		return false
+	}
+	p.GitDirty, other.GitDirty = nil, nil
+	return p == other
 }
 
 // AnyDirty reports whether the top-level record or any group was measured on a
@@ -193,9 +245,11 @@ func (m Metadata) AnyDirty() bool {
 	if m.GitDirty != nil && *m.GitDirty {
 		return true
 	}
-	for _, p := range m.Groups {
-		if p.GitDirty != nil && *p.GitDirty {
-			return true
+	for _, units := range m.Groups {
+		for _, p := range units {
+			if p.GitDirty != nil && *p.GitDirty {
+				return true
+			}
 		}
 	}
 	return false
@@ -211,12 +265,6 @@ type Runner func(ctx context.Context, name string, args ...string) (string, erro
 type Options struct {
 	Now func() time.Time
 	Run Runner
-
-	// Group, when set to one of Group*, additionally files this collection's
-	// provenance under that measurement group. Empty means the collection is
-	// not attributed to any single group (the whole-snapshot path,
-	// `make benchmark-metadata`).
-	Group string
 
 	PostgresVersion           string
 	FrameworkVersions         map[string]string
@@ -316,14 +364,12 @@ func Collect(ctx context.Context, opts Options) Metadata {
 		Concurrency:               concurrency,
 		Trials:                    opts.Trials,
 
-		Groups: map[string]Provenance{},
+		Groups: map[string]map[string]Provenance{},
 	}
-	// The group entry is the same facts as the top-level block, filed under the
-	// measurement it belongs to. Recording both keeps a group-aware reader exact
-	// without breaking one that only knows the flat shape.
-	if opts.Group != "" {
-		m.Groups[opts.Group] = m.Provenance()
-	}
+	// Collect deliberately does not file a unit entry. Stamping is a post-step
+	// owned by whichever program wrote the rows (StampUnitFile), so Collect never
+	// has to guess which unit a collection belongs to — and a collection that
+	// measured nothing, like `make benchmark-metadata`, files nothing.
 	return m
 }
 
@@ -349,26 +395,37 @@ func Merge(existing, incoming Metadata) Metadata {
 	return incoming
 }
 
-// StampGroup records prov as group's provenance in meta and changes nothing
-// else — not the top-level block, not the CRUD run parameters, not another
-// group's entry. That restraint is the point of per-group provenance: the
-// seconds-long microbenchmark refresh shares metadata.json with an hours-long
-// CRUD sweep, and must be able to record its own commit without restamping, or
-// silently re-attributing, measurements it did not run (issue #266).
-func StampGroup(meta Metadata, group string, prov Provenance) Metadata {
-	meta.Groups = mergeGroups(meta.Groups, map[string]Provenance{group: prov})
+// StampUnit records prov as one unit's provenance in meta and changes nothing
+// else — not the top-level block, not the shared run parameters, not another
+// unit's entry, not even a sibling unit of the same group.
+//
+// That last restraint is the whole point. These data files merge row-wise and
+// subset runs are supported, so a producer that re-measured one app must record
+// exactly one app's provenance. Stamping the group instead would let it relabel
+// rows it never touched (issue #266, review round 2).
+func StampUnit(meta Metadata, group, unit string, prov Provenance) Metadata {
+	meta.Groups = mergeGroups(meta.Groups, map[string]map[string]Provenance{group: {unit: prov}})
 	return meta
 }
 
-// mergeGroups returns a new map with b's entries layered over a's: a group is
-// replaced only by a producer of that same group.
-func mergeGroups(a, b map[string]Provenance) map[string]Provenance {
-	out := make(map[string]Provenance, len(a)+len(b))
-	for k, v := range a {
-		out[k] = v
+// mergeGroups layers b over a, unit by unit: a unit is replaced only by a
+// producer of that same unit, so merging never disturbs a sibling.
+func mergeGroups(a, b map[string]map[string]Provenance) map[string]map[string]Provenance {
+	out := make(map[string]map[string]Provenance, len(a)+len(b))
+	for group, units := range a {
+		copied := make(map[string]Provenance, len(units))
+		for unit, p := range units {
+			copied[unit] = p
+		}
+		out[group] = copied
 	}
-	for k, v := range b {
-		out[k] = v
+	for group, units := range b {
+		if out[group] == nil {
+			out[group] = make(map[string]Provenance, len(units))
+		}
+		for unit, p := range units {
+			out[group][unit] = p
+		}
 	}
 	return out
 }
