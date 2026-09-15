@@ -269,7 +269,7 @@ func dirtyTargets(meta metadata.Metadata, published map[string][]string) (target
 
 // rerunAdvice names the smallest set of targets that actually has to be re-run.
 // Once provenance is per unit, telling someone to re-run the hours-long CRUD
-// sweep because the seconds-long microbenchmark was measured dirty would
+// sweep because the minutes-long microbenchmark was measured dirty would
 // re-impose the exact cost coupling per-unit provenance removed (issue #266).
 // With no targets it names the whole chain.
 func rerunAdvice(targets []string) string {

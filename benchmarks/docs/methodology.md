@@ -208,7 +208,7 @@ groups, and they cost wildly different amounts to produce:
 
 | group | target | cost |
 | --- | --- | --- |
-| `microbench` (framework tax) | `make benchmark-micro` | ~40s, pure Go, no Docker |
+| `microbench` (framework tax) | `make benchmark-micro` | minutes, pure Go, no Docker |
 | `crud` (PostgreSQL CRUD read) | `make benchmark-crud-all` | hours: 6 containers × the full sweep |
 | `footprint` (operational footprint) | `make benchmark-footprint` | minutes, Docker |
 
@@ -217,7 +217,7 @@ that group's data file — the thing a single run can replace on its own:
 
 | group | unit | recorded by |
 | --- | --- | --- |
-| `microbench` | stack (`nethttp`/`gin`/`huma`/`gombit`) | `scripts/microbench` |
+| `microbench` | stack namespace (`nethttp`/`gin`/`huma`/`gombit`, `gombit-ablation`) | `scripts/microbench` |
 | `crud` | framework | `scripts/run-crud` |
 | `footprint` | framework + variant | `scripts/footprint` |
 

@@ -20,7 +20,7 @@ const SchemaVersion = 1
 
 // The measurement groups a results/latest snapshot holds. They look like one
 // artifact but are produced by three different targets at wildly different
-// costs — `make benchmark-micro` is seconds of pure Go, `benchmark-crud-all` is
+// costs — `make benchmark-micro` is minutes of pure Go, `benchmark-crud-all` is
 // hours of containers and k6, `benchmark-footprint` is minutes of Docker — so
 // in practice they are measured at different commits, on different days, and
 // potentially on different hosts and toolchains. One snapshot-wide git_commit
