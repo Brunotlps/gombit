@@ -245,9 +245,16 @@ toolchain releases with no source change. **Never splice a refreshed row onto
 stale baseline rows:** the four rungs are only comparable when they were produced
 by one run, on one host, under one toolchain.
 
-A snapshot with no `groups` key predates this and is read with its top-level
-block as every unit's provenance, which for a single-run snapshot is exact — such
-a snapshot still renders one caption per table, exactly as before.
+A snapshot that records no unit at all predates this and is read with its
+top-level block as every unit's provenance, which for a single-run snapshot is
+exact — such a snapshot still renders one caption per table, exactly as before.
+That fallback is **all or nothing**. Once any unit is recorded, a unit without an
+entry is captioned as *unrecorded*, never with the top-level block: that block is
+rewritten by producers that did not measure the unit (next section), so borrowing
+it would re-caption untouched rows with someone else's commit and host. `make
+benchmark-metadata` measures nothing, so on a snapshot that records no unit it
+keeps the existing top-level block rather than replacing the only provenance those
+rows have.
 
 The footprint unit is the row's full merge key, `framework:variant`
 (`gombit:container`, `gombit:embedded`), because that is what `footprint.Merge`
@@ -258,21 +265,25 @@ container row the README publishes.
 
 `groups.<group>.<unit>` is the answer to "when, where and at which commit was
 *this row* measured". The flat top-level fields (`git_commit`, `timestamp`,
-`cpu_model`, `go_version`, …) describe the last **whole-snapshot** collection,
-which in practice is the CRUD sweep.
+`cpu_model`, `go_version`, …) describe whichever collection last rewrote the
+whole record, and they are **not a caption for any table**:
 
-A partial refresh — `make benchmark-micro`, `make benchmark-footprint`,
-`APPS=gombit make benchmark-crud-all` — stamps only the units it measured and
-**deliberately leaves the top-level fields alone**. So after refreshing the
-microbenchmark you will see a top-level `git_commit` that is *older* than the
-entries under `groups.microbench`. That is correct. Advancing it
-would make the CRUD and footprint tables — whose rows did not change — claim a
-commit and a host they never ran on, which is the same misattribution in the
-opposite direction.
+- `make benchmark-micro` and `make benchmark-footprint` stamp only the units they
+  measured and leave the top-level fields alone, so afterwards the top-level
+  `git_commit` is *older* than those units' entries.
+- `make benchmark-crud-all` rewrites the top-level fields on every app it runs —
+  including an `APPS=gombit` subset of one app — so afterwards the top-level
+  `git_commit` can be *newer* than five of the six CRUD rows, and than every
+  footprint and microbench row.
+- `make benchmark-metadata` rewrites them with a collection that measured nothing.
+
+Both directions are expected; neither is stale bookkeeping to "fix" by editing the
+top level.
 
 The practical rule: **read `groups.<group>.<unit>` for a row's provenance; read
 the top level only for the shared run parameters** (database, resource limits, sweep
-protocol, load generator) and as the fallback for pre-`groups` snapshots.
+protocol, load generator), and as every row's provenance only in a snapshot that
+records no unit at all.
 
 The shape is additive, so `schema_version` stays `1`: a reader that predates
 `groups` still sees exactly the flat fields it always saw.

@@ -75,22 +75,27 @@ func main() {
 // carryGroups preserves the per-unit provenance already on disk across a
 // whole-snapshot rewrite (`make benchmark-metadata`).
 //
-// collect-host-info measures nothing itself, so it has no standing to delete the
-// record of measurements other producers did run. Dropping Groups here would not
-// merely lose data: the report's fallback treats a unit with no entry as "this
-// snapshot predates per-unit provenance, so the top-level block IS its
-// provenance", which is only exact when one run produced everything. After a
-// wipe that premise is false but the fallback still fires, re-captioning every
-// table with the host and commit of a collection that measured nothing
-// (issue #266).
+// collect-host-info measures nothing itself, so it has no standing to delete or
+// replace the record of measurements other producers did run (issue #266):
 //
-// It deliberately preserves ONLY Groups. This target's existing behavior of
-// replacing the version maps and limit verdicts is untouched here — changing
+//   - Every unit's entry in Groups is carried forward unchanged.
+//   - If the snapshot on disk records no unit at all, it predates per-unit
+//     provenance and its top-level block IS every row's provenance (see
+//     metadata.Metadata.UnitProvenance). That block is carried forward too:
+//     replacing it would re-caption every table with the commit and host of
+//     this collection. Once any unit is recorded, the top-level block describes
+//     no row, and this collection's own block is written as before.
+//
+// Nothing else is preserved. This target's existing behavior of replacing the
+// version maps, limit verdicts and run parameters is untouched here — changing
 // that is a separate question from the provenance invariant.
 func carryGroups(path string, collected metadata.Metadata) (metadata.Metadata, error) {
 	existing, err := readSnapshot(path)
 	if err != nil {
 		return metadata.Metadata{}, err
+	}
+	if !existing.RecordsUnits() && !existing.Provenance().Empty() {
+		collected = collected.WithProvenance(existing.Provenance())
 	}
 	for group, units := range existing.Groups {
 		for unit, prov := range units {

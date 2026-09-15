@@ -494,6 +494,36 @@ func TestLegacySnapshotFallsBackToTopLevelProvenance(t *testing.T) {
 	}
 }
 
+// After `APPS=gombit make benchmark-crud-all` the top-level block names that one
+// app's commit and host. Neither the five untouched CRUD rows nor a footprint
+// table nobody re-measured may be captioned with it: unrecorded units are said
+// to be unrecorded (issue #266).
+func TestRewrittenTopLevelNeverCaptionsUnrecordedRows(t *testing.T) {
+	clean := false
+	meta := canonicalMeta()
+	meta.GitCommit, meta.CPUModel = "bbbb33334444", "Subset Host"
+	meta = metadata.StampUnit(meta, metadata.GroupCRUD, "gombit",
+		metadata.Provenance{GitCommit: "bbbb33334444", Timestamp: "2026-09-08T00:00:00Z", GitDirty: &clean, CPUModel: "Subset Host"})
+
+	out := Render(
+		[]result.Result{crudRow("rails", 100, 1, 900, 5, 10, 20), crudRow("gombit", 100, 1, 1000, 5, 10, 20)},
+		[]footprint.Footprint{{Framework: "rails", Variant: footprint.VariantContainer}},
+		nil, meta,
+	)
+	crud := out[strings.Index(out, "### PostgreSQL CRUD read"):strings.Index(out, "### Operational footprint")]
+	prints := out[strings.Index(out, "### Operational footprint"):strings.Index(out, "### How these were measured")]
+
+	if !strings.Contains(crud, "not measured together") || !strings.Contains(crud, "rails at an unrecorded commit") {
+		t.Errorf("the untouched CRUD row must be reported as unrecorded, not collapsed into the subset's caption:\n%s", crud)
+	}
+	if strings.Contains(prints, "bbbb33334444") || strings.Contains(prints, "Subset Host") {
+		t.Errorf("a footprint table the subset run never touched carries its commit/host:\n%s", prints)
+	}
+	if !strings.Contains(prints, "_Measured at an unrecorded commit and host") {
+		t.Errorf("the unrecorded footprint table must say so:\n%s", prints)
+	}
+}
+
 // A table with no data has no provenance to state.
 func TestPlaceholderTablesCarryNoProvenance(t *testing.T) {
 	out := Render(nil, nil, nil, canonicalMeta())

@@ -321,13 +321,35 @@ func TestUnitProvenanceFallsBackToTopLevelForLegacySnapshots(t *testing.T) {
 	if _, uniform := legacy.UnitsProvenance(GroupCRUD, []string{"rails", "gombit"}); !uniform {
 		t.Error("a legacy snapshot must render as one uniform caption, exactly as before")
 	}
-	// Once one unit is stamped, only that unit leaves the fallback.
-	stamped := StampUnit(legacy, GroupCRUD, "gombit", Provenance{GitCommit: "bbbb2222"})
-	if stamped.UnitProvenance(GroupCRUD, "gombit").GitCommit != "bbbb2222" {
-		t.Error("a stamped unit must use its own provenance")
+}
+
+// Once any unit is recorded, the top-level block stops being every unit's
+// provenance: run-crud and collect-host-info rewrite it, including for a
+// one-app subset. So an unrecorded unit must come back unrecorded — in its own
+// group and in every other — never as whatever commit last rewrote the top level.
+func TestUnrecordedUnitNeverBorrowsTheRewritableTopLevel(t *testing.T) {
+	// The top level has just been rewritten by a one-app CRUD run at bbbb2222.
+	m := Metadata{GitCommit: "bbbb2222", CPUModel: "Dev Host"}
+	m = StampUnit(m, GroupCRUD, "gombit", Provenance{GitCommit: "bbbb2222", CPUModel: "Dev Host"})
+
+	if got := m.UnitProvenance(GroupCRUD, "gombit"); got.GitCommit != "bbbb2222" {
+		t.Errorf("a recorded unit must use its own provenance, got %+v", got)
 	}
-	if stamped.UnitProvenance(GroupCRUD, "rails").GitCommit != "aaaa1111" {
-		t.Error("an unstamped unit must still fall back to the top-level block")
+	for _, c := range []struct{ group, unit string }{
+		{GroupCRUD, "rails"},                 // untouched sibling in the same group
+		{GroupFootprint, "gombit:container"}, // a group this run never touched
+	} {
+		if got := m.UnitProvenance(c.group, c.unit); !got.Empty() {
+			t.Errorf("%s/%s: unrecorded unit borrowed %+v; want Empty", c.group, c.unit, got)
+		}
+	}
+	if _, comparable := m.UnitsProvenance(GroupCRUD, []string{"gombit", "rails"}); comparable {
+		t.Error("a recorded unit and an unrecorded one must not collapse into one caption")
+	}
+	// An empty-but-present group map is still "no unit recorded".
+	legacy := Metadata{GitCommit: "aaaa1111", Groups: map[string]map[string]Provenance{GroupCRUD: {}}}
+	if got := legacy.UnitProvenance(GroupCRUD, "rails"); got.GitCommit != "aaaa1111" {
+		t.Errorf("a snapshot with no recorded unit must still use its top level, got %+v", got)
 	}
 }
 

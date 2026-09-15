@@ -132,6 +132,10 @@ func writeProvenance(b *strings.Builder, meta metadata.Metadata, group string, u
 	parts := make([]string, len(sorted))
 	for i, u := range sorted {
 		p := provs[u]
+		if p.Empty() {
+			parts[i] = u + " at an unrecorded commit"
+			continue
+		}
 		parts[i] = fmt.Sprintf("%s at `%s`%s (%s)", u, short(p.GitCommit), dirtySuffix(p.GitDirty), orDash(p.Timestamp))
 	}
 	fmt.Fprintf(b, "_**Rows were not measured together** — this table mixes source states, so its rows "+
@@ -161,7 +165,7 @@ func uniqueSorted(units []string) []string {
 // benchmarks/internal/metadata exists to hold.
 func writeProvenanceLine(b *strings.Builder, prov metadata.Provenance, when string) {
 	if prov.Empty() {
-		b.WriteString("_Measured at an unrecorded commit and host — this data predates run metadata._\n\n")
+		b.WriteString("_Measured at an unrecorded commit and host — no provenance was recorded for these rows._\n\n")
 		return
 	}
 	fmt.Fprintf(b, "_Measured at `%s`%s, %s — %s, %d logical CPUs, %.1f GiB RAM (%s/%s, kernel %s), %s._\n\n",

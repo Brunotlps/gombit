@@ -90,20 +90,23 @@ func (p Provenance) Empty() bool {
 // and the report captions each table from the units that table publishes.
 //
 // The top-level discovered fields (Timestamp, GitCommit, GitDirty, the host
-// block, GoVersion) describe the collection that wrote them — in practice the
-// last whole-snapshot producer, which is the CRUD sweep. They are deliberately
-// NOT a summary of the newest unit, and stamping a unit does not advance them
-// (see StampUnit). Two consequences worth stating plainly:
+// block, GoVersion) describe whichever collection last rewrote the whole
+// record: every run-crud invocation (including an `APPS=` subset of one app)
+// and every `make benchmark-metadata`. They are NOT a summary of the newest
+// unit, and stamping a unit through StampUnitFile does not advance them. Two
+// consequences worth stating plainly:
 //
-//   - After a partial refresh, the top-level GitCommit is OLDER than the
-//     refreshed unit's. That is correct, not stale bookkeeping: it still names
-//     the state the whole-snapshot collection ran at, and re-pointing it at the
-//     microbenchmark's commit would make the CRUD and footprint tables claim a
-//     commit and host they never ran on — trading one wrong caption for another.
+//   - The top-level block is rewritable by producers that did not measure most
+//     of the rows beside it, so it can never stand in for a unit's provenance
+//     once units are being recorded. After `make benchmark-micro` the top-level
+//     GitCommit is older than the microbench units'; after
+//     `APPS=gombit make benchmark-crud-all` it is newer than five of the six
+//     CRUD rows. Neither is a caption for any table.
 //   - Ask Groups, never the top level, when you want a table's provenance.
-//     UnitProvenance and UnitsProvenance do this for you, falling back to the top
-//     level only for snapshots written before Groups existed, where the fallback
-//     is exact because one run produced everything.
+//     UnitProvenance and UnitsProvenance do this for you. They fall back to the
+//     top level only for a snapshot that records no unit at all — one written
+//     before Groups existed, where one run produced everything — and report
+//     every other unrecorded unit as unrecorded (see UnitProvenance).
 //
 // The shape is additive, so SchemaVersion stays 1 and older readers keep
 // parsing: they see the flat fields they always saw, plus a `groups` object
@@ -153,9 +156,10 @@ type Metadata struct {
 	// measured. A unit is that group's merge key — the thing a single run can
 	// replace on its own:
 	//
-	//	microbench -> stack      (microbench.Merge replaces a stack whole)
-	//	crud       -> framework  (run-crud replaces one app's rows)
-	//	footprint  -> framework  (footprint.Merge keys on framework+variant)
+	//	microbench -> stack namespace   (microbench.MergeStack replaces it whole)
+	//	crud       -> framework         (run-crud replaces one app's rows)
+	//	footprint  -> framework:variant (footprint.Merge keys on both; see
+	//	                                 Footprint.ProvenanceUnit)
 	//
 	// Provenance is per unit, not per group, because every one of those files is
 	// merged row-wise and subset runs are supported (`APPS="gin-gorm gombit"`).
@@ -165,8 +169,9 @@ type Metadata struct {
 	// unit the data merges on makes that state unrepresentable rather than merely
 	// detectable.
 	//
-	// A unit with no entry predates per-unit stamping; readers fall back to the
-	// top-level block, which for a single-run snapshot is exactly its provenance.
+	// A unit with no entry has no recorded provenance. Only when no unit at all
+	// is recorded (a pre-Groups snapshot) do readers use the top-level block
+	// instead; see UnitProvenance for why that fallback cannot be per unit.
 	// Empty ({}) rather than null so "nothing recorded" is a collected fact, not
 	// a dropped field.
 	Groups map[string]map[string]Provenance `json:"groups"`
@@ -189,15 +194,57 @@ func (m Metadata) Provenance() Provenance {
 	}
 }
 
-// UnitProvenance returns the provenance to attribute one unit's data to. A
-// snapshot written before per-unit stamping has no entry, and its top-level
-// block *is* that unit's provenance — one run produced the whole file — so the
-// fallback is exact, not a guess.
+// UnitProvenance returns the provenance to attribute one unit's data to, or an
+// Empty Provenance when none was recorded for it.
+//
+// The top-level block is used only for a snapshot that records no unit at all.
+// Such a snapshot predates per-unit stamping, one run produced the whole file,
+// and its top-level block is exactly every unit's provenance.
+//
+// The fallback is deliberately NOT per unit. Once any unit is recorded, the
+// top-level block no longer belongs to the unrecorded ones: run-crud and
+// collect-host-info rewrite it on every invocation, including an `APPS=` subset
+// that measured one app. Borrowing it would caption five untouched CRUD rows —
+// and a footprint table nobody re-measured — with that one app's commit and
+// host (issue #266). An unrecorded unit is reported as
+// unrecorded, which is true in every order the producers can run in.
 func (m Metadata) UnitProvenance(group, unit string) Provenance {
 	if p, ok := m.Groups[group][unit]; ok {
 		return p
 	}
+	if m.RecordsUnits() {
+		return Provenance{}
+	}
 	return m.Provenance()
+}
+
+// WithProvenance returns m with its top-level commit/host/toolchain block
+// replaced by prov, leaving the run parameters and Groups untouched. It is the
+// inverse of Provenance.
+func (m Metadata) WithProvenance(prov Provenance) Metadata {
+	m.Timestamp = prov.Timestamp
+	m.GitCommit = prov.GitCommit
+	m.GitDirty = prov.GitDirty
+	m.OS = prov.OS
+	m.Kernel = prov.Kernel
+	m.Arch = prov.Arch
+	m.CPUModel = prov.CPUModel
+	m.LogicalCPUs = prov.LogicalCPUs
+	m.RAMBytes = prov.RAMBytes
+	m.GoVersion = prov.GoVersion
+	return m
+}
+
+// RecordsUnits reports whether any unit of any group has recorded provenance,
+// i.e. whether this snapshot is past the point where its top-level block could
+// describe every row.
+func (m Metadata) RecordsUnits() bool {
+	for _, units := range m.Groups {
+		if len(units) > 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // UnitsProvenance returns each unit's provenance and whether the units are

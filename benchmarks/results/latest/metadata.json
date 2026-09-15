@@ -50,6 +50,154 @@
   ],
   "trials": 5,
   "groups": {
+    "crud": {
+      "django": {
+        "timestamp": "2026-08-27T21:57:34Z",
+        "git_commit": "88442ae706f4e7f7f0bac7584ff5cba6c795a0d0",
+        "git_dirty": false,
+        "os": "linux",
+        "kernel": "7.0.0-30-generic",
+        "arch": "amd64",
+        "cpu_model": "Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz",
+        "logical_cpus": 8,
+        "ram_bytes": 7690293248,
+        "go_version": "go1.27.0"
+      },
+      "gin-gorm": {
+        "timestamp": "2026-08-27T21:57:34Z",
+        "git_commit": "88442ae706f4e7f7f0bac7584ff5cba6c795a0d0",
+        "git_dirty": false,
+        "os": "linux",
+        "kernel": "7.0.0-30-generic",
+        "arch": "amd64",
+        "cpu_model": "Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz",
+        "logical_cpus": 8,
+        "ram_bytes": 7690293248,
+        "go_version": "go1.27.0"
+      },
+      "gombit": {
+        "timestamp": "2026-08-27T21:57:34Z",
+        "git_commit": "88442ae706f4e7f7f0bac7584ff5cba6c795a0d0",
+        "git_dirty": false,
+        "os": "linux",
+        "kernel": "7.0.0-30-generic",
+        "arch": "amd64",
+        "cpu_model": "Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz",
+        "logical_cpus": 8,
+        "ram_bytes": 7690293248,
+        "go_version": "go1.27.0"
+      },
+      "laravel": {
+        "timestamp": "2026-08-27T21:57:34Z",
+        "git_commit": "88442ae706f4e7f7f0bac7584ff5cba6c795a0d0",
+        "git_dirty": false,
+        "os": "linux",
+        "kernel": "7.0.0-30-generic",
+        "arch": "amd64",
+        "cpu_model": "Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz",
+        "logical_cpus": 8,
+        "ram_bytes": 7690293248,
+        "go_version": "go1.27.0"
+      },
+      "nestjs": {
+        "timestamp": "2026-08-27T21:57:34Z",
+        "git_commit": "88442ae706f4e7f7f0bac7584ff5cba6c795a0d0",
+        "git_dirty": false,
+        "os": "linux",
+        "kernel": "7.0.0-30-generic",
+        "arch": "amd64",
+        "cpu_model": "Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz",
+        "logical_cpus": 8,
+        "ram_bytes": 7690293248,
+        "go_version": "go1.27.0"
+      },
+      "rails": {
+        "timestamp": "2026-08-27T21:57:34Z",
+        "git_commit": "88442ae706f4e7f7f0bac7584ff5cba6c795a0d0",
+        "git_dirty": false,
+        "os": "linux",
+        "kernel": "7.0.0-30-generic",
+        "arch": "amd64",
+        "cpu_model": "Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz",
+        "logical_cpus": 8,
+        "ram_bytes": 7690293248,
+        "go_version": "go1.27.0"
+      }
+    },
+    "footprint": {
+      "django:container": {
+        "timestamp": "2026-08-27T21:57:34Z",
+        "git_commit": "88442ae706f4e7f7f0bac7584ff5cba6c795a0d0",
+        "git_dirty": false,
+        "os": "linux",
+        "kernel": "7.0.0-30-generic",
+        "arch": "amd64",
+        "cpu_model": "Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz",
+        "logical_cpus": 8,
+        "ram_bytes": 7690293248,
+        "go_version": "go1.27.0"
+      },
+      "gin-gorm:container": {
+        "timestamp": "2026-08-27T21:57:34Z",
+        "git_commit": "88442ae706f4e7f7f0bac7584ff5cba6c795a0d0",
+        "git_dirty": false,
+        "os": "linux",
+        "kernel": "7.0.0-30-generic",
+        "arch": "amd64",
+        "cpu_model": "Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz",
+        "logical_cpus": 8,
+        "ram_bytes": 7690293248,
+        "go_version": "go1.27.0"
+      },
+      "gombit:container": {
+        "timestamp": "2026-08-27T21:57:34Z",
+        "git_commit": "88442ae706f4e7f7f0bac7584ff5cba6c795a0d0",
+        "git_dirty": false,
+        "os": "linux",
+        "kernel": "7.0.0-30-generic",
+        "arch": "amd64",
+        "cpu_model": "Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz",
+        "logical_cpus": 8,
+        "ram_bytes": 7690293248,
+        "go_version": "go1.27.0"
+      },
+      "laravel:container": {
+        "timestamp": "2026-08-27T21:57:34Z",
+        "git_commit": "88442ae706f4e7f7f0bac7584ff5cba6c795a0d0",
+        "git_dirty": false,
+        "os": "linux",
+        "kernel": "7.0.0-30-generic",
+        "arch": "amd64",
+        "cpu_model": "Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz",
+        "logical_cpus": 8,
+        "ram_bytes": 7690293248,
+        "go_version": "go1.27.0"
+      },
+      "nestjs:container": {
+        "timestamp": "2026-08-27T21:57:34Z",
+        "git_commit": "88442ae706f4e7f7f0bac7584ff5cba6c795a0d0",
+        "git_dirty": false,
+        "os": "linux",
+        "kernel": "7.0.0-30-generic",
+        "arch": "amd64",
+        "cpu_model": "Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz",
+        "logical_cpus": 8,
+        "ram_bytes": 7690293248,
+        "go_version": "go1.27.0"
+      },
+      "rails:container": {
+        "timestamp": "2026-08-27T21:57:34Z",
+        "git_commit": "88442ae706f4e7f7f0bac7584ff5cba6c795a0d0",
+        "git_dirty": false,
+        "os": "linux",
+        "kernel": "7.0.0-30-generic",
+        "arch": "amd64",
+        "cpu_model": "Intel(R) Core(TM) i5-8250U CPU @ 1.60GHz",
+        "logical_cpus": 8,
+        "ram_bytes": 7690293248,
+        "go_version": "go1.27.0"
+      }
+    },
     "microbench": {
       "gin": {
         "timestamp": "2026-09-15T00:33:55Z",
