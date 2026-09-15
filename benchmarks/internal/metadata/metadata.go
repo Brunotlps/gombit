@@ -200,14 +200,14 @@ func (m Metadata) UnitProvenance(group, unit string) Provenance {
 	return m.Provenance()
 }
 
-// UnitsProvenance returns each unit's provenance and whether they are all
-// identical. Callers rendering a table pass the units that table actually
-// publishes: uniform means one honest caption covers every row, and anything
-// else means the rows were not measured together and must be captioned
-// individually.
+// UnitsProvenance returns each unit's provenance and whether the units are
+// comparable with one another. Callers rendering a table pass the units that
+// table actually publishes: comparable means one honest caption covers every
+// row, and anything else means the rows were not measured together and must be
+// captioned individually.
 func (m Metadata) UnitsProvenance(group string, units []string) (map[string]Provenance, bool) {
 	out := make(map[string]Provenance, len(units))
-	uniform := true
+	comparable := true
 	var first Provenance
 	for i, u := range units {
 		p := m.UnitProvenance(group, u)
@@ -215,18 +215,28 @@ func (m Metadata) UnitsProvenance(group string, units []string) (map[string]Prov
 		switch {
 		case i == 0:
 			first = p
-		case !p.sameAs(first):
-			uniform = false
+		case !p.ComparableTo(first):
+			comparable = false
 		}
 	}
-	return out, uniform
+	return out, comparable
 }
 
-// sameAs compares two provenances by value. GitDirty is a pointer, so it is
-// compared by what it points at — two separately-collected records of the same
-// clean tree must count as the same provenance, not as different ones because
-// they hold different *bool addresses.
-func (p Provenance) sameAs(other Provenance) bool {
+// ComparableTo reports whether two units' numbers may be read against each
+// other: same source state, same machine, same toolchain.
+//
+// Timestamp is deliberately excluded. One run measures its units in sequence —
+// `make benchmark-micro` is four `go test` processes and finishes each stack a
+// minute or two apart — so comparing timestamps would flag every ordinary run as
+// "not measured together". A warning that fires on every run is worth nothing
+// when the real case arrives. What makes rows comparable is the commit, the
+// host and the toolchain; the clock is provenance to report, not a difference to
+// act on.
+//
+// GitDirty is a pointer, so it is compared by what it points at: two separately
+// collected records of the same clean tree are the same state, not different
+// ones because they hold different addresses.
+func (p Provenance) ComparableTo(other Provenance) bool {
 	if (p.GitDirty == nil) != (other.GitDirty == nil) {
 		return false
 	}
@@ -234,6 +244,7 @@ func (p Provenance) sameAs(other Provenance) bool {
 		return false
 	}
 	p.GitDirty, other.GitDirty = nil, nil
+	p.Timestamp, other.Timestamp = "", ""
 	return p == other
 }
 

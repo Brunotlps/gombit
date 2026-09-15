@@ -334,6 +334,45 @@ func TestEachTableCarriesItsOwnProvenance(t *testing.T) {
 	}
 }
 
+// One run measures its units in sequence: `make benchmark-micro` is four
+// `go test` processes that finish minutes apart. Those minutes are not different
+// source states, and flagging them would make the mixed-provenance warning fire
+// on every ordinary run — worthless by the time a real subset refresh happens.
+// Caught by the real snapshot, not by a fixture: the first version of this code
+// compared whole Provenance values, timestamps included.
+func TestSequentialUnitsOfOneRunAreStillOneCaption(t *testing.T) {
+	clean := false
+	meta := canonicalMeta()
+	for i, s := range stackLadder {
+		meta = metadata.StampUnit(meta, metadata.GroupMicrobench, s.key, metadata.Provenance{
+			GitCommit: "2ee9f8b1513b", GitDirty: &clean, CPUModel: "Dev Host",
+			LogicalCPUs: 12, GoVersion: "go1.26.1", OS: "linux", Arch: "amd64", Kernel: "7.1",
+			Timestamp: []string{
+				"2026-09-15T00:32:14Z", "2026-09-15T00:33:55Z",
+				"2026-09-15T00:35:32Z", "2026-09-15T00:37:00Z",
+			}[i],
+		})
+	}
+	out := Render(nil, nil, taxLadder(), meta)
+
+	if strings.Contains(out, "not measured together") {
+		t.Errorf("units of one run, differing only in clock time, must stay one caption:\n%s", out)
+	}
+	// The span is reported rather than one unit's clock standing in for all four.
+	if !strings.Contains(out, "2026-09-15T00:32:14Z to 2026-09-15T00:37:00Z") {
+		t.Errorf("caption must state the measurement span:\n%s", out)
+	}
+	// A different commit in the same group still breaks comparability.
+	meta = metadata.StampUnit(meta, metadata.GroupMicrobench, "gombit", metadata.Provenance{
+		GitCommit: "ffff99998888", GitDirty: &clean, CPUModel: "Dev Host",
+		LogicalCPUs: 12, GoVersion: "go1.26.1", OS: "linux", Arch: "amd64", Kernel: "7.1",
+		Timestamp: "2026-09-15T00:37:00Z",
+	})
+	if out := Render(nil, nil, taxLadder(), meta); !strings.Contains(out, "not measured together") {
+		t.Errorf("a differing commit must still break comparability:\n%s", out)
+	}
+}
+
 // THE regression this round exists for, at the rendering layer. `APPS=gombit
 // make benchmark-footprint` replaces one row and preserves five; the table must
 // NOT then be captioned with the re-run's commit. Without per-unit provenance

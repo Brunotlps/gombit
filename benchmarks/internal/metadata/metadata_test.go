@@ -282,6 +282,34 @@ func TestUnitsProvenanceReportsUniformityAcrossTheRenderedUnits(t *testing.T) {
 	}
 }
 
+// Comparability is about source state, host and toolchain — never the clock.
+func TestComparableToIgnoresTimestampButNotTheRest(t *testing.T) {
+	clean, dirty := false, true
+	base := Provenance{GitCommit: "aaaa1111", GitDirty: &clean, CPUModel: "Host", GoVersion: "go1.26.1"}
+
+	later := base
+	later.Timestamp = "2026-09-15T00:37:00Z"
+	if !base.ComparableTo(later) {
+		t.Error("units of one run differing only in clock time must be comparable")
+	}
+	for name, other := range map[string]Provenance{
+		"commit":    {GitCommit: "bbbb2222", GitDirty: &clean, CPUModel: "Host", GoVersion: "go1.26.1"},
+		"host":      {GitCommit: "aaaa1111", GitDirty: &clean, CPUModel: "Other", GoVersion: "go1.26.1"},
+		"toolchain": {GitCommit: "aaaa1111", GitDirty: &clean, CPUModel: "Host", GoVersion: "go1.25.7"},
+		"dirtiness": {GitCommit: "aaaa1111", GitDirty: &dirty, CPUModel: "Host", GoVersion: "go1.26.1"},
+	} {
+		if base.ComparableTo(other) {
+			t.Errorf("a differing %s must break comparability", name)
+		}
+	}
+	// Unknown dirtiness is not the same as known-clean.
+	unknown := base
+	unknown.GitDirty = nil
+	if base.ComparableTo(unknown) {
+		t.Error("known-clean and unknown dirtiness must not be comparable")
+	}
+}
+
 // A snapshot written before per-unit provenance has no entry, and its top-level
 // block IS every unit's provenance — one run produced the whole file — so the
 // fallback is exact, not a guess, and such a snapshot still renders uniform.

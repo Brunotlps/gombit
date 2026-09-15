@@ -123,9 +123,9 @@ func writeProvenance(b *strings.Builder, meta metadata.Metadata, group string, u
 		// provenance for an empty table would be exactly the wrong failure.
 		return
 	}
-	provs, uniform := meta.UnitsProvenance(group, sorted)
-	if uniform {
-		writeProvenanceLine(b, provs[sorted[0]])
+	provs, comparable := meta.UnitsProvenance(group, sorted)
+	if comparable {
+		writeProvenanceLine(b, provs[sorted[0]], timestampSpan(provs, sorted))
 		return
 	}
 
@@ -159,15 +159,39 @@ func uniqueSorted(units []string) []string {
 // dropping kernel/arch/RAM to shorten the caption would leave a published table
 // without enough metadata to reproduce it, which is the invariant
 // benchmarks/internal/metadata exists to hold.
-func writeProvenanceLine(b *strings.Builder, prov metadata.Provenance) {
+func writeProvenanceLine(b *strings.Builder, prov metadata.Provenance, when string) {
 	if prov.Empty() {
 		b.WriteString("_Measured at an unrecorded commit and host — this data predates run metadata._\n\n")
 		return
 	}
 	fmt.Fprintf(b, "_Measured at `%s`%s, %s — %s, %d logical CPUs, %.1f GiB RAM (%s/%s, kernel %s), %s._\n\n",
-		short(prov.GitCommit), dirtySuffix(prov.GitDirty), orDash(prov.Timestamp),
+		short(prov.GitCommit), dirtySuffix(prov.GitDirty), orDash(when),
 		orDash(prov.CPUModel), prov.LogicalCPUs, gib(prov.RAMBytes),
 		orDash(prov.OS), orDash(prov.Arch), orDash(prov.Kernel), orDash(prov.GoVersion))
+}
+
+// timestampSpan describes when a set of comparable units was measured. One run
+// measures its units in sequence, so their timestamps legitimately differ by
+// minutes; the caption states the span rather than picking one unit's clock and
+// implying the others share it.
+func timestampSpan(provs map[string]metadata.Provenance, units []string) string {
+	first, last := "", ""
+	for _, u := range units {
+		ts := provs[u].Timestamp
+		if ts == "" {
+			continue
+		}
+		if first == "" || ts < first {
+			first = ts
+		}
+		if ts > last {
+			last = ts
+		}
+	}
+	if first == last {
+		return first
+	}
+	return first + " to " + last
 }
 
 // writeStatusBanner prints, at the very top of the block, the two conditions
