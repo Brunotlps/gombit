@@ -243,7 +243,12 @@ func writeOutputs(outDir, framework string, newRows []result.Result, meta metada
 	if err != nil {
 		return err
 	}
-	meta = mergedMetadata(filepath.Join(outDir, "metadata.json"), meta)
+	// Read before writing anything, so an unreadable snapshot fails the run with
+	// results.json untouched.
+	meta, err = mergedMetadata(filepath.Join(outDir, "metadata.json"), meta)
+	if err != nil {
+		return err
+	}
 
 	if err := writeFile(filepath.Join(outDir, "results.json"), func(f *os.File) error {
 		return result.WriteJSON(f, rows)
@@ -294,19 +299,16 @@ func readResults(path string) ([]result.Result, error) {
 
 // mergedMetadata folds this run's metadata into whatever an earlier app's run
 // already wrote, preserving every app's contribution (metadata.Merge documents
-// the per-field rules). An unreadable or corrupt file is treated as "no prior
-// snapshot": this run's own record still gets written.
-func mergedMetadata(path string, meta metadata.Metadata) metadata.Metadata {
-	f, err := os.Open(path) //nolint:gosec // path composed from the operator-supplied out-dir
+// the per-field rules). A missing file starts the record; an unreadable or
+// corrupt one is an error. Treating it as "no prior snapshot" would overwrite
+// every other app's versions and limit verdicts and every unit's provenance —
+// the microbench and footprint groups included — with this one app's record.
+func mergedMetadata(path string, meta metadata.Metadata) (metadata.Metadata, error) {
+	existing, err := metadata.ReadFile(path)
 	if err != nil {
-		return meta
+		return metadata.Metadata{}, err
 	}
-	defer func() { _ = f.Close() }()
-	existing, err := metadata.ReadJSON(f)
-	if err != nil {
-		return meta
-	}
-	return metadata.Merge(existing, meta)
+	return metadata.Merge(existing, meta), nil
 }
 
 func writeFile(path string, encode func(*os.File) error) error {

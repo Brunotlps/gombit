@@ -64,23 +64,64 @@ func TestMergedMetadataPostgresSentinelDistinguishesNotProvidedFromVerifiedUnkno
 	writeMetadataJSON(t, path, metadata.Metadata{PostgresResourceLimits: prior})
 
 	// Empty ("not provided", e.g. standalone benchmark-crud) keeps the prior verdict.
-	got := mergedMetadata(path, metadata.Metadata{PostgresResourceLimits: ""})
+	got, err := mergedMetadata(path, metadata.Metadata{PostgresResourceLimits: ""})
+	if err != nil {
+		t.Fatalf("mergedMetadata: %v", err)
+	}
 	if got.PostgresResourceLimits != prior {
 		t.Errorf(`empty postgres verdict should keep the prior one; got %q, want %q`, got.PostgresResourceLimits, prior)
 	}
 
 	// A verified-unknown re-run overwrites the stale verdict (does not inherit it).
 	unknown := "unknown (inspect-limits failed)"
-	got = mergedMetadata(path, metadata.Metadata{PostgresResourceLimits: unknown})
+	if got, err = mergedMetadata(path, metadata.Metadata{PostgresResourceLimits: unknown}); err != nil {
+		t.Fatalf("mergedMetadata: %v", err)
+	}
 	if got.PostgresResourceLimits != unknown {
 		t.Errorf("verified-unknown should overwrite the stale verdict; got %q, want %q", got.PostgresResourceLimits, unknown)
 	}
 
 	// A fresh real verdict overwrites too (the ordinary re-verify case).
 	fresh := "partial: memory unset"
-	got = mergedMetadata(path, metadata.Metadata{PostgresResourceLimits: fresh})
+	if got, err = mergedMetadata(path, metadata.Metadata{PostgresResourceLimits: fresh}); err != nil {
+		t.Fatalf("mergedMetadata: %v", err)
+	}
 	if got.PostgresResourceLimits != fresh {
 		t.Errorf("a fresh verdict should overwrite; got %q, want %q", got.PostgresResourceLimits, fresh)
+	}
+}
+
+// A corrupt metadata.json must fail the run with results.json untouched. It used
+// to be treated as "no prior snapshot" and overwritten with this one app's
+// record, erasing every other app's versions and limit verdicts and every unit's
+// provenance, the microbench and footprint groups included.
+func TestRunFailsWithoutWritingWhenMetadataIsCorrupt(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "metadata.json"), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	ok, err := os.ReadFile(filepath.Join("..", "..", "internal", "k6", "testdata", "summary_ok.json")) //nolint:gosec // fixed testdata golden path
+	if err != nil {
+		t.Fatalf("read golden: %v", err)
+	}
+	k6run := func(_ int, _ string, summaryPath string) error {
+		if summaryPath == "" {
+			return nil
+		}
+		return os.WriteFile(summaryPath, ok, 0o600) //nolint:gosec // summaryPath is under t.TempDir()
+	}
+	cfg := runConfig{
+		targetURL: "http://unused", framework: "gombit",
+		concurrency: []int{10}, duration: "1s", warmup: "1s", trials: 1, outDir: dir,
+	}
+	if err := run(cfg, k6run); err == nil {
+		t.Fatal("run() = nil, want an error for a corrupt metadata.json")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "results.json")); !os.IsNotExist(err) {
+		t.Errorf("results.json was written despite the metadata failure (stat err: %v)", err)
+	}
+	if data, _ := os.ReadFile(filepath.Join(dir, "metadata.json")); string(data) != "{not json" { //nolint:gosec // test-owned temp path
+		t.Errorf("the corrupt metadata.json was overwritten: %q", data)
 	}
 }
 

@@ -90,7 +90,7 @@ func main() {
 // version maps, limit verdicts and run parameters is untouched here — changing
 // that is a separate question from the provenance invariant.
 func carryGroups(path string, collected metadata.Metadata) (metadata.Metadata, error) {
-	existing, err := readSnapshot(path)
+	existing, err := metadata.ReadFile(path)
 	if err != nil {
 		return metadata.Metadata{}, err
 	}
@@ -103,30 +103,6 @@ func carryGroups(path string, collected metadata.Metadata) (metadata.Metadata, e
 		}
 	}
 	return collected, nil
-}
-
-// readSnapshot returns the metadata.json already at path.
-//
-// A missing file is not an error: the first target to run in a fresh OUT_DIR
-// starts a new record. A file that exists but does not parse IS an error —
-// silently replacing a corrupt snapshot would discard whatever hours-long run
-// produced it.
-func readSnapshot(path string) (metadata.Metadata, error) {
-	// path is the operator-supplied -out flag, not untrusted input — G304 does
-	// not apply.
-	f, err := os.Open(path) //nolint:gosec
-	if err != nil {
-		if os.IsNotExist(err) {
-			return metadata.Metadata{SchemaVersion: metadata.SchemaVersion}, nil
-		}
-		return metadata.Metadata{}, fmt.Errorf("read %s: %w", path, err)
-	}
-	defer func() { _ = f.Close() }()
-	existing, err := metadata.ReadJSON(f)
-	if err != nil {
-		return metadata.Metadata{}, fmt.Errorf("read %s: %w", path, err)
-	}
-	return existing, nil
 }
 
 func fatalf(format string, args ...any) {

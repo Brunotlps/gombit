@@ -76,3 +76,21 @@ func TestRunRejectsEmptyStackOrIncompleteOutput(t *testing.T) {
 		t.Error("a rejected run must not have written the output file")
 	}
 }
+
+// An unreadable metadata.json must fail the run before microbench.json is
+// touched. Merging the rows first and failing at the stamp would leave fresh
+// rows on disk beside the previous run's provenance for their stack.
+func TestRunFailsBeforeWritingRowsWhenMetadataIsCorrupt(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, "microbench.json")
+	if err := os.WriteFile(filepath.Join(dir, "metadata.json"), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var so, se bytes.Buffer
+	if code := run([]string{"-stack", "gin", "-out", out}, strings.NewReader(benchAll("1000")), &so, &se); code == 0 {
+		t.Fatal("a corrupt metadata.json must fail the run")
+	}
+	if _, err := os.Stat(out); !os.IsNotExist(err) {
+		t.Errorf("microbench.json was written before the metadata failure (stat err: %v)", err)
+	}
+}

@@ -76,3 +76,24 @@ func TestRunRejectsBadInput(t *testing.T) {
 		}
 	}
 }
+
+// An unreadable metadata.json must fail the run before footprint.json is
+// touched. Merging the row first and failing at the stamp would leave a fresh
+// row on disk beside the previous run's provenance for its unit.
+func TestRunFailsBeforeWritingRowsWhenMetadataIsCorrupt(t *testing.T) {
+	dir := t.TempDir()
+	out := filepath.Join(dir, "footprint.json")
+	if err := os.WriteFile(filepath.Join(dir, "metadata.json"), []byte("{not json"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	var so, se bytes.Buffer
+	code := run([]string{"-framework", "gombit", "-variant", "container", "-cold-start-ms", "200", "-out", out}, &so, &se)
+	if code == 0 {
+		t.Fatal("a corrupt metadata.json must fail the run")
+	}
+	for _, p := range []string{out, strings.TrimSuffix(out, ".json") + ".csv"} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("%s was written before the metadata failure (stat err: %v)", filepath.Base(p), err)
+		}
+	}
+}

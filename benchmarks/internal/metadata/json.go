@@ -26,6 +26,37 @@ func ReadJSON(r io.Reader) (Metadata, error) {
 	return m, nil
 }
 
+// ReadFile returns the metadata.json at path. It is the one way every producer
+// reads an existing snapshot before adding to it.
+//
+// A missing file is not an error: the first producer to run in a fresh OUT_DIR
+// starts the record, so it returns an empty record at the current
+// SchemaVersion. A file that exists but cannot be read or parsed IS an error —
+// silently replacing a corrupt snapshot would discard whatever hours-long runs
+// produced it, along with every unit's provenance.
+//
+// Producers call it before writing any rows, not only when stamping afterwards:
+// otherwise a corrupt metadata.json is discovered after the rows are already
+// merged, leaving them on disk beside the previous run's provenance for their
+// unit.
+func ReadFile(path string) (Metadata, error) {
+	// path is composed from an operator-supplied output dir, not untrusted
+	// input — G304 does not apply.
+	f, err := os.Open(path) //nolint:gosec
+	if os.IsNotExist(err) {
+		return Metadata{SchemaVersion: SchemaVersion}, nil
+	}
+	if err != nil {
+		return Metadata{}, fmt.Errorf("metadata: read %s: %w", path, err)
+	}
+	defer func() { _ = f.Close() }()
+	m, err := ReadJSON(f)
+	if err != nil {
+		return Metadata{}, fmt.Errorf("metadata: read %s: %w", path, err)
+	}
+	return m, nil
+}
+
 // StampUnitFile records one unit's provenance into the metadata.json at path,
 // preserving everything already there.
 //
@@ -35,10 +66,7 @@ func ReadJSON(r io.Reader) (Metadata, error) {
 // "a producer stamps only what it measured" invariant enforceable rather than a
 // convention three call sites are trusted to follow.
 //
-// A missing file is not an error: the first producer to run in a fresh OUT_DIR
-// starts the record. A file that exists but does not parse IS an error —
-// silently replacing a corrupt snapshot would discard whatever hours-long run
-// produced it.
+// It reads through ReadFile, so it fails closed on a snapshot it cannot read.
 func StampUnitFile(path, group, unit string, prov Provenance) error {
 	if !ValidGroup(group) {
 		return fmt.Errorf("metadata: unknown group %q", group)
@@ -47,19 +75,9 @@ func StampUnitFile(path, group, unit string, prov Provenance) error {
 		return fmt.Errorf("metadata: group %q needs a unit to stamp", group)
 	}
 
-	existing := Metadata{SchemaVersion: SchemaVersion}
-	// path is composed from an operator-supplied output dir, not untrusted
-	// input — G304 does not apply.
-	f, err := os.Open(path) //nolint:gosec
-	switch {
-	case err == nil:
-		existing, err = ReadJSON(f)
-		_ = f.Close()
-		if err != nil {
-			return fmt.Errorf("metadata: read %s: %w", path, err)
-		}
-	case !os.IsNotExist(err):
-		return fmt.Errorf("metadata: read %s: %w", path, err)
+	existing, err := ReadFile(path)
+	if err != nil {
+		return err
 	}
 
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil { //nolint:gosec // operator-supplied out dir

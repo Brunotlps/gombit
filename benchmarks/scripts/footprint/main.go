@@ -77,6 +77,14 @@ func run(args []string, stdout, stderr io.Writer) int {
 		BinarySizeBytes:     *binSize,
 	}
 
+	// Fail before touching footprint.json if the snapshot's metadata.json cannot
+	// be read: the stamp below would fail after the row was already merged,
+	// leaving it beside the previous run's provenance for this unit.
+	if _, err := metadata.ReadFile(metadata.SiblingPath(*out)); err != nil {
+		_, _ = fmt.Fprintf(stderr, "footprint: %v\n", err)
+		return 1
+	}
+
 	if err := mergeIntoFiles(*out, row); err != nil {
 		_, _ = fmt.Fprintf(stderr, "footprint: %v\n", err)
 		return 1

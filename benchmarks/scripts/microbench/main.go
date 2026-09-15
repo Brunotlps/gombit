@@ -56,6 +56,13 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "microbench: %v\n", err)
 		return 1
 	}
+	// Fail before touching microbench.json if the snapshot's metadata.json cannot
+	// be read: the stamp below would fail after the rows were already merged,
+	// leaving them beside the previous run's provenance for this stack.
+	if _, err := metadata.ReadFile(metadata.SiblingPath(*out)); err != nil {
+		_, _ = fmt.Fprintf(stderr, "microbench: %v\n", err)
+		return 1
+	}
 	merged := microbench.MergeStack(existing, rows, *stack)
 
 	if err := os.MkdirAll(filepath.Dir(*out), 0o755); err != nil { //nolint:gosec // operator-supplied out dir
