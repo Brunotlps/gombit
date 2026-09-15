@@ -83,11 +83,12 @@ func run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 		_, _ = fmt.Fprintf(stderr, "microbench: %v\n", err)
 		return 1
 	}
-	// Stamp THIS stack's provenance, and only this stack's. microbench.Merge
-	// replaces a stack whole and leaves the others alone, so provenance has to
-	// move at the same granularity: a stack-wide run that relabelled the whole
-	// ladder would caption three untouched stacks with a commit they never ran
-	// at (issue #266, review round 2).
+	// Stamp THIS stack namespace's provenance, and only this one. MergeStack
+	// replaces the -stack namespace whole and leaves the others alone, so
+	// provenance moves at the same granularity: a ladder-wide stamp would caption
+	// three untouched stacks with a commit they never ran at (issue #266, review
+	// round 2). For the ablation the unit is the namespace `gombit-ablation`,
+	// which owns every `gombit-ablation/<row>` stack exactly as the merge does.
 	if err := metadata.StampUnitFile(
 		metadata.SiblingPath(*out), metadata.GroupMicrobench, *stack, collectProvenance(),
 	); err != nil {

@@ -353,25 +353,34 @@ func TestUnrecordedUnitNeverBorrowsTheRewritableTopLevel(t *testing.T) {
 	}
 }
 
-// One unit measured against uncommitted source taints the whole block: a reader
-// skimming a table cannot tell which row produced it.
-func TestAnyDirtySeesUnitDirtEvenWhenTopLevelIsClean(t *testing.T) {
+// AnyUnitDirty judges exactly the units it is given: a dirty unit among them is
+// dirt even under a clean top level, a dirty unit outside them is not, and
+// unknown dirtiness is unknown rather than dirty.
+func TestAnyUnitDirtyJudgesOnlyTheGivenUnits(t *testing.T) {
 	clean, dirty := false, true
 	m := Metadata{GitDirty: &clean, Groups: map[string]map[string]Provenance{
 		GroupCRUD:       {"rails": {GitDirty: &clean}},
-		GroupMicrobench: {"gin": {GitDirty: &dirty}},
+		GroupMicrobench: {"gin": {GitDirty: &dirty}, "gombit-ablation": {GitDirty: &dirty}},
 	}}
-	if !m.AnyDirty() {
-		t.Error("AnyDirty = false, want true when a unit was measured dirty")
+	if !m.AnyUnitDirty(GroupMicrobench, []string{"nethttp", "gin"}) {
+		t.Error("AnyUnitDirty = false, want true when a given unit was measured dirty")
+	}
+	if m.AnyUnitDirty(GroupCRUD, []string{"rails"}) {
+		t.Error("AnyUnitDirty = true for a clean group; dirt in another group leaked in")
 	}
 	m.Groups[GroupMicrobench]["gin"] = Provenance{GitDirty: &clean}
-	if m.AnyDirty() {
-		t.Error("AnyDirty = true, want false when nothing is dirty")
+	if m.AnyUnitDirty(GroupMicrobench, []string{"gin"}) {
+		t.Error("AnyUnitDirty = true; the dirty gombit-ablation unit was not among the given units")
 	}
 	// Unknown (nil) is not dirt — it is unknown.
 	m.Groups[GroupMicrobench]["gin"] = Provenance{}
-	if m.AnyDirty() {
-		t.Error("AnyDirty = true, want false when dirtiness is unknown")
+	if m.AnyUnitDirty(GroupMicrobench, []string{"gin"}) {
+		t.Error("AnyUnitDirty = true, want false when dirtiness is unknown")
+	}
+	// A snapshot that records no unit is judged by its top level.
+	legacy := Metadata{GitDirty: &dirty}
+	if !legacy.AnyUnitDirty(GroupCRUD, []string{"rails"}) {
+		t.Error("a snapshot with no recorded unit must be judged by its dirty top level")
 	}
 }
 

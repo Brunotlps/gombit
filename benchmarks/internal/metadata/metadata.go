@@ -295,19 +295,19 @@ func (p Provenance) ComparableTo(other Provenance) bool {
 	return p == other
 }
 
-// AnyDirty reports whether the top-level record or any group was measured on a
-// dirty working tree. It fails loud: one group measured against uncommitted
-// source is enough to make the whole snapshot unpublishable, since the reader
-// cannot tell from a table which group it is looking at.
-func (m Metadata) AnyDirty() bool {
-	if m.GitDirty != nil && *m.GitDirty {
-		return true
-	}
-	for _, units := range m.Groups {
-		for _, p := range units {
-			if p.GitDirty != nil && *p.GitDirty {
-				return true
-			}
+// AnyUnitDirty reports whether any of the given units of group was measured on
+// a dirty working tree, judged through UnitProvenance so a snapshot that
+// records no unit is judged by its top-level block. Unknown dirtiness (nil) is
+// not dirt.
+//
+// Callers pass the units they publish, not every unit on file: a snapshot's
+// data files also hold rows no table renders (the `gombit-ablation` ladder in
+// microbench.json, an embedded footprint variant), and a dirty diagnostic run
+// of those says nothing about the numbers a reader is looking at.
+func (m Metadata) AnyUnitDirty(group string, units []string) bool {
+	for _, u := range units {
+		if p := m.UnitProvenance(group, u); p.GitDirty != nil && *p.GitDirty {
+			return true
 		}
 	}
 	return false

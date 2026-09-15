@@ -562,7 +562,8 @@ func TestDirtyUnitStampsUnpublishableAndNamesOnlyThatGroupsTarget(t *testing.T) 
 	meta = metadata.StampUnit(meta, metadata.GroupMicrobench, "gin", metadata.Provenance{GitDirty: &dirty})
 	meta = metadata.StampUnit(meta, metadata.GroupCRUD, "rails", metadata.Provenance{GitDirty: &clean})
 
-	banner := bannerOf(Render(nil, nil, nil, meta))
+	// Both units must be published for their dirt to be judged.
+	banner := bannerOf(Render([]result.Result{crudRow("rails", 100, 1, 900, 5, 10, 20)}, nil, taxLadder(), meta))
 	if !strings.Contains(banner, "UNPUBLISHABLE DEVELOPMENT RUN") {
 		t.Errorf("a unit measured on a dirty tree must stamp the block unpublishable:\n%s", banner)
 	}
@@ -571,6 +572,23 @@ func TestDirtyUnitStampsUnpublishableAndNamesOnlyThatGroupsTarget(t *testing.T) 
 	}
 	if strings.Contains(banner, "benchmark-crud-all") {
 		t.Errorf("remediation must not prescribe re-running the clean CRUD sweep:\n%s", banner)
+	}
+}
+
+// microbench.json also holds rows no table publishes: `make
+// benchmark-micro-ablation` writes the gombit-ablation ladder and stamps its own
+// unit. A dirty ablation run must not brand the published framework-tax table
+// unpublishable, nor send the reader to re-run a target that would not clear it.
+func TestDirtyUnpublishedUnitDoesNotStampTheBlock(t *testing.T) {
+	meta := canonicalMeta()
+	dirty, clean := true, false
+	for _, s := range stackLadder {
+		meta = metadata.StampUnit(meta, metadata.GroupMicrobench, s.key, metadata.Provenance{GitCommit: "abc123def456", GitDirty: &clean})
+	}
+	meta = metadata.StampUnit(meta, metadata.GroupMicrobench, "gombit-ablation", metadata.Provenance{GitCommit: "abc123def456", GitDirty: &dirty})
+
+	if banner := bannerOf(Render(nil, nil, taxLadder(), meta)); strings.Contains(banner, "UNPUBLISHABLE") {
+		t.Errorf("a dirty unit no table publishes must not stamp the block:\n%s", banner)
 	}
 }
 
