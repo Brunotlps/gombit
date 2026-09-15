@@ -50,16 +50,29 @@ group-scoped middleware. Order is:
 
 ```text
 Recovery
-  -> request ID
-  -> trace context
+  -> request context (request ID + W3C trace context, and — when
+     GOMBIT_HTTP_REQUEST_TIMEOUT > 0 — the per-handler deadline; #268)
   -> request metrics
   -> security headers
   -> XSS HTML-tag sanitization (request input)
-  -> request timeout
   -> Bearer JWT middleware on protected Huma operations (`GET /me`)
   -> feature group middleware (if any)
     -> feature handler
 ```
+
+The **request timeout is opt-in** (issue #270 / PERF-12). The framework default
+is `0`, which disables the per-handler deadline. The deadline lives inside the
+`request_context` middleware (#268 folded it in — there is no separate timeout
+layer), and that middleware does no timeout work when the value is `0`: no
+timer, nothing added on the request path. Set
+`GOMBIT_HTTP_REQUEST_TIMEOUT` (scaffolded apps set `60s`) to install it; the
+deadline then propagates into the request context and any DB/cache call that
+honors it. The `http.Server` `ReadHeaderTimeout`/`ReadTimeout`/`WriteTimeout`/
+`IdleTimeout` remain the connection-level safety net either way. Trade-off: with
+the per-handler deadline off, a slow handler keeps running after `WriteTimeout`
+closes the connection, and a long-running DB query is not cancelled unless the
+app enables the timeout or sets its own deadline. See
+`docs/adr/017-request-timeout-opt-in.md`.
 
 XSS sanitization is a fundamental security default (M1-8): response headers
 alone are not enough. The runtime strips HTML tags from JSON string fields
@@ -108,10 +121,13 @@ Other behavior notes:
   always stripped.
 - JSON sanitizer buffering is capped at 8MiB. Larger JSON bodies abort with
   HTTP 413 and a D10 error envelope (`payload_too_large`) and never reach
-  handlers. `http.Server.ReadTimeout` matches `GOMBIT_HTTP_REQUEST_TIMEOUT`
-  (`0` disables it). The request-timeout middleware is a context deadline; it
-  does not abort `Body.Read`. The connection read deadline and the sanitizer
-  cap are the brakes on a slow or never-ending JSON body (#137).
+  handlers. The `http.Server` `ReadTimeout`/`WriteTimeout`/`IdleTimeout` are a
+  connection-level safety net that is always on: they take
+  `GOMBIT_HTTP_REQUEST_TIMEOUT` when it is set, and fall back to a 60s default
+  when the per-handler deadline is disabled (issue #270). The opt-in
+  request-timeout middleware is a context deadline; it does not abort
+  `Body.Read`. The connection read deadline and the sanitizer cap are the brakes
+  on a slow or never-ending JSON body (#137).
 
 Canonical design order (draft §13.3) also includes CORS, body-size limit, rate
 limiting, and auth context. Those remain deferred; when a first-class body-size

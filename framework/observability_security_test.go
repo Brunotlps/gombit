@@ -26,13 +26,17 @@ func TestDefaultRuntimeMiddlewareOrder(t *testing.T) {
 		got = append(got, middleware.name)
 	}
 
+	// There is no standalone request_timeout layer: #268 folded the per-handler
+	// deadline into request_context. The opt-in nature of the timeout (issue
+	// #270) is a config default (0) plus applyTimeout's no-op path, covered by
+	// TestRequestContextMiddlewareDisabledTimeoutImposesNoDeadline and
+	// TestRequestContextDisabledTimeoutAllocationBudget.
 	want := []string{
 		"recovery",
 		"request_context",
 		"metrics",
 		"security_headers",
 		"xss",
-		"request_timeout",
 	}
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("runtime middleware order = %v, want %v", got, want)
@@ -215,7 +219,10 @@ func TestSecurityHeadersLayerAllocatesNothing(t *testing.T) {
 
 	build := func(withSecurity bool) http.Handler {
 		router := gin.New()
-		router.Use(requestContextMiddleware())
+		// Timeout 0: request_context is present in both arms so its cost cancels
+		// out of the with/without-security delta; a no-op timeout keeps the row
+		// deterministic (no context.WithTimeout timer in the measurement).
+		router.Use(requestContextMiddleware(0))
 		router.Use(metricsMiddleware(newHTTPMetrics()))
 		if withSecurity {
 			router.Use(securityHeadersMiddleware(true, false)) // includeHSTS: production; docs disabled
@@ -562,6 +569,49 @@ func TestRunContextConfiguresServerTimeouts(t *testing.T) {
 	}
 }
 
+// TestRunContextServerTimeoutFallbackWhenRequestTimeoutDisabled locks the #270 /
+// PERF-12 safety net: with the per-handler deadline disabled (RequestTimeout 0,
+// the default), the connection-level read/write/idle timeouts must fall back to
+// defaultHTTPServerTimeout rather than 0 (unbounded). The per-handler middleware
+// is off; the server safety net stays on.
+func TestRunContextServerTimeoutFallbackWhenRequestTimeoutDisabled(t *testing.T) {
+	cfg := config.Default()
+	cfg.Environment = config.EnvironmentTest
+	cfg.HTTP.Addr = "127.0.0.1:0"
+	cfg.HTTP.RequestTimeout = 0
+	app := newTestApp(t, WithConfig(cfg))
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan error, 1)
+	go func() {
+		done <- RunContext(ctx, app)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		if err := waitRun(done); err != nil {
+			t.Fatalf("RunContext() error = %v, want nil", err)
+		}
+	})
+
+	waitForHTTP(t, app, "/livez")
+
+	app.mu.RLock()
+	server := app.server
+	app.mu.RUnlock()
+	if server == nil {
+		t.Fatal("server = nil, want configured HTTP server")
+	}
+	for name, got := range map[string]time.Duration{
+		"ReadTimeout":  server.ReadTimeout,
+		"WriteTimeout": server.WriteTimeout,
+		"IdleTimeout":  server.IdleTimeout,
+	} {
+		if got != defaultHTTPServerTimeout {
+			t.Fatalf("server.%s = %v with the per-handler timeout disabled, want fallback %v", name, got, defaultHTTPServerTimeout)
+		}
+	}
+}
+
 func TestDefaultRouterMetricsEndpointRecordsRequests(t *testing.T) {
 	app := newTestApp(t)
 
@@ -897,6 +947,43 @@ func TestDefaultRouterLeavesPasswordFieldUnsanitized(t *testing.T) {
 	}
 	if body["note"] != "hi" {
 		t.Fatalf("note = %q, want %q", body["note"], "hi")
+	}
+}
+
+// TestRequestCorrelationHeaderSharedArrayContract is the correlation-header
+// mirror of TestSecurityHeaderSharedValueContract (issue #268).
+// requestContextMiddleware aliases one per-request [2]string array for both
+// correlation headers: X-Request-Id -> hdr[0:1:1], X-Trace-Id -> hdr[1:2:2].
+// Cap 1 is load-bearing. If the X-Request-Id slice had spare capacity,
+// http.Header.Add would append the new value into hdr[1] — the *trace* header's
+// backing slot — instead of reallocating, silently corrupting X-Trace-Id. This
+// proves Add stays request-local and does not write through into the sibling
+// header.
+func TestRequestCorrelationHeaderSharedArrayContract(t *testing.T) {
+	app := newTestApp(t)
+	app.Router().GET("/add-request-id", func(c *gin.Context) {
+		c.Writer.Header().Add(RequestIDHeader, "extra")
+		c.Status(http.StatusOK)
+	})
+
+	rec := httptest.NewRecorder()
+	app.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/add-request-id", nil))
+
+	reqIDs := rec.Header().Values(RequestIDHeader)
+	if len(reqIDs) != 2 || reqIDs[1] != "extra" {
+		t.Fatalf("%s values = %v, want [<id> extra]", RequestIDHeader, reqIDs)
+	}
+	if !uuidV4Pattern.MatchString(reqIDs[0]) {
+		t.Fatalf("%s[0] = %q, want a UUIDv4 request ID", RequestIDHeader, reqIDs[0])
+	}
+	// Load-bearing: appending to X-Request-Id must not have written "extra"
+	// through into the trace header's shared backing slot.
+	traceID := rec.Header().Get(TraceIDHeader)
+	if traceID == "extra" {
+		t.Fatalf("Add on %s wrote through into the %s backing array", RequestIDHeader, TraceIDHeader)
+	}
+	if !traceIDPattern.MatchString(traceID) {
+		t.Fatalf("%s = %q, want an intact 32-hex trace ID", TraceIDHeader, traceID)
 	}
 }
 
