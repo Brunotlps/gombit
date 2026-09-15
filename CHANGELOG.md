@@ -270,6 +270,30 @@ version.
 
 ### Changed
 
+- **Security headers are now scoped by response kind** (PERF-9,
+  [#267](https://github.com/gombit-dev/gombit/issues/267)). JSON/API responses
+  get the strict, minimal policy `Content-Security-Policy: default-src 'none';
+  frame-ancestors 'none'` plus `X-Content-Type-Options` (and HSTS in
+  production) — no `X-Frame-Options` or `Referrer-Policy`, since
+  `frame-ancestors 'none'` already subsumes the former and a `default-src
+  'none'` document needs neither. HTML responses (the embedded SPA, the admin
+  SPA, and Huma's `/docs`) keep the full browser policy including
+  `Referrer-Policy` and `X-Frame-Options: DENY`. This holds the common API
+  response under Go's 8-header swiss-map threshold, removing ~5 allocs/op of
+  header-map growth from every API response. The dead IE8-only
+  `X-Download-Options: noopen` header is no longer set on any response. If you
+  relied on `X-Frame-Options`/`Referrer-Policy` or the old `default-src 'self'`
+  CSP on JSON responses, note the new API policy. See
+  [docs/security.md](docs/security.md).
+- **Breaking (minimum Go):** the framework now requires **Go 1.26** (`go.mod`
+  `go 1.26.0`), raised by `golang.org/x/crypto` v0.56.0
+  ([#294](https://github.com/gombit-dev/gombit/pull/294)). Scaffolded apps
+  (`gombit new`) now pin `go 1.26.0`, and the badges/prerequisites in the README,
+  installation guide, and tutorial move to Go 1.26+. Migration URL generation
+  gained a fix required by the newer toolchain: an in-memory SQLite DSN
+  (`:memory:`) now maps to Atlas's canonical `sqlite://file?mode=memory&…` dev
+  URL instead of `sqlite://:memory:?…`, whose empty-host `:memory:` authority
+  `net/url` (and therefore Atlas) rejects as an invalid port on Go 1.26+.
 - **Breaking (probe contract):** `GET /readyz` now reflects real readiness
   (HOST-2, [#283](https://github.com/gombit-dev/gombit/issues/283)). Its success
   body is `{"data":{"status":"ready"}}` — `data.status` changed from `"ok"` to

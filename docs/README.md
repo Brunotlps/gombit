@@ -21,6 +21,7 @@ New here? [Install](installation.md), then work through the
 | [router.md](router.md) | Application-owned route registration and the raw `*gin.Engine` escape hatch |
 | [logging.md](logging.md) | Runtime logging |
 | [cache.md](cache.md) | Cache runtime (memory, Redis, noop) |
+| [security.md](security.md) | The security headers applied per response kind (API vs HTML) and why |
 
 ## Data
 
@@ -75,6 +76,7 @@ New here? [Install](installation.md), then work through the
 | [013](adr/013-runtime-generic-admin.md) | The admin is a runtime surface over an explicit registry |
 | [014](adr/014-cli-cobra.md) | Cobra is the CLI framework |
 | [015](adr/015-host-deployment-contracts.md) | Host/deployment contracts: application contract, health convention, migration safety manifest |
+| [016](adr/016-model-first-resource-generation.md) | Resource contracts are model-derived and generator-owned; customization via hooks, not edits to generated plumbing |
 
 ## Contributing
 
