@@ -164,7 +164,7 @@ that group's data file — the thing a single run can replace on its own:
 | --- | --- | --- |
 | `microbench` | stack (`nethttp`/`gin`/`huma`/`gombit`) | `scripts/microbench` |
 | `crud` | framework | `scripts/run-crud` |
-| `footprint` | framework | `scripts/footprint` |
+| `footprint` | framework + variant | `scripts/footprint` |
 
 **The program that writes the row writes the provenance.** All three of these
 files merge row-wise, and subset runs are supported (`APPS="gin-gorm gombit"`),
@@ -194,9 +194,10 @@ A snapshot with no `groups` key predates this and is read with its top-level
 block as every unit's provenance, which for a single-run snapshot is exact — such
 a snapshot still renders one caption per table, exactly as before.
 
-The footprint unit is the **framework**, not `(framework, variant)`: the
-published table renders container rows only. When the embedded single-binary
-variant is wired it must get its own unit key.
+The footprint unit is the row's full merge key, `framework:variant`
+(`gombit:container`, `gombit:embedded`), because that is what `footprint.Merge`
+keys on. Measuring the embedded single binary therefore cannot relabel the
+container row the README publishes.
 
 #### Reading `metadata.json`: `groups` is authoritative, the top level is not
 

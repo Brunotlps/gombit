@@ -88,11 +88,10 @@ func run(args []string, stdout, stderr io.Writer) int {
 	// table-wide stamp here would caption five untouched rows with a commit they
 	// never ran at (issue #266, review round 2).
 	//
-	// The unit is the framework, not (framework, variant): the published table
-	// renders container rows only. When the embedded variant is wired it needs
-	// its own unit key — see benchmarks/docs/methodology.md.
+	// The unit is the row's full merge key (framework:variant), so measuring the
+	// embedded binary can never relabel the container row it did not touch.
 	if err := metadata.StampUnitFile(
-		metadata.SiblingPath(*out), metadata.GroupFootprint, row.Framework,
+		metadata.SiblingPath(*out), metadata.GroupFootprint, row.ProvenanceUnit(),
 		metadata.Collect(context.Background(), metadata.Options{}).Provenance(),
 	); err != nil {
 		_, _ = fmt.Fprintf(stderr, "footprint: %v\n", err)

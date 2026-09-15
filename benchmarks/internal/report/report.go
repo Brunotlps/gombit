@@ -460,11 +460,13 @@ func writeFootprintTable(b *strings.Builder, prints []footprint.Footprint, meta 
 			f.CPUPercentUnderLoad, mib(f.ImageSizeBytes))
 	}
 	b.WriteString("\n")
-	frameworks := make([]string, len(rows))
+	// Units are the rendered rows' own merge keys, so a re-measured embedded
+	// variant never captions the container rows this table publishes.
+	units := make([]string, len(rows))
 	for i, f := range rows {
-		frameworks[i] = f.Framework
+		units[i] = f.ProvenanceUnit()
 	}
-	writeProvenance(b, meta, metadata.GroupFootprint, frameworks)
+	writeProvenance(b, meta, metadata.GroupFootprint, units)
 }
 
 // writeMethodology prints what is genuinely shared by the whole snapshot: the

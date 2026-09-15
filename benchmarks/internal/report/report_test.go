@@ -288,7 +288,7 @@ func TestEachTableCarriesItsOwnProvenance(t *testing.T) {
 	meta.Groups = map[string]map[string]metadata.Provenance{
 		metadata.GroupMicrobench: {},
 		metadata.GroupCRUD:       {"gombit": host("2222222222222222", "2026-08-27T21:57:34Z", "CRUD CPU", "go1.25.7")},
-		metadata.GroupFootprint:  {"gombit": host("3333333333333333", "2026-08-28T09:00:00Z", "Footprint CPU", "go1.25.7")},
+		metadata.GroupFootprint:  {"gombit:container": host("3333333333333333", "2026-08-28T09:00:00Z", "Footprint CPU", "go1.25.7")},
 	}
 	for _, s := range stackLadder {
 		meta.Groups[metadata.GroupMicrobench][s.key] = host("1111111111111111", "2026-09-08T10:00:00Z", "Micro CPU", "go1.26.1")
@@ -387,11 +387,12 @@ func TestSubsetRefreshIsNotPublishedUnderATableWideCaption(t *testing.T) {
 	meta := canonicalMeta()
 	rows := make([]footprint.Footprint, 0, len(apps))
 	for _, app := range apps {
-		meta = metadata.StampUnit(meta, metadata.GroupFootprint, app, commitA)
-		rows = append(rows, footprint.Footprint{Framework: app, Variant: footprint.VariantContainer})
+		row := footprint.Footprint{Framework: app, Variant: footprint.VariantContainer}
+		meta = metadata.StampUnit(meta, metadata.GroupFootprint, row.ProvenanceUnit(), commitA)
+		rows = append(rows, row)
 	}
 	// Re-measure exactly one app at a later commit.
-	meta = metadata.StampUnit(meta, metadata.GroupFootprint, "gombit", commitB)
+	meta = metadata.StampUnit(meta, metadata.GroupFootprint, "gombit:container", commitB)
 
 	out := Render(nil, rows, nil, meta)
 	section := out[strings.Index(out, "### Operational footprint"):]
@@ -401,16 +402,47 @@ func TestSubsetRefreshIsNotPublishedUnderATableWideCaption(t *testing.T) {
 	}
 	// Both commits must appear, attributed to the right apps — and neither may
 	// stand alone as the table's caption.
-	if !strings.Contains(section, "gombit at `bbbb33334444`") {
+	if !strings.Contains(section, "gombit:container at `bbbb33334444`") {
 		t.Errorf("the re-measured app must be attributed to its own commit:\n%s", section)
 	}
 	for _, app := range []string{"django", "rails"} {
-		if !strings.Contains(section, app+" at `aaaa11112222`") {
+		if !strings.Contains(section, app+":container at `aaaa11112222`") {
 			t.Errorf("untouched app %q must keep its original commit:\n%s", app, section)
 		}
 	}
 	if strings.Contains(section, "_Measured at `bbbb33334444`") {
 		t.Errorf("the subset run's commit must never caption the whole table:\n%s", section)
+	}
+}
+
+// The variant is part of footprint's merge key, and scripts/footprint accepts
+// -variant embedded today, so measuring the embedded binary must not relabel the
+// container row the README publishes. Found by auditing merge keys against
+// provenance units, which is the check the first round skipped.
+func TestEmbeddedVariantCannotRelabelTheContainerRow(t *testing.T) {
+	clean := false
+	container := footprint.Footprint{Framework: "gombit", Variant: footprint.VariantContainer}
+	embedded := footprint.Footprint{Framework: "gombit", Variant: footprint.VariantEmbedded}
+	if container.ProvenanceUnit() == embedded.ProvenanceUnit() {
+		t.Fatalf("the two variants must not share a provenance unit: %q", container.ProvenanceUnit())
+	}
+
+	meta := canonicalMeta()
+	meta = metadata.StampUnit(meta, metadata.GroupFootprint, container.ProvenanceUnit(),
+		metadata.Provenance{GitCommit: "aaaa11112222", Timestamp: "2026-09-01T00:00:00Z", GitDirty: &clean, CPUModel: "Bench Host"})
+	// A later embedded measurement writes a different row and a different unit.
+	meta = metadata.StampUnit(meta, metadata.GroupFootprint, embedded.ProvenanceUnit(),
+		metadata.Provenance{GitCommit: "bbbb33334444", Timestamp: "2026-09-08T00:00:00Z", GitDirty: &clean, CPUModel: "Dev Host"})
+
+	out := Render(nil, []footprint.Footprint{container, embedded}, nil, meta)
+	section := out[strings.Index(out, "### Operational footprint"):]
+
+	// The published table is container-only, so it keeps the container commit.
+	if !strings.Contains(section, "_Measured at `aaaa11112222`") {
+		t.Errorf("the container row must keep its own commit:\n%s", section)
+	}
+	if strings.Contains(section, "bbbb33334444") {
+		t.Errorf("the embedded run must not caption the container table:\n%s", section)
 	}
 }
 
