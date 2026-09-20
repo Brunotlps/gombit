@@ -266,6 +266,21 @@ The CRUD unit is likewise the row's full merge key, `framework:benchmark`
 (`workloads/<benchmark>.js`). Recording another workload for an app therefore
 neither replaces nor relabels its `crud-list` rows.
 
+Provenance is per unit; the sweep protocol and load generator are not. The
+top-level `concurrency`, `trials`, `duration_seconds`, `warmup_seconds` and
+`benchmark_tool` are recorded once for the whole snapshot, and the README prints
+one "Protocol" line and one reduced-snapshot banner from them. They are only
+true while every row in the file was measured under them, so `run-crud` refuses
+a run whose values differ from the recorded ones while rows it does not replace
+remain (another app's, or another workload's), and modifies nothing. A
+populated snapshot cannot be moved to a new protocol one app at a time, because
+each app's run is refused while the others' rows remain: write to a separate
+`OUT_DIR`, or remove the old snapshot and start over. A fresh `OUT_DIR`, a
+snapshot that records no parameters, and a run that replaces every row in the
+file are unaffected. `make benchmark-metadata` also writes these fields and is
+not guarded. Recording a protocol per unit, so that workloads with different
+pins can share a snapshot, is a separate change.
+
 #### Reading `metadata.json`: `groups` is authoritative, the top level is not
 
 `groups.<group>.<unit>` is the answer to "when, where and at which commit was

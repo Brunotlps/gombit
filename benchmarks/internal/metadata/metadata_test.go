@@ -429,3 +429,66 @@ func TestParseMemTotalBytes(t *testing.T) {
 		t.Errorf("parseMemTotalBytes(no MemTotal) = %d, want 0", got)
 	}
 }
+
+// The five run parameters are recorded once per snapshot, so two records
+// conflict only when both state a value and the values differ. A zero is "not
+// recorded" (a fresh OUT_DIR, `make benchmark-metadata`), never a disagreement.
+func TestRunParamsConflictsWith(t *testing.T) {
+	canonical := RunParams{
+		Concurrency: []int{1, 10, 100}, Trials: 5, DurationSeconds: 30, WarmupSeconds: 10,
+		BenchmarkTool: "grafana/k6:0.55.0",
+	}
+
+	if got := canonical.ConflictsWith(canonical); got != nil {
+		t.Errorf("identical parameters must not conflict, got %v", got)
+	}
+	if got := (RunParams{}).ConflictsWith(canonical); got != nil {
+		t.Errorf("a snapshot recording nothing cannot conflict, got %v", got)
+	}
+	if got := canonical.ConflictsWith(RunParams{}); got != nil {
+		t.Errorf("a run stating nothing cannot conflict, got %v", got)
+	}
+
+	reduced := RunParams{
+		Concurrency: []int{1}, Trials: 1, DurationSeconds: 1, WarmupSeconds: 1,
+		BenchmarkTool: "grafana/k6:0.99.0",
+	}
+	want := []string{
+		"concurrency 1/10/100 -> 1",
+		"trials 5 -> 1",
+		"duration per trial 30s -> 1s",
+		"warm-up 10s -> 1s",
+		"benchmark tool grafana/k6:0.55.0 -> grafana/k6:0.99.0",
+	}
+	got := canonical.ConflictsWith(reduced)
+	if len(got) != len(want) {
+		t.Fatalf("conflicts = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("conflict[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+
+	// The report prints the ladder in recorded order, so a reordered list is a
+	// different statement of the protocol, not the same one.
+	reordered := canonical
+	reordered.Concurrency = []int{100, 10, 1}
+	if got := canonical.ConflictsWith(reordered); len(got) != 1 {
+		t.Errorf("a reordered concurrency list must conflict, got %v", got)
+	}
+
+	// One differing field is reported alone.
+	one := canonical
+	one.Trials = 3
+	if got := canonical.ConflictsWith(one); len(got) != 1 || got[0] != "trials 5 -> 3" {
+		t.Errorf("only trials differ, got %v", got)
+	}
+}
+
+func TestMetadataRunParamsReadsTheTopLevelFields(t *testing.T) {
+	m := Metadata{Concurrency: []int{10}, Trials: 2, DurationSeconds: 3, WarmupSeconds: 4, BenchmarkTool: "k6"}
+	if diffs := m.RunParams().ConflictsWith(RunParams{Concurrency: []int{10}, Trials: 2, DurationSeconds: 3, WarmupSeconds: 4, BenchmarkTool: "k6"}); diffs != nil {
+		t.Errorf("RunParams must mirror the recorded fields, got %v", diffs)
+	}
+}

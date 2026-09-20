@@ -484,3 +484,174 @@ func TestRunWritesAndAccumulatesAcrossFrameworks(t *testing.T) {
 		t.Errorf("postgres_resource_limits was not recorded/preserved:\n%s", s)
 	}
 }
+
+// recordedProtocol is a canonical snapshot's protocol; reducedConfig is a run
+// that differs in every parameter run-crud records once for the whole snapshot.
+func recordedProtocol() metadata.Metadata {
+	return metadata.Metadata{
+		Concurrency: []int{100}, Trials: 5, DurationSeconds: 30, WarmupSeconds: 10,
+		BenchmarkTool: "grafana/k6:0.55.0",
+	}
+}
+
+func reducedConfig(dir, framework, benchmark string) runConfig {
+	return runConfig{
+		targetURL: "http://unused", framework: framework, benchmark: benchmark,
+		concurrency: []int{1}, duration: "1s", warmup: "1s", trials: 1, outDir: dir,
+		k6Image: "grafana/k6:0.55.0",
+	}
+}
+
+func seedSnapshot(t *testing.T, dir string, rows []result.Result, meta metadata.Metadata) {
+	t.Helper()
+	f, err := os.Create(filepath.Join(dir, "results.json")) //nolint:gosec // dir is t.TempDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := result.WriteJSON(f, rows); err != nil {
+		t.Fatal(err)
+	}
+	_ = f.Close()
+	writeMetadataJSON(t, filepath.Join(dir, "metadata.json"), meta)
+}
+
+func snapshotBytes(t *testing.T, dir string) map[string]string {
+	t.Helper()
+	out := map[string]string{}
+	for _, name := range []string{"results.json", "results.csv", "metadata.json"} {
+		data, err := os.ReadFile(filepath.Join(dir, name)) //nolint:gosec // test-owned temp path
+		if err == nil {
+			out[name] = string(data)
+		}
+	}
+	return out
+}
+
+// The review's scenario: crud-list recorded at one protocol, then another
+// workload for the same app at a different one. Both row sets would survive, but
+// metadata.json's single protocol would describe crud-list with the second run's
+// parameters. The run must be refused with the snapshot byte-identical (#361).
+func TestRunRefusesAnotherWorkloadAtADifferentProtocol(t *testing.T) {
+	dir := t.TempDir()
+	seedSnapshot(t, dir, []result.Result{
+		{Framework: "gombit", Benchmark: "crud-list", Concurrency: 100, Trial: 1, Requests: 1},
+	}, recordedProtocol())
+	before := snapshotBytes(t, dir)
+
+	err := run(reducedConfig(dir, "gombit", "auth-jwt"), okK6(t))
+	if err == nil {
+		t.Fatal("run() = nil, want a refusal: auth-jwt at 1 VU x 1 x 1s would relabel crud-list's protocol")
+	}
+	for _, want := range []string{"trials 5 -> 1", "concurrency 100 -> 1", "gombit:auth-jwt", "were not modified"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("the error must say %q so the operator can act on it: %v", want, err)
+		}
+	}
+	after := snapshotBytes(t, dir)
+	for name, was := range before {
+		if after[name] != was {
+			t.Errorf("%s changed despite the refusal", name)
+		}
+	}
+	if _, statErr := os.Stat(filepath.Join(dir, "raw")); !os.IsNotExist(statErr) {
+		t.Errorf("a refused run must not measure or write raw summaries (stat err: %v)", statErr)
+	}
+}
+
+// The control for the test above: the same second workload under the SAME
+// parameters is exactly what #361 exists to allow, so the guard must not stop it.
+func TestRunAllowsAnotherWorkloadUnderTheRecordedProtocol(t *testing.T) {
+	dir := t.TempDir()
+	seedSnapshot(t, dir, []result.Result{
+		{Framework: "gombit", Benchmark: "crud-list", Concurrency: 1, Trial: 1, Requests: 1},
+	}, metadata.Metadata{
+		Concurrency: []int{1}, Trials: 1, DurationSeconds: 1, WarmupSeconds: 1,
+		BenchmarkTool: "grafana/k6:0.55.0",
+	})
+
+	if err := run(reducedConfig(dir, "gombit", "auth-jwt"), okK6(t)); err != nil {
+		t.Fatalf("run() = %v, want success: identical parameters describe every row honestly", err)
+	}
+	var units []string
+	for _, r := range readResultsJSON(t, filepath.Join(dir, "results.json")) {
+		units = append(units, r.ProvenanceUnit())
+	}
+	if len(units) != 2 {
+		t.Errorf("both workloads must be in the snapshot, got %v", units)
+	}
+}
+
+// The framework axis had the same gap before workloads existed:
+// `APPS=gombit make benchmark-crud-all TRIALS=1 DURATION=1s` over a full
+// snapshot kept the other apps' rows and rewrote the protocol they describe.
+func TestRunRefusesAnotherFrameworkAtADifferentProtocol(t *testing.T) {
+	dir := t.TempDir()
+	seedSnapshot(t, dir, []result.Result{
+		{Framework: "gin-gorm", Benchmark: "crud-list", Concurrency: 100, Trial: 1, Requests: 1},
+	}, recordedProtocol())
+	before := snapshotBytes(t, dir)
+
+	if err := run(reducedConfig(dir, "gombit", "crud-list"), okK6(t)); err == nil {
+		t.Fatal("run() = nil, want a refusal: gin-gorm's rows would be reported at gombit's protocol")
+	}
+	for name, was := range snapshotBytes(t, dir) {
+		if before[name] != was {
+			t.Errorf("%s changed despite the refusal", name)
+		}
+	}
+}
+
+// A run that replaces every row in the snapshot leaves nothing for the new
+// parameters to misdescribe, so re-measuring at a new protocol stays possible.
+func TestRunMayChangeTheProtocolWhenItReplacesEveryRow(t *testing.T) {
+	dir := t.TempDir()
+	seedSnapshot(t, dir, []result.Result{
+		{Framework: "gombit", Benchmark: "crud-list", Concurrency: 100, Trial: 1, Requests: 1},
+	}, recordedProtocol())
+
+	if err := run(reducedConfig(dir, "gombit", "crud-list"), okK6(t)); err != nil {
+		t.Fatalf("run() = %v, want success: nothing would survive to be misdescribed", err)
+	}
+	if got := readMetadataJSON(t, filepath.Join(dir, "metadata.json")); got.Trials != 1 {
+		t.Errorf("the new protocol must be recorded, trials = %d", got.Trials)
+	}
+}
+
+// The snapshot can change while a sweep runs (a second make in the same
+// OUT_DIR), so the pre-flight check alone does not hold the invariant: the check
+// in writeOutputs, just before writing, is what does. Here the snapshot is
+// compatible when the run starts and incompatible by the time it would write.
+func TestWriteIsRefusedWhenTheSnapshotChangesDuringTheSweep(t *testing.T) {
+	dir := t.TempDir()
+	cfg := reducedConfig(dir, "gombit", "auth-jwt")
+	compatible := metadata.Metadata{
+		Concurrency: []int{1}, Trials: 1, DurationSeconds: 1, WarmupSeconds: 1,
+		BenchmarkTool: "grafana/k6:0.55.0",
+	}
+	seedSnapshot(t, dir, []result.Result{
+		{Framework: "gombit", Benchmark: "crud-list", Concurrency: 1, Trial: 1, Requests: 1},
+	}, compatible)
+
+	inner := okK6(t)
+	var concurrent []byte
+	k6run := func(vus int, duration, summaryPath string) error {
+		if summaryPath != "" && concurrent == nil {
+			// Another producer records a different protocol mid-sweep.
+			seedSnapshot(t, dir, []result.Result{
+				{Framework: "gombit", Benchmark: "crud-list", Concurrency: 100, Trial: 1, Requests: 1},
+			}, recordedProtocol())
+			concurrent = []byte("seeded")
+		}
+		return inner(vus, duration, summaryPath)
+	}
+	if err := run(cfg, k6run); err == nil {
+		t.Fatal("run() = nil, want the write-time check to refuse a snapshot that became incompatible mid-sweep")
+	}
+	rows := readResultsJSON(t, filepath.Join(dir, "results.json"))
+	if len(rows) != 1 || rows[0].Benchmark != "crud-list" {
+		t.Errorf("results.json must keep only the concurrent producer's row, got %+v", rows)
+	}
+	if got := readMetadataJSON(t, filepath.Join(dir, "metadata.json")); got.Trials != 5 {
+		t.Errorf("metadata.json must keep the concurrent producer's protocol, trials = %d", got.Trials)
+	}
+}

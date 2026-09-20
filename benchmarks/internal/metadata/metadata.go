@@ -7,6 +7,7 @@ package metadata
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"os/exec"
 	"runtime"
@@ -452,6 +453,105 @@ func Merge(existing, incoming Metadata) Metadata {
 	}
 	return incoming
 }
+
+// RunParams is the sweep protocol and load generator a snapshot records ONCE,
+// at the top level, for every row in it.
+//
+// Unlike the version maps and the per-framework limit verdicts, Merge cannot
+// union these: metadata.json holds exactly one protocol, and the report prints
+// exactly one "Protocol:" / "Load generator:" line (report.writeMethodology)
+// and judges one "reduced development snapshot" banner from it
+// (report.reducedFrom). Last-writer-wins is therefore only honest while every
+// row in the file was measured under the incoming parameters.
+//
+// That is what makes them different in kind from provenance. Provenance became
+// per unit (Groups) because a run measures one unit and must not caption the
+// others (issue #266). These cannot follow the same boundary without the report
+// growing a per-unit protocol block, so run-crud holds the invariant from the
+// producer side instead: it refuses to merge a run whose parameters differ from
+// the recorded ones while rows it does not replace remain (#361, review round 1).
+//
+// That covers run-crud only. `make benchmark-metadata` (collect-host-info)
+// also writes these fields, replaces them wholesale, and measures nothing, so
+// it can still describe existing rows under other parameters; it is not guarded.
+type RunParams struct {
+	Concurrency     []int
+	Trials          int
+	DurationSeconds float64
+	WarmupSeconds   float64
+	BenchmarkTool   string
+}
+
+// RunParams returns the run parameters recorded at the top level.
+func (m Metadata) RunParams() RunParams {
+	return RunParams{
+		Concurrency:     m.Concurrency,
+		Trials:          m.Trials,
+		DurationSeconds: m.DurationSeconds,
+		WarmupSeconds:   m.WarmupSeconds,
+		BenchmarkTool:   m.BenchmarkTool,
+	}
+}
+
+// ConflictsWith describes every parameter that both records state and state
+// differently, as "<what> <recorded> -> <incoming>" in a fixed order so an
+// error message is stable. Concurrency compares as an ordered list, the way the
+// report prints it. No conflict returns nil.
+//
+// A zero field is "not recorded", not a value, and never conflicts: a fresh
+// OUT_DIR records nothing, `make benchmark-metadata` records the pins without
+// measuring, and a producer that leaves a field empty is silent about it rather
+// than claiming zero. Only a disagreement between two stated values means the
+// merged snapshot would misdescribe rows.
+func (recorded RunParams) ConflictsWith(incoming RunParams) []string {
+	var diffs []string
+	if len(recorded.Concurrency) > 0 && len(incoming.Concurrency) > 0 &&
+		!equalInts(recorded.Concurrency, incoming.Concurrency) {
+		diffs = append(diffs, fmt.Sprintf("concurrency %s -> %s",
+			intList(recorded.Concurrency), intList(incoming.Concurrency)))
+	}
+	if recorded.Trials != 0 && incoming.Trials != 0 && recorded.Trials != incoming.Trials {
+		diffs = append(diffs, fmt.Sprintf("trials %d -> %d", recorded.Trials, incoming.Trials))
+	}
+	if recorded.DurationSeconds != 0 && incoming.DurationSeconds != 0 &&
+		recorded.DurationSeconds != incoming.DurationSeconds {
+		diffs = append(diffs, fmt.Sprintf("duration per trial %s -> %s",
+			secs(recorded.DurationSeconds), secs(incoming.DurationSeconds)))
+	}
+	if recorded.WarmupSeconds != 0 && incoming.WarmupSeconds != 0 &&
+		recorded.WarmupSeconds != incoming.WarmupSeconds {
+		diffs = append(diffs, fmt.Sprintf("warm-up %s -> %s",
+			secs(recorded.WarmupSeconds), secs(incoming.WarmupSeconds)))
+	}
+	if recorded.BenchmarkTool != "" && incoming.BenchmarkTool != "" &&
+		recorded.BenchmarkTool != incoming.BenchmarkTool {
+		diffs = append(diffs, fmt.Sprintf("benchmark tool %s -> %s",
+			recorded.BenchmarkTool, incoming.BenchmarkTool))
+	}
+	return diffs
+}
+
+func equalInts(a, b []int) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func intList(xs []int) string {
+	parts := make([]string, len(xs))
+	for i, x := range xs {
+		parts[i] = strconv.Itoa(x)
+	}
+	return strings.Join(parts, "/")
+}
+
+func secs(s float64) string { return strconv.FormatFloat(s, 'f', -1, 64) + "s" }
 
 // StampUnit records prov as one unit's provenance in meta and changes nothing
 // else — not the top-level block, not the shared run parameters, not another

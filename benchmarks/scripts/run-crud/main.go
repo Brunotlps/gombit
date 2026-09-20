@@ -54,6 +54,22 @@ type runConfig struct {
 	k6Image                string
 }
 
+// runParams is the protocol and load generator this run records at the top level
+// of metadata.json. metadata.Collect is fed from it, and so is the merge guard,
+// so what is compared can never differ from what is written.
+func (c runConfig) runParams() metadata.RunParams {
+	return metadata.RunParams{
+		Concurrency:     c.concurrency,
+		Trials:          c.trials,
+		DurationSeconds: durationSeconds(c.duration),
+		WarmupSeconds:   durationSeconds(c.warmup),
+		// The actual load-generator image that ran, not a bare "k6" token —
+		// issue #141's reproducibility metadata requires the benchmark-tool
+		// version, and overriding -k6-image must be reflected here.
+		BenchmarkTool: c.k6Image,
+	}
+}
+
 // k6Runner runs the workload once at vus concurrency for duration; a non-empty
 // summaryPath is where the run's summary must be written (an empty one is a
 // warm-up whose output is discarded). Injectable so run() is testable without
@@ -121,6 +137,12 @@ func run(cfg runConfig, k6run k6Runner) error {
 	if cfg.benchmark == "" {
 		return fmt.Errorf("no benchmark name: rows cannot be merged or attributed without one")
 	}
+	// Refuse an incompatible merge before hours of measurement, not after: every
+	// input to the check is known now. writeOutputs checks again just before
+	// writing, which is the one that guarantees the invariant.
+	if err := checkMergeable(cfg); err != nil {
+		return err
+	}
 	rawDir := filepath.Join(cfg.outDir, "raw")
 	if err := os.MkdirAll(rawDir, 0o750); err != nil {
 		return fmt.Errorf("create out dir: %w", err)
@@ -162,14 +184,12 @@ func run(cfg runConfig, k6run k6Runner) error {
 		}
 	}
 
+	params := cfg.runParams()
 	meta := metadata.Collect(context.Background(), metadata.Options{
 		PostgresVersion:   cfg.postgresVersion,
 		FrameworkVersions: map[string]string{cfg.framework: cfg.frameworkVersion},
 		RuntimeVersions:   map[string]string{cfg.runtimeName: cfg.runtimeVersion},
-		// The actual load-generator image that ran, not a bare "k6" token —
-		// issue #141's reproducibility metadata requires the benchmark-tool
-		// version, and overriding -k6-image must be reflected here.
-		BenchmarkTool: cfg.k6Image,
+		BenchmarkTool:     params.BenchmarkTool,
 		// The scalar stays this app's verdict for back-compat; the authoritative,
 		// merge-preserved field is the per-framework map, so a partial/not-applied
 		// on one app is never overwritten by the next app's enforced (mergedMetadata
@@ -178,10 +198,10 @@ func run(cfg runConfig, k6run k6Runner) error {
 		ResourceLimits:            cfg.resourceLimits,
 		ResourceLimitsByFramework: map[string]string{cfg.framework: cfg.resourceLimits},
 		PostgresResourceLimits:    cfg.postgresResourceLimits,
-		DurationSeconds:           durationSeconds(cfg.duration),
-		WarmupSeconds:             durationSeconds(cfg.warmup),
-		Concurrency:               cfg.concurrency,
-		Trials:                    cfg.trials,
+		DurationSeconds:           params.DurationSeconds,
+		WarmupSeconds:             params.WarmupSeconds,
+		Concurrency:               params.Concurrency,
+		Trials:                    params.Trials,
 	})
 	// This run's own provenance, filed under this (app, workload) alone. run-crud
 	// replaces exactly those rows and preserves the others, and APPS= subsetting
@@ -249,12 +269,15 @@ func parseSummaryFile(path string) (k6.Summary, error) {
 // metadata's version maps are unioned the same way so a multi-framework
 // snapshot records every implementation that contributed.
 func writeOutputs(outDir, framework, benchmark string, newRows []result.Result, meta metadata.Metadata) error {
+	// Read before writing anything, so an unreadable snapshot, or a merge the
+	// guard refuses, fails the run with the snapshot untouched.
+	if err := mergeable(outDir, framework, benchmark, meta.RunParams()); err != nil {
+		return err
+	}
 	rows, err := mergedResults(filepath.Join(outDir, "results.json"), newRows, framework, benchmark)
 	if err != nil {
 		return err
 	}
-	// Read before writing anything, so an unreadable snapshot fails the run with
-	// results.json untouched.
 	meta, err = mergedMetadata(filepath.Join(outDir, "metadata.json"), meta)
 	if err != nil {
 		return err
@@ -273,6 +296,64 @@ func writeOutputs(outDir, framework, benchmark string, newRows []result.Result, 
 	return writeFile(filepath.Join(outDir, "metadata.json"), func(f *os.File) error {
 		return metadata.WriteJSON(f, meta)
 	})
+}
+
+// checkMergeable is mergeable for a run about to start.
+func checkMergeable(cfg runConfig) error {
+	return mergeable(cfg.outDir, cfg.framework, cfg.benchmark, cfg.runParams())
+}
+
+// mergeable refuses a run whose protocol or load generator differs from what the
+// snapshot already records while rows this run will not replace remain in it.
+//
+// The rows are per (framework, benchmark) and so is their provenance, but the
+// protocol and load generator are recorded once for the whole snapshot, and
+// metadata.Merge lets the incoming values win. Merging such a run would leave
+// the README describing the surviving rows — another app's, or another
+// workload's — with parameters they were not measured under, and nothing would
+// say so (#361 review round 1; the framework axis has had the same gap since
+// run-crud began merging).
+//
+// The check runs twice. run() calls it first so a doomed run fails before hours
+// of measurement; writeOutputs calls it again just before writing, because the
+// snapshot can change while the sweep runs (a concurrent make in the same
+// OUT_DIR). raw/ summaries are written during the sweep, before either write.
+//
+// It needs no per-unit protocol record: the state it forbids is the one that
+// could not be described honestly. A run that replaces every row in the file,
+// a fresh out dir, or a snapshot that records no parameters has nothing to
+// misdescribe and passes. There is no incremental way to adopt a new protocol
+// on a populated snapshot (each app's run is refused while the others' rows
+// remain), so the way out is a separate OUT_DIR or starting the snapshot over.
+func mergeable(outDir, framework, benchmark string, params metadata.RunParams) error {
+	existing, err := readResults(filepath.Join(outDir, "results.json"))
+	if err != nil {
+		return err
+	}
+	kept := 0
+	for _, r := range existing {
+		// The exact negation of what mergeRows replaces.
+		if r.Framework != framework || r.Benchmark != benchmark {
+			kept++
+		}
+	}
+	if kept == 0 {
+		return nil
+	}
+	recorded, err := metadata.ReadFile(filepath.Join(outDir, "metadata.json"))
+	if err != nil {
+		return err
+	}
+	diffs := recorded.RunParams().ConflictsWith(params)
+	if len(diffs) == 0 {
+		return nil
+	}
+	return fmt.Errorf("refusing to record %s:%s under different parameters from the snapshot in %s (%s): "+
+		"the %d rows it would keep would then be reported under parameters they were not measured with. "+
+		"Write to a separate OUT_DIR, or remove the old snapshot to start over under the new parameters "+
+		"(the other rows cannot be re-measured first: each of their runs is refused the same way). "+
+		"results.json, results.csv and metadata.json were not modified",
+		framework, benchmark, outDir, strings.Join(diffs, "; "), kept)
 }
 
 func mergedResults(path string, newRows []result.Result, framework, benchmark string) ([]result.Result, error) {
