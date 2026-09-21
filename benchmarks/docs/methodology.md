@@ -281,6 +281,21 @@ file are unaffected. `make benchmark-metadata` also writes these fields and is
 not guarded. Recording a protocol per unit, so that workloads with different
 pins can share a snapshot, is a separate change.
 
+Because the incoming values are written whole, `run-crud` compares every one of
+them as a value, never as "unstated": it rejects `-trials` below 1, an empty or
+non-positive concurrency level, a duration that is not positive, a negative
+warm-up and an empty `-k6-image` before measuring anything. A zero-second
+warm-up is accepted and recorded as a value, so it matches a snapshot recorded
+with no warm-up and conflicts with one recorded with a warm-up. On the recorded
+side, a snapshot that states none of the five fields has no protocol to
+misdescribe; one that states any of them is compared on all five.
+
+The producers do not lock `OUT_DIR`. `run-crud` checks the snapshot before the
+sweep and again on the snapshot it merges into, which catches another producer
+that finished while it was measuring, but a write that overlaps its own
+read-merge-write is not detected. Running two producers against one `OUT_DIR`
+at the same time is unsupported.
+
 #### Reading `metadata.json`: `groups` is authoritative, the top level is not
 
 `groups.<group>.<unit>` is the answer to "when, where and at which commit was

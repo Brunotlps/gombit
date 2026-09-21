@@ -123,7 +123,7 @@ func TestRunReplacesOnlyItsOwnWorkload(t *testing.T) {
 
 	cfg := runConfig{
 		targetURL: "http://unused", framework: "gombit", benchmark: "crud-list",
-		concurrency: []int{10}, duration: "1s", warmup: "1s", trials: 1, outDir: dir,
+		concurrency: []int{10}, duration: "1s", warmup: "1s", trials: 1, outDir: dir, k6Image: "grafana/k6:0.55.0",
 	}
 	// Re-run crud-list; a second, non-default workload below proves the row
 	// label follows the workload that ran.
@@ -179,7 +179,7 @@ func TestRunWithoutBenchmarkFailsAndWritesNothing(t *testing.T) {
 	dir := t.TempDir()
 	cfg := runConfig{
 		targetURL: "http://unused", framework: "gombit",
-		concurrency: []int{10}, duration: "1s", warmup: "1s", trials: 1, outDir: dir,
+		concurrency: []int{10}, duration: "1s", warmup: "1s", trials: 1, outDir: dir, k6Image: "grafana/k6:0.55.0",
 	}
 	if err := run(cfg, okK6(t)); err == nil {
 		t.Fatal("run() = nil, want an error for an empty benchmark")
@@ -191,12 +191,23 @@ func TestRunWithoutBenchmarkFailsAndWritesNothing(t *testing.T) {
 	}
 }
 
-// mergedMetadata must treat the postgres verdict's two "empty-ish" states
+// The merge into the on-disk snapshot must treat the postgres verdict's two "empty-ish" states
 // differently, reading through the on-disk snapshot (not just the in-memory
 // value): an empty string means "this run did not re-verify" and keeps whatever
 // the prior snapshot claimed, while an explicit "unknown …" from a run that
 // looked and could not classify OVERWRITES — so a stale enforced/partial can
 // never stick across a re-run whose check failed.
+// mergedFromDisk is the metadata writeOutputs would write: the snapshot on disk
+// with incoming merged over it.
+func mergedFromDisk(t *testing.T, dir string, incoming metadata.Metadata) metadata.Metadata {
+	t.Helper()
+	snap, err := readSnapshot(dir)
+	if err != nil {
+		t.Fatalf("readSnapshot: %v", err)
+	}
+	return metadata.Merge(snap.meta, incoming)
+}
+
 func TestMergedMetadataPostgresSentinelDistinguishesNotProvidedFromVerifiedUnknown(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "metadata.json")
@@ -204,28 +215,21 @@ func TestMergedMetadataPostgresSentinelDistinguishesNotProvidedFromVerifiedUnkno
 	writeMetadataJSON(t, path, metadata.Metadata{PostgresResourceLimits: prior})
 
 	// Empty ("not provided", e.g. standalone benchmark-crud) keeps the prior verdict.
-	got, err := mergedMetadata(path, metadata.Metadata{PostgresResourceLimits: ""})
-	if err != nil {
-		t.Fatalf("mergedMetadata: %v", err)
-	}
+	got := mergedFromDisk(t, dir, metadata.Metadata{PostgresResourceLimits: ""})
 	if got.PostgresResourceLimits != prior {
 		t.Errorf(`empty postgres verdict should keep the prior one; got %q, want %q`, got.PostgresResourceLimits, prior)
 	}
 
 	// A verified-unknown re-run overwrites the stale verdict (does not inherit it).
 	unknown := "unknown (inspect-limits failed)"
-	if got, err = mergedMetadata(path, metadata.Metadata{PostgresResourceLimits: unknown}); err != nil {
-		t.Fatalf("mergedMetadata: %v", err)
-	}
+	got = mergedFromDisk(t, dir, metadata.Metadata{PostgresResourceLimits: unknown})
 	if got.PostgresResourceLimits != unknown {
 		t.Errorf("verified-unknown should overwrite the stale verdict; got %q, want %q", got.PostgresResourceLimits, unknown)
 	}
 
 	// A fresh real verdict overwrites too (the ordinary re-verify case).
 	fresh := "partial: memory unset"
-	if got, err = mergedMetadata(path, metadata.Metadata{PostgresResourceLimits: fresh}); err != nil {
-		t.Fatalf("mergedMetadata: %v", err)
-	}
+	got = mergedFromDisk(t, dir, metadata.Metadata{PostgresResourceLimits: fresh})
 	if got.PostgresResourceLimits != fresh {
 		t.Errorf("a fresh verdict should overwrite; got %q, want %q", got.PostgresResourceLimits, fresh)
 	}
@@ -252,7 +256,7 @@ func TestRunFailsWithoutWritingWhenMetadataIsCorrupt(t *testing.T) {
 	}
 	cfg := runConfig{
 		targetURL: "http://unused", framework: "gombit", benchmark: "crud-list",
-		concurrency: []int{10}, duration: "1s", warmup: "1s", trials: 1, outDir: dir,
+		concurrency: []int{10}, duration: "1s", warmup: "1s", trials: 1, outDir: dir, k6Image: "grafana/k6:0.55.0",
 	}
 	if err := run(cfg, k6run); err == nil {
 		t.Fatal("run() = nil, want an error for a corrupt metadata.json")
@@ -312,7 +316,7 @@ func TestSubsetRunNeverReattributesRowsItDidNotMeasure(t *testing.T) {
 			writeMetadataJSON(t, filepath.Join(dir, "metadata.json"), before)
 			cfg := runConfig{
 				targetURL: "http://unused", framework: "gombit", benchmark: "crud-list", frameworkVersion: "vB",
-				concurrency: []int{10}, duration: "1s", warmup: "1s", trials: 1, outDir: dir,
+				concurrency: []int{10}, duration: "1s", warmup: "1s", trials: 1, outDir: dir, k6Image: "grafana/k6:0.55.0",
 			}
 			if err := run(cfg, k6run); err != nil {
 				t.Fatalf("run: %v", err)
@@ -402,7 +406,7 @@ func TestRunFailsAndWritesNothingOnValidateFailure(t *testing.T) {
 	cfg := runConfig{
 		targetURL: "http://unused", framework: "x", benchmark: "crud-list",
 		concurrency: []int{1}, duration: "1s", warmup: "1s", trials: 1,
-		outDir: dir,
+		outDir: dir, k6Image: "grafana/k6:0.55.0",
 	}
 
 	if err := run(cfg, k6run); err == nil {
@@ -617,11 +621,13 @@ func TestRunMayChangeTheProtocolWhenItReplacesEveryRow(t *testing.T) {
 	}
 }
 
-// The snapshot can change while a sweep runs (a second make in the same
-// OUT_DIR), so the pre-flight check alone does not hold the invariant: the check
-// in writeOutputs, just before writing, is what does. Here the snapshot is
-// compatible when the run starts and incompatible by the time it would write.
-func TestWriteIsRefusedWhenTheSnapshotChangesDuringTheSweep(t *testing.T) {
+// The pre-flight check sees the snapshot as it stood before the sweep. Another
+// producer that runs to completion while this run is measuring (hours, for the
+// canonical sweep) can rewrite it, so writeOutputs checks the snapshot it then
+// merges into. This is a sequential rewrite during the sweep, not a write that
+// overlaps writeOutputs itself: producers do not lock OUT_DIR, and running two
+// at once against one directory is unsupported.
+func TestWriteRecheckCatchesASnapshotRewrittenDuringTheSweep(t *testing.T) {
 	dir := t.TempDir()
 	cfg := reducedConfig(dir, "gombit", "auth-jwt")
 	compatible := metadata.Metadata{
@@ -633,25 +639,121 @@ func TestWriteIsRefusedWhenTheSnapshotChangesDuringTheSweep(t *testing.T) {
 	}, compatible)
 
 	inner := okK6(t)
-	var concurrent []byte
+	rewritten := false
 	k6run := func(vus int, duration, summaryPath string) error {
-		if summaryPath != "" && concurrent == nil {
-			// Another producer records a different protocol mid-sweep.
+		if summaryPath != "" && !rewritten {
+			// Another producer, finishing while this run measures, records a
+			// different protocol.
 			seedSnapshot(t, dir, []result.Result{
 				{Framework: "gombit", Benchmark: "crud-list", Concurrency: 100, Trial: 1, Requests: 1},
 			}, recordedProtocol())
-			concurrent = []byte("seeded")
+			rewritten = true
 		}
 		return inner(vus, duration, summaryPath)
 	}
 	if err := run(cfg, k6run); err == nil {
-		t.Fatal("run() = nil, want the write-time check to refuse a snapshot that became incompatible mid-sweep")
+		t.Fatal("run() = nil, want the write-time check to refuse a snapshot rewritten during the sweep")
 	}
 	rows := readResultsJSON(t, filepath.Join(dir, "results.json"))
 	if len(rows) != 1 || rows[0].Benchmark != "crud-list" {
-		t.Errorf("results.json must keep only the concurrent producer's row, got %+v", rows)
+		t.Errorf("results.json must keep only the other producer's row, got %+v", rows)
 	}
 	if got := readMetadataJSON(t, filepath.Join(dir, "metadata.json")); got.Trials != 5 {
-		t.Errorf("metadata.json must keep the concurrent producer's protocol, trials = %d", got.Trials)
+		t.Errorf("metadata.json must keep the other producer's protocol, trials = %d", got.Trials)
+	}
+}
+
+// The review's end-to-end case (#361 round 2): another unit's rows recorded at
+// five trials, then a run with -trials 0 and otherwise identical parameters.
+// It used to slip past the guard (zero read as "unstated"), measure nothing,
+// delete its own unit's rows, and record "0 trials" over the five-trial rows.
+func TestZeroTrialRunCannotRewriteThePreservedRowsProtocol(t *testing.T) {
+	dir := t.TempDir()
+	seedSnapshot(t, dir, []result.Result{
+		{Framework: "gin-gorm", Benchmark: "crud-list", Concurrency: 100, Trial: 1, Requests: 1},
+		{Framework: "gombit", Benchmark: "crud-list", Concurrency: 100, Trial: 1, Requests: 2},
+	}, recordedProtocol())
+	before := snapshotBytes(t, dir)
+
+	cfg := runConfig{
+		targetURL: "http://unused", framework: "gombit", benchmark: "crud-list",
+		concurrency: []int{100}, duration: "30s", warmup: "10s", trials: 0, outDir: dir,
+		k6Image: "grafana/k6:0.55.0",
+	}
+	calls := 0
+	k6 := okK6(t)
+	if err := run(cfg, func(vus int, d, p string) error { calls++; return k6(vus, d, p) }); err == nil {
+		t.Fatal("run() = nil, want a zero-trial run refused")
+	}
+	if calls != 0 {
+		t.Errorf("a refused run must not start k6, got %d calls", calls)
+	}
+	after := snapshotBytes(t, dir)
+	for name, was := range before {
+		if after[name] != was {
+			t.Errorf("%s changed: a zero-trial run rewrote the snapshot", name)
+		}
+	}
+}
+
+// Incoming parameters must be complete and valid: Merge writes every one of
+// them, so none may be a flag left at zero or a string that failed to parse.
+func TestRunRejectsIncompleteOrInvalidRunParameters(t *testing.T) {
+	for name, mutate := range map[string]func(*runConfig){
+		"zero trials":        func(c *runConfig) { c.trials = 0 },
+		"negative trials":    func(c *runConfig) { c.trials = -1 },
+		"no concurrency":     func(c *runConfig) { c.concurrency = nil },
+		"zero concurrency":   func(c *runConfig) { c.concurrency = []int{0, 10} },
+		"unparseable length": func(c *runConfig) { c.duration = "thirty" },
+		"zero duration":      func(c *runConfig) { c.duration = "0s" },
+		"unparseable warmup": func(c *runConfig) { c.warmup = "ten" },
+		"negative warmup":    func(c *runConfig) { c.warmup = "-1s" },
+		"no k6 image":        func(c *runConfig) { c.k6Image = "" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			dir := t.TempDir()
+			cfg := reducedConfig(dir, "gombit", "crud-list")
+			mutate(&cfg)
+			if err := run(cfg, okK6(t)); err == nil {
+				t.Fatal("run() = nil, want the invalid parameter rejected")
+			}
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 0 {
+				t.Errorf("a rejected run must write nothing, found %d entries", len(entries))
+			}
+		})
+	}
+}
+
+// A zero-second warm-up is a legitimate choice, so it is a value, not a
+// wildcard: it matches a snapshot recorded with no warm-up and conflicts with one
+// recorded with a warm-up.
+func TestZeroWarmupIsComparedAsAValue(t *testing.T) {
+	other := []result.Result{{Framework: "gin-gorm", Benchmark: "crud-list", Concurrency: 1, Trial: 1, Requests: 1}}
+	recorded := func(warmup float64) metadata.Metadata {
+		return metadata.Metadata{
+			Concurrency: []int{1}, Trials: 1, DurationSeconds: 1, WarmupSeconds: warmup,
+			BenchmarkTool: "grafana/k6:0.55.0",
+		}
+	}
+
+	dir := t.TempDir()
+	seedSnapshot(t, dir, other, recorded(10))
+	cfg := reducedConfig(dir, "gombit", "crud-list")
+	cfg.warmup = "0s"
+	err := run(cfg, okK6(t))
+	if err == nil || !strings.Contains(err.Error(), "warm-up 10s -> 0s") {
+		t.Errorf("dropping the warm-up under preserved rows must be refused, got %v", err)
+	}
+
+	dir = t.TempDir()
+	seedSnapshot(t, dir, other, recorded(0))
+	cfg = reducedConfig(dir, "gombit", "crud-list")
+	cfg.warmup = "0s"
+	if err := run(cfg, okK6(t)); err != nil {
+		t.Errorf("a zero warm-up must match a snapshot recorded with none, got %v", err)
 	}
 }

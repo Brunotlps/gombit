@@ -471,6 +471,9 @@ func Merge(existing, incoming Metadata) Metadata {
 // producer side instead: it refuses to merge a run whose parameters differ from
 // the recorded ones while rows it does not replace remain (#361, review round 1).
 //
+// ConflictsWith is directional (see there): an incoming zero is a value, never
+// a wildcard, because Merge writes it (#361, review round 2).
+//
 // That covers run-crud only. `make benchmark-metadata` (collect-host-info)
 // also writes these fields, replaces them wholesale, and measures nothing, so
 // it can still describe existing rows under other parameters; it is not guarded.
@@ -493,40 +496,54 @@ func (m Metadata) RunParams() RunParams {
 	}
 }
 
-// ConflictsWith describes every parameter that both records state and state
-// differently, as "<what> <recorded> -> <incoming>" in a fixed order so an
-// error message is stable. Concurrency compares as an ordered list, the way the
-// report prints it. No conflict returns nil.
+// Recorded reports whether the record states any run parameter at all. Every
+// writer of these fields (run-crud, collect-host-info) writes all five
+// together, so presence is judged for the record, not per field: a record that
+// states anything states a value for each field, zero included.
+func (p RunParams) Recorded() bool {
+	return len(p.Concurrency) > 0 || p.Trials != 0 || p.DurationSeconds != 0 ||
+		p.WarmupSeconds != 0 || p.BenchmarkTool != ""
+}
+
+// ConflictsWith describes every parameter the incoming run would change in a
+// recorded snapshot, as "<what> <recorded> -> <incoming>" in a fixed order so
+// an error message is stable. Concurrency compares as an ordered list, the way
+// the report prints it. No conflict returns nil.
 //
-// A zero field is "not recorded", not a value, and never conflicts: a fresh
-// OUT_DIR records nothing, `make benchmark-metadata` records the pins without
-// measuring, and a producer that leaves a field empty is silent about it rather
-// than claiming zero. Only a disagreement between two stated values means the
-// merged snapshot would misdescribe rows.
+// It is directional because Merge is: the incoming values are written whole,
+// so every incoming field is a value, and a zero there (a zero-second warm-up)
+// is compared like any other rather than read as "unstated". Callers must hand
+// it complete incoming parameters; run-crud validates them before measuring.
+//
+// Only the recorded side can be absent, and only as a whole: a record that
+// states nothing (a fresh OUT_DIR, a snapshot written before these fields were
+// recorded) has no protocol to misdescribe, so nothing conflicts with it. Once
+// it states anything, all five fields are compared exactly. A partial record,
+// such as `make benchmark-metadata` given only -trials, therefore conflicts on
+// its zeros; that fails closed rather than guessing what those rows ran.
 func (recorded RunParams) ConflictsWith(incoming RunParams) []string {
+	if !recorded.Recorded() {
+		return nil
+	}
 	var diffs []string
-	if len(recorded.Concurrency) > 0 && len(incoming.Concurrency) > 0 &&
-		!equalInts(recorded.Concurrency, incoming.Concurrency) {
+	if !equalInts(recorded.Concurrency, incoming.Concurrency) {
 		diffs = append(diffs, fmt.Sprintf("concurrency %s -> %s",
 			intList(recorded.Concurrency), intList(incoming.Concurrency)))
 	}
-	if recorded.Trials != 0 && incoming.Trials != 0 && recorded.Trials != incoming.Trials {
+	if recorded.Trials != incoming.Trials {
 		diffs = append(diffs, fmt.Sprintf("trials %d -> %d", recorded.Trials, incoming.Trials))
 	}
-	if recorded.DurationSeconds != 0 && incoming.DurationSeconds != 0 &&
-		recorded.DurationSeconds != incoming.DurationSeconds {
+	if recorded.DurationSeconds != incoming.DurationSeconds {
 		diffs = append(diffs, fmt.Sprintf("duration per trial %s -> %s",
 			secs(recorded.DurationSeconds), secs(incoming.DurationSeconds)))
 	}
-	if recorded.WarmupSeconds != 0 && incoming.WarmupSeconds != 0 &&
-		recorded.WarmupSeconds != incoming.WarmupSeconds {
+	if recorded.WarmupSeconds != incoming.WarmupSeconds {
 		diffs = append(diffs, fmt.Sprintf("warm-up %s -> %s",
 			secs(recorded.WarmupSeconds), secs(incoming.WarmupSeconds)))
 	}
-	if recorded.BenchmarkTool != "" && incoming.BenchmarkTool != "" &&
-		recorded.BenchmarkTool != incoming.BenchmarkTool {
+	if recorded.BenchmarkTool != incoming.BenchmarkTool {
 		diffs = append(diffs, fmt.Sprintf("benchmark tool %s -> %s",
-			recorded.BenchmarkTool, incoming.BenchmarkTool))
+			orNone(recorded.BenchmarkTool), orNone(incoming.BenchmarkTool)))
 	}
 	return diffs
 }
@@ -544,6 +561,9 @@ func equalInts(a, b []int) bool {
 }
 
 func intList(xs []int) string {
+	if len(xs) == 0 {
+		return "none"
+	}
 	parts := make([]string, len(xs))
 	for i, x := range xs {
 		parts[i] = strconv.Itoa(x)
@@ -552,6 +572,13 @@ func intList(xs []int) string {
 }
 
 func secs(s float64) string { return strconv.FormatFloat(s, 'f', -1, 64) + "s" }
+
+func orNone(s string) string {
+	if s == "" {
+		return "none"
+	}
+	return s
+}
 
 // StampUnit records prov as one unit's provenance in meta and changes nothing
 // else — not the top-level block, not the shared run parameters, not another
