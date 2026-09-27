@@ -12,6 +12,14 @@ version.
 
 ### Added
 
+- `database.Delete(ctx, db, value, conds...)` deletes rows physically, even for
+  a model that embeds `gorm.DeletedAt`, so the database's `ON DELETE RESTRICT`
+  / `CASCADE` / `SET NULL` is what deletion does. A refused delete wraps
+  `database.ErrReferenced`, which `MapDeleteError` maps to `409 conflict`. The
+  admin data plane deletes through it. The conformance suite covers each
+  policy on SQLite, PostgreSQL, and MySQL
+  ([ADR-019](docs/adr/019-hard-delete-semantics.md),
+  [#312](https://github.com/gombit-dev/gombit/issues/312)).
 - `gombit db lint` checks the migration directory: integrity (atlas.sum and a
   clean replay on the dev database, via Atlas Community Edition
   `migrate validate`), layout (misplaced down files), and the safety of every
@@ -50,6 +58,14 @@ version.
 
 ### Changed
 
+- **Breaking (generated models):** `gombit make resource`, and the starter
+  `Product` that `gombit new` scaffolds, no longer embed `gorm.Model`. New models get an explicit `ID` (auto-increment `uint`, or the
+  `--id uuid` key), `CreatedAt`, and `UpdatedAt`, and no soft-delete
+  `DeletedAt`: Gombit deletes rows physically (ADR-019). The API contract (DTOs,
+  OpenAPI) is unchanged; regenerated mappers read `row.ID` instead of
+  `row.Model.ID`. Existing models keep compiling; see
+  [docs/database.md § Deleting rows](docs/database.md#deleting-rows) to move one
+  to hard delete ([#312](https://github.com/gombit-dev/gombit/issues/312)).
 - Atlas errors that `gombit db migrate`, `status`, `makemigrations`, and
   `hash` pass through now name the gombit recovery command
   (`gombit db hash`) instead of the Atlas CLI
