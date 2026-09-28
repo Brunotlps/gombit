@@ -142,6 +142,54 @@ Migrations and the conformance suite follow the same shape — see
 [`ci.yml`](.github/workflows/ci.yml) for the exact invocations, including
 `-conformance.driver` and the `ATLAS_BINARY` environment variable.
 
+### Fault injection
+
+Failure paths get deterministic tests. The full guide is
+[docs/testing/fault-injection.md](docs/testing/fault-injection.md). It covers
+the invariants (INV-1 to INV-8) and the tests that enforce them, what Gombit
+guarantees versus what applications must handle, the `internal/faulttest`
+primitives, the naming taxonomy, worked examples, and how to reproduce a
+chaos failure from its seed.
+
+```bash
+make test-faults    # every TestFault_* test and the faulttest harness, under -race
+
+FAULT_POSTGRES_DSN='postgres://gombit:gombit@127.0.0.1:5432/gombit?sslmode=disable' \
+FAULT_MYSQL_DSN='gombit:gombit@tcp(127.0.0.1:3306)/gombit?parseTime=true' \
+FAULT_REDIS_ADDR=127.0.0.1:6379 \
+  make test-faults  # plus the real databases and Redis, as CI's fault-tests job does
+
+make test-chaos     # the stochastic suite: nightly/on demand only, never a PR check
+CHAOS_POSTGRES=0 CHAOS_SEED=<seed> CHAOS_SCENARIO=<name> CHAOS_ITERATION=<i> make test-chaos  # replay: paste the report's line
+```
+
+The rules, in short:
+
+- Name fault tests `TestFault_<Component>_<Scenario>`. The prefix is what puts
+  them in `make test-faults`, so a new one needs no CI edit.
+- Assert invariants (errors, persisted state, released resources, recovery),
+  not call counts, unless the call sequence is itself the contract ("`App.Tx`
+  runs `fn` once", "one rotation, one INSERT").
+- Pin interleavings with the injectors (`Block`, `Reached(n)`,
+  `proxy.Held()`), never with `time.Sleep`. Bound every wait in a test.
+- No unbounded retries: any retry policy must pass
+  `faulttest.CheckRetryPolicy`.
+- Fault injection is explicit opt-in, through wrappers and proxies a test
+  builds. Production code never imports `internal/faulttest`.
+- A fault test must pass `go test -race -count=50` before it lands, and a
+  `TestFault_Concurrency_*` scenario `-race -count=100`. A flaky
+  failure-path test is worse than none.
+- Adding, changing, or removing a fault test means updating the invariant
+  tables in the guide.
+
+The `Fault injection` check runs `make test-faults` as six shards on every PR
+(`FAULT_SHARD`; each compiles first with `FAULT_COMPILE_ONLY=1`, then runs
+under `FAULT_BUDGET_SECONDS=120`). The `Fault soak` workflow
+reruns it 100 times weekly, and the check becomes required once that stays
+clean. The `Chaos` workflow runs `make test-chaos` nightly, and its artifacts
+carry everything needed to replay a failure. `bash scripts/chaos-run.sh`
+produces the same artifacts locally.
+
 ### Generator golden tests
 
 Generators are covered by golden trees in `goldentest`. After an **intentional**

@@ -98,6 +98,10 @@ func RedisOptions(cfg config.RedisConfig) *redis.Options {
 		DialTimeout:  cfg.DialTimeout,
 		ReadTimeout:  cfg.ReadTimeout,
 		WriteTimeout: cfg.WriteTimeout,
+		// Honor the caller's context deadline on reads and writes, not only
+		// ReadTimeout/WriteTimeout: without it a Redis that stops answering
+		// holds a request past its deadline (TestFault_Network_RedisLatency).
+		ContextTimeoutEnabled: true,
 	}
 	if cfg.TLS {
 		options.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}

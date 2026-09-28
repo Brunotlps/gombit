@@ -1,0 +1,616 @@
+package faulttest_test
+
+import (
+	"context"
+	"database/sql"
+	"database/sql/driver"
+	"errors"
+	"fmt"
+	"io"
+	"path/filepath"
+	"strings"
+	"sync/atomic"
+	"testing"
+	"time"
+
+	"gorm.io/gorm"
+
+	"github.com/gombit-dev/gombit/config"
+	"github.com/gombit-dev/gombit/database"
+	"github.com/gombit-dev/gombit/internal/faulttest"
+)
+
+type faultParent struct {
+	ID   uint `gorm:"primaryKey"`
+	Name string
+}
+
+func (faultParent) TableName() string { return "faulttest_parents" }
+
+type faultChild struct {
+	ID       uint `gorm:"primaryKey"`
+	ParentID uint
+	Name     string
+}
+
+func (faultChild) TableName() string { return "faulttest_children" }
+
+// touches reports whether query writes table.
+func touches(table string) func(string) bool {
+	return func(query string) bool {
+		return strings.Contains(query, "INSERT") && strings.Contains(query, table)
+	}
+}
+
+// openFaultDB opens kind's database at dsn with faults, over tables made
+// fresh through a plain connection, so setup statements never reach them.
+func openFaultDB(t *testing.T, kind database.Driver, dsn string, faults *faulttest.DBFaults) *database.DB {
+	t.Helper()
+	plain, err := database.Open(config.DatabaseConfig{Driver: config.DatabaseDriver(kind), DSN: dsn})
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() {
+		_ = plain.Migrator().DropTable(&faultChild{}, &faultParent{})
+		_ = plain.Close()
+	})
+	if err := plain.Migrator().DropTable(&faultChild{}, &faultParent{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := plain.AutoMigrate(&faultParent{}, &faultChild{}); err != nil {
+		t.Fatal(err)
+	}
+	db, err := faulttest.OpenDB(kind, dsn, faults)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = db.Close() })
+	return db
+}
+
+func count(t *testing.T, db *database.DB, model any) int64 {
+	t.Helper()
+	var n int64
+	if err := db.Model(model).Count(&n).Error; err != nil {
+		t.Fatal(err)
+	}
+	return n
+}
+
+// createFamily writes a parent and its child in one transaction.
+func createFamily(db *database.DB) error {
+	return db.Transaction(func(tx *gorm.DB) error {
+		p := faultParent{Name: "p"}
+		if err := tx.Create(&p).Error; err != nil {
+			return err
+		}
+		return tx.Create(&faultChild{ParentID: p.ID, Name: "c"}).Error
+	})
+}
+
+// testDBFaults runs the wrapper's contract against a real driver.
+func testDBFaults(t *testing.T, kind database.Driver, dsn string) {
+	t.Run("the nth matching statement fails before it reaches the database", func(t *testing.T) {
+		stmt := faulttest.FailOnCall(1, faulttest.ErrInjected)
+		db := openFaultDB(t, kind, dsn, &faulttest.DBFaults{Statement: stmt, Match: touches("faulttest_children")})
+		if err := createFamily(db); !errors.Is(err, faulttest.ErrInjected) {
+			t.Fatalf("transaction = %v, want the injected fault", err)
+		}
+		if p, c := count(t, db, &faultParent{}), count(t, db, &faultChild{}); p != 0 || c != 0 {
+			t.Fatalf("after a failed transaction: %d parents, %d children; want none", p, c)
+		}
+		if err := createFamily(db); err != nil {
+			t.Fatalf("the next transaction = %v, want success", err)
+		}
+		if stmt.Calls() != 2 || stmt.Failures() != 1 {
+			t.Fatalf("Statement: %d calls, %d failures; want 2, 1 (only child inserts count)", stmt.Calls(), stmt.Failures())
+		}
+	})
+
+	t.Run("opening is not a call: FailOnce fails the test's first statement", func(t *testing.T) {
+		stmt := faulttest.FailOnce(faulttest.ErrInjected)
+		db := openFaultDB(t, kind, dsn, &faulttest.DBFaults{Statement: stmt})
+		if err := db.Create(&faultParent{Name: "first"}).Error; !errors.Is(err, faulttest.ErrInjected) {
+			t.Fatalf("the test's first statement = %v, want the injected fault", err)
+		}
+		if err := db.Create(&faultParent{Name: "second"}).Error; err != nil {
+			t.Fatalf("the second statement = %v, want success", err)
+		}
+		if n := count(t, db, &faultParent{}); n != 1 {
+			t.Fatalf("%d parents; want only the second", n)
+		}
+	})
+
+	t.Run("a connect fault meets the test's first dial, not the open", func(t *testing.T) {
+		connect := faulttest.FailOnce(faulttest.ErrInjected)
+		db := openFaultDB(t, kind, dsn, &faulttest.DBFaults{Connect: connect})
+		if err := db.Create(&faultParent{Name: "first"}).Error; !errors.Is(err, faulttest.ErrInjected) {
+			t.Fatalf("the test's first statement = %v, want the connect fault", err)
+		}
+		if err := db.Create(&faultParent{Name: "second"}).Error; err != nil {
+			t.Fatalf("the next statement = %v, want success on a fresh dial", err)
+		}
+		if connect.Calls() != 2 || connect.Failures() != 1 {
+			t.Fatalf("Connect: %d calls, %d failures; want 2 and 1 (the open's own dial not counted)", connect.Calls(), connect.Failures())
+		}
+	})
+
+	t.Run("every statement counts without a match", func(t *testing.T) {
+		stmt := faulttest.FailOnCall(2, faulttest.ErrInjected)
+		db := openFaultDB(t, kind, dsn, &faulttest.DBFaults{Statement: stmt})
+		if err := db.Create(&faultParent{Name: "one"}).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := db.Create(&faultParent{Name: "two"}).Error; !errors.Is(err, faulttest.ErrInjected) {
+			t.Fatalf("2nd statement = %v, want the injected fault", err)
+		}
+		if n := count(t, db, &faultParent{}); n != 1 {
+			t.Fatalf("%d parents; want only the first", n)
+		}
+	})
+
+	t.Run("a failed commit persists nothing and leaves the connection clean", func(t *testing.T) {
+		commit := faulttest.FailOnce(faulttest.ErrInjected)
+		db := openFaultDB(t, kind, dsn, &faulttest.DBFaults{Commit: commit})
+		if err := createFamily(db); !errors.Is(err, faulttest.ErrInjected) {
+			t.Fatalf("transaction = %v, want the commit fault", err)
+		}
+		if p, c := count(t, db, &faultParent{}), count(t, db, &faultChild{}); p != 0 || c != 0 {
+			t.Fatalf("after a failed commit: %d parents, %d children; want none", p, c)
+		}
+		if err := createFamily(db); err != nil {
+			t.Fatalf("the next transaction = %v, want success", err)
+		}
+		if p := count(t, db, &faultParent{}); p != 1 {
+			t.Fatalf("%d parents after the retry, want 1", p)
+		}
+	})
+
+	t.Run("a failed rollback still rolls back", func(t *testing.T) {
+		rollback := faulttest.FailOnce(faulttest.ErrInjected)
+		db := openFaultDB(t, kind, dsn, &faulttest.DBFaults{Rollback: rollback})
+		tx := db.Begin()
+		if err := tx.Create(&faultParent{Name: "p"}).Error; err != nil {
+			t.Fatal(err)
+		}
+		if err := tx.Rollback().Error; !errors.Is(err, faulttest.ErrInjected) {
+			t.Fatalf("Rollback = %v, want the injected fault", err)
+		}
+		if n := count(t, db, &faultParent{}); n != 0 {
+			t.Fatalf("%d parents after the rollback, want none", n)
+		}
+	})
+
+	t.Run("a failed begin fails the transaction", func(t *testing.T) {
+		db := openFaultDB(t, kind, dsn, &faulttest.DBFaults{Begin: faulttest.FailOnce(faulttest.ErrInjected)})
+		if err := createFamily(db); !errors.Is(err, faulttest.ErrInjected) {
+			t.Fatalf("transaction = %v, want the begin fault", err)
+		}
+		if err := createFamily(db); err != nil {
+			t.Fatal(err)
+		}
+	})
+
+	t.Run("a blocked statement ends with its context", func(t *testing.T) {
+		release := make(chan struct{})
+		defer close(release)
+		stmt := faulttest.BlockUntil(release)
+		db := openFaultDB(t, kind, dsn, &faulttest.DBFaults{Statement: stmt, Match: touches("faulttest_parents")})
+		ctx, cancel := context.WithCancel(context.Background())
+		done := make(chan error, 1)
+		// No implicit transaction: its rollback error would bury the cause.
+		session := db.Session(&gorm.Session{Context: ctx, SkipDefaultTransaction: true})
+		go func() { done <- session.Create(&faultParent{Name: "p"}).Error }()
+		<-stmt.Reached(1)
+		cancel()
+		if err := <-done; !errors.Is(err, context.Canceled) {
+			t.Fatalf("blocked insert = %v, want context.Canceled", err)
+		}
+	})
+}
+
+func TestSQLiteFaults(t *testing.T) {
+	testDBFaults(t, database.DriverSQLite, filepath.Join(t.TempDir(), "faults.db"))
+}
+
+// TestAFailingConnectDoesNotFailTheOpen: OpenDB dials outside any fault
+// sequence; with every connect failing, the open succeeds and every call the
+// test makes fails.
+func TestAFailingConnectDoesNotFailTheOpen(t *testing.T) {
+	db, err := faulttest.OpenDB(database.DriverSQLite, filepath.Join(t.TempDir(), "c.db"),
+		&faulttest.DBFaults{Connect: faulttest.FailAlways(faulttest.ErrInjected)})
+	if err != nil {
+		t.Fatalf("OpenDB with every connect failing = %v, want the open to succeed", err)
+	}
+	defer func() { _ = db.Close() }()
+	if err := db.Exec("SELECT 1").Error; !errors.Is(err, faulttest.ErrInjected) {
+		t.Fatalf("the test's first statement = %v, want the connect fault", err)
+	}
+	if _, err := faulttest.OpenDB("oracle", "", nil); err == nil {
+		t.Fatal("OpenDB accepted an unsupported driver")
+	}
+}
+
+// skippingDriver declines ExecContext (driver.ErrSkip), as go-sql-driver
+// does for a statement with arguments: database/sql then prepares it.
+type skippingDriver struct{ execs *atomic.Int32 }
+
+func (d skippingDriver) Open(string) (driver.Conn, error) { return skippingConn(d), nil }
+
+type skippingConn struct{ execs *atomic.Int32 }
+
+func (c skippingConn) Prepare(string) (driver.Stmt, error) { return countingStmt(c), nil }
+func (skippingConn) Close() error                          { return nil }
+func (skippingConn) Begin() (driver.Tx, error)             { return nil, errors.New("no transactions") }
+func (skippingConn) ExecContext(context.Context, string, []driver.NamedValue) (driver.Result, error) {
+	return nil, driver.ErrSkip
+}
+
+// preparingConn has no ExecContext at all.
+type preparingConn struct{ execs *atomic.Int32 }
+
+func (c preparingConn) Prepare(string) (driver.Stmt, error) { return countingStmt(c), nil }
+func (preparingConn) Close() error                          { return nil }
+func (preparingConn) Begin() (driver.Tx, error)             { return nil, errors.New("no transactions") }
+
+type countingStmt struct{ execs *atomic.Int32 }
+
+func (countingStmt) Close() error  { return nil }
+func (countingStmt) NumInput() int { return -1 }
+func (s countingStmt) Exec([]driver.Value) (driver.Result, error) {
+	s.execs.Add(1)
+	return driver.RowsAffected(1), nil
+}
+func (countingStmt) Query([]driver.Value) (driver.Rows, error) { return emptyRows{}, nil }
+
+type emptyRows struct{}
+
+func (emptyRows) Columns() []string         { return nil }
+func (emptyRows) Close() error              { return nil }
+func (emptyRows) Next([]driver.Value) error { return io.EOF }
+
+type connFunc func() driver.Conn
+
+func (f connFunc) Connect(context.Context) (driver.Conn, error) { return f(), nil }
+func (connFunc) Driver() driver.Driver                          { return skippingDriver{} }
+
+// TestAStatementIsCountedOnce: a statement the driver runs through the
+// prepared-statement path (it declined ExecContext, or has none) hits the
+// Statement fault once, not once per path.
+func TestAStatementIsCountedOnce(t *testing.T) {
+	for name, newConn := range map[string]func(*atomic.Int32) driver.Conn{
+		"declines ExecContext": func(n *atomic.Int32) driver.Conn { return skippingConn{n} },
+		"no ExecContext":       func(n *atomic.Int32) driver.Conn { return preparingConn{n} },
+	} {
+		t.Run(name, func(t *testing.T) {
+			var execs atomic.Int32
+			stmt := faulttest.FailOnCall(2, faulttest.ErrInjected)
+			db := sql.OpenDB(faulttest.WrapConnector(connFunc(func() driver.Conn { return newConn(&execs) }), &faulttest.DBFaults{Statement: stmt}))
+			defer func() { _ = db.Close() }()
+			if _, err := db.Exec("UPDATE t SET x = ?", 1); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := db.Exec("UPDATE t SET x = ?", 2); !errors.Is(err, faulttest.ErrInjected) {
+				t.Fatalf("2nd statement = %v, want the injected fault", err)
+			}
+			if stmt.Calls() != 2 || execs.Load() != 1 {
+				t.Fatalf("Statement calls %d, executed %d; want 2 calls and only the first executed", stmt.Calls(), execs.Load())
+			}
+		})
+	}
+}
+
+// flakyPrepareConn declines ExecContext and fails its first Prepare.
+type flakyPrepareConn struct {
+	execs    *atomic.Int32
+	prepares *atomic.Int32
+}
+
+func (c flakyPrepareConn) Prepare(string) (driver.Stmt, error) {
+	if c.prepares.Add(1) == 1 {
+		return nil, errors.New("prepare failed")
+	}
+	return countingStmt{c.execs}, nil
+}
+func (flakyPrepareConn) Close() error              { return nil }
+func (flakyPrepareConn) Begin() (driver.Tx, error) { return nil, errors.New("no transactions") }
+func (flakyPrepareConn) ExecContext(context.Context, string, []driver.NamedValue) (driver.Result, error) {
+	return nil, driver.ErrSkip
+}
+
+// TestAFailedPrepareLeavesNoMark: a declined statement whose prepare fails
+// must not let the next identical statement skip its fault check.
+func TestAFailedPrepareLeavesNoMark(t *testing.T) {
+	var execs, prepares atomic.Int32
+	stmt := faulttest.FailOnCall(2, faulttest.ErrInjected)
+	c := flakyPrepareConn{&execs, &prepares}
+	db := sql.OpenDB(faulttest.WrapConnector(connFunc(func() driver.Conn { return c }), &faulttest.DBFaults{Statement: stmt}))
+	defer func() { _ = db.Close() }()
+	db.SetMaxOpenConns(1)
+	if _, err := db.Exec("UPDATE t SET x = ?", 1); err == nil || errors.Is(err, faulttest.ErrInjected) {
+		t.Fatalf("1st statement = %v, want the prepare failure", err)
+	}
+	// The same SQL through an explicit prepared statement: a mark left by the
+	// failed prepare would let it skip its fault check.
+	prepared, err := db.Prepare("UPDATE t SET x = ?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = prepared.Close() }()
+	if _, err := prepared.Exec(1); !errors.Is(err, faulttest.ErrInjected) {
+		t.Fatalf("2nd statement = %v, want the injected fault (call 2)", err)
+	}
+	if execs.Load() != 0 || stmt.Calls() != 2 {
+		t.Fatalf("executed %d, Statement calls %d; want 0 and 2", execs.Load(), stmt.Calls())
+	}
+}
+
+// capConn is a base connection with a chosen set of optional interfaces.
+type capConn struct{ driver.Conn }
+
+type pingConn struct{ driver.Conn }
+
+func (pingConn) Ping(context.Context) error { return nil }
+
+type resetValidConn struct{ driver.Conn }
+
+func (resetValidConn) ResetSession(context.Context) error { return nil }
+func (resetValidConn) IsValid() bool                      { return true }
+
+type allConn struct{ driver.Conn }
+
+func (allConn) Ping(context.Context) error         { return nil }
+func (allConn) ResetSession(context.Context) error { return nil }
+func (allConn) IsValid() bool                      { return true }
+
+type resetConn struct{ driver.Conn }
+
+func (resetConn) ResetSession(context.Context) error { return nil }
+
+// TestWrappedConnHasTheBasesOptionalInterfaces: database/sql decides how
+// the pool treats a connection by its optional interfaces (SessionResetter
+// + Validator lets it keep one after a canceled transaction), so the
+// wrapper must have exactly the base's.
+func TestWrappedConnHasTheBasesOptionalInterfaces(t *testing.T) {
+	var execs atomic.Int32
+	base := preparingConn{&execs}
+	for name, conn := range map[string]driver.Conn{
+		"none":           capConn{base},
+		"pinger":         pingConn{base},
+		"resetter":       resetConn{base},
+		"resetter+valid": resetValidConn{base},
+		"all three":      allConn{base},
+	} {
+		t.Run(name, func(t *testing.T) {
+			wrapped, err := faulttest.WrapConnector(connFunc(func() driver.Conn { return conn }), nil).Connect(context.Background())
+			if err != nil {
+				t.Fatal(err)
+			}
+			for iface, has := range map[string][2]bool{
+				"Pinger":          {implements[driver.Pinger](conn), implements[driver.Pinger](wrapped)},
+				"SessionResetter": {implements[driver.SessionResetter](conn), implements[driver.SessionResetter](wrapped)},
+				"Validator":       {implements[driver.Validator](conn), implements[driver.Validator](wrapped)},
+			} {
+				if has[0] != has[1] {
+					t.Errorf("%s: base %v, wrapped %v; want the same", iface, has[0], has[1])
+				}
+			}
+		})
+	}
+}
+
+func implements[I any](v any) bool {
+	_, ok := v.(I)
+	return ok
+}
+
+// TestWrapperKeepsThePoolsConnectionLifetime: with no fault armed, a
+// transaction canceled mid-flight on SQLite (no SessionResetter/Validator)
+// costs its connection exactly as on the raw driver.
+func TestWrapperKeepsThePoolsConnectionLifetime(t *testing.T) {
+	dsn := filepath.Join(t.TempDir(), "lifetime.db")
+	probe, err := sql.Open("sqlite3", dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	base := probe.Driver()
+	_ = probe.Close()
+	count := func(wrap bool) int {
+		connector := sqliteConnector{driver: base, dsn: dsn}
+		connects := faulttest.Sequence() // never fails: counts connects
+		counted := faulttest.WrapConnector(connector, &faulttest.DBFaults{Connect: connects})
+		var db *sql.DB
+		if wrap {
+			db = sql.OpenDB(counted)
+		} else {
+			// The raw driver's connections, counted by a wrapper around the
+			// connector alone.
+			db = sql.OpenDB(rawConnector{connector: connector, connects: connects})
+		}
+		defer func() { _ = db.Close() }()
+		db.SetMaxOpenConns(1)
+		ctx, cancel := context.WithCancel(context.Background())
+		tx, err := db.BeginTx(ctx, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := tx.ExecContext(ctx, "SELECT 1"); err != nil {
+			t.Fatal(err)
+		}
+		cancel()
+		// Let database/sql's own cancellation end the transaction (that is
+		// where it decides to keep or discard the connection), rather than
+		// racing it with an explicit Rollback.
+		deadline := time.Now().Add(5 * time.Second)
+		for {
+			_, err := tx.ExecContext(context.Background(), "SELECT 1")
+			if errors.Is(err, sql.ErrTxDone) {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("the canceled transaction never ended: %v", err)
+			}
+			time.Sleep(time.Millisecond)
+		}
+		if err := db.Ping(); err != nil {
+			t.Fatal(err)
+		}
+		return connects.Calls()
+	}
+	if raw, wrapped := count(false), count(true); raw != wrapped {
+		t.Fatalf("connections dialed: raw driver %d, wrapped %d; the wrapper changed the pool's behavior", raw, wrapped)
+	}
+}
+
+// rawConnector counts Connect on the base connector and returns the base
+// driver's connection unwrapped.
+type rawConnector struct {
+	connector driver.Connector
+	connects  *faulttest.Injector
+}
+
+func (r rawConnector) Connect(ctx context.Context) (driver.Conn, error) {
+	_ = r.connects.Hit(ctx)
+	return r.connector.Connect(ctx)
+}
+func (r rawConnector) Driver() driver.Driver { return r.connector.Driver() }
+
+// txConn runs transactions whose Rollback fails when rollbackFails.
+type txConn struct {
+	preparingConn
+	rollbackFails bool
+}
+
+func (c txConn) Begin() (driver.Tx, error) { return fakeTx{c.rollbackFails}, nil }
+
+type fakeTx struct{ rollbackFails bool }
+
+func (fakeTx) Commit() error { return nil }
+func (t fakeTx) Rollback() error {
+	if t.rollbackFails {
+		return errors.New("rollback failed")
+	}
+	return nil
+}
+
+// TestAFailedRollbackDiscardsTheConnection: an injected commit (or
+// rollback) fault whose real rollback fails reports both, plus
+// driver.ErrBadConn, so the pool drops the connection instead of reusing
+// one that may still be inside the transaction.
+func TestAFailedRollbackDiscardsTheConnection(t *testing.T) {
+	for _, rollbackFails := range []bool{false, true} {
+		for _, boundary := range []string{"commit", "rollback"} {
+			t.Run(fmt.Sprintf("%s/rollbackFails=%v", boundary, rollbackFails), func(t *testing.T) {
+				var execs atomic.Int32
+				connects := faulttest.Sequence()
+				faults := &faulttest.DBFaults{Connect: connects}
+				if boundary == "commit" {
+					faults.Commit = faulttest.FailOnce(faulttest.ErrInjected)
+				} else {
+					faults.Rollback = faulttest.FailOnce(faulttest.ErrInjected)
+				}
+				db := sql.OpenDB(faulttest.WrapConnector(connFunc(func() driver.Conn {
+					return txConn{preparingConn{&execs}, rollbackFails}
+				}), faults))
+				defer func() { _ = db.Close() }()
+				db.SetMaxOpenConns(1)
+				tx, err := db.Begin()
+				if err != nil {
+					t.Fatal(err)
+				}
+				if boundary == "commit" {
+					err = tx.Commit()
+				} else {
+					err = tx.Rollback()
+				}
+				if !errors.Is(err, faulttest.ErrInjected) {
+					t.Fatalf("%s = %v, want the injected fault", boundary, err)
+				}
+				if got := errors.Is(err, driver.ErrBadConn); got != rollbackFails {
+					t.Fatalf("%s = %v: ErrBadConn %v, want %v", boundary, err, got, rollbackFails)
+				}
+				if err := db.Ping(); err != nil {
+					t.Fatal(err)
+				}
+				want := 1
+				if rollbackFails {
+					want = 2 // the dirty connection was discarded and redialed
+				}
+				if connects.Calls() != want {
+					t.Fatalf("connections dialed = %d, want %d", connects.Calls(), want)
+				}
+			})
+		}
+	}
+}
+
+// sqliteConnector opens the SQLite driver (which has no DriverContext).
+type sqliteConnector struct {
+	driver driver.Driver
+	dsn    string
+}
+
+func (c sqliteConnector) Connect(context.Context) (driver.Conn, error) { return c.driver.Open(c.dsn) }
+func (c sqliteConnector) Driver() driver.Driver                        { return c.driver }
+
+// checkingConn accepts any argument in its NamedValueChecker, as pgx's
+// connection does; its statements have no checker of their own.
+type checkingConn struct{ preparingConn }
+
+func (checkingConn) CheckNamedValue(*driver.NamedValue) error { return nil }
+
+// TestAStatementDoesNotShadowTheConnectionsChecker: database/sql asks a
+// statement's NamedValueChecker first, so the wrapper must not give a
+// statement one its driver statement lacks.
+func TestAStatementDoesNotShadowTheConnectionsChecker(t *testing.T) {
+	var execs atomic.Int32
+	db := sql.OpenDB(faulttest.WrapConnector(connFunc(func() driver.Conn {
+		return checkingConn{preparingConn{&execs}}
+	}), nil))
+	defer func() { _ = db.Close() }()
+	stmt, err := db.Prepare("SELECT ?")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = stmt.Close() }()
+	// The default converter refuses a uint64 with the high bit set; the
+	// connection's checker accepts it.
+	if _, err := stmt.Exec(uint64(1 << 63)); err != nil {
+		t.Fatalf("prepared exec = %v; the statement's checker shadowed the connection's", err)
+	}
+	if execs.Load() != 1 {
+		t.Fatalf("executed %d statements, want 1", execs.Load())
+	}
+}
+
+// TestIdleCatchesAnOpenTransaction: a transaction nobody finished holds its
+// connection, and Idle says so.
+func TestIdleCatchesAnOpenTransaction(t *testing.T) {
+	defer faulttest.SetIdleTimeout(20 * time.Millisecond)()
+	db, err := faulttest.OpenDB(database.DriverSQLite, filepath.Join(t.TempDir(), "idle.db"), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = db.Close() }()
+	faulttest.Idle(t, db) // nothing open
+
+	tx := db.Begin()
+	ft := &fakeT{}
+	faulttest.Idle(ft, db)
+	if !strings.Contains(ft.failed, "left open") {
+		t.Fatalf("Idle with an open transaction: %q, want a failure", ft.failed)
+	}
+	tx.Rollback()
+	faulttest.Idle(t, db)
+}
+
+// fakeT records a Fatalf instead of ending the test.
+type fakeT struct {
+	testing.TB
+	failed string
+}
+
+func (f *fakeT) Helper() {}
+func (f *fakeT) Fatalf(format string, args ...any) {
+	f.failed = fmt.Sprintf(format, args...)
+}
