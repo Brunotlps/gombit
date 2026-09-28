@@ -1,6 +1,6 @@
 ---
 name: onboarding
-description: Onboarding and pairing guide for contributing to Gombit — use whenever the user is new to the project, asks to "learn the repo", "find an issue to start with", "help me close an issue", "fix a good first issue", "explain how this works here", or whenever this is a new contributor's first working session (or you don't have confirmed context about the repo's current state yet in this conversation). Also use mid-session during any issue implementation to make sure the working agreement, local checks, and the code-review skill are followed through to the end.
+description: Onboarding and pairing guide for a new Gombit contributor. Use only when the user invokes /onboarding, says they are new to the repo, or asks to be walked through picking and closing a first issue.
 ---
 
 # Gombit Onboarding
@@ -25,19 +25,20 @@ milestones) is a snapshot, not a promise.
 
 ## When to use this skill
 
-- A contributor's first session (or any session where you haven't confirmed
-  the repo's current state yet in this conversation).
-- Requests like "help me understand the project", "where do I start", "find
-  a good issue for me to pick up", "let's close this issue", "explain this
-  decision/convention".
-- Any issue-implementation work, start to PR — this skill covers the whole
-  cycle, not just the initial reading.
+Only on explicit opt-in:
 
-If the user has already shown in this conversation that they know the repo's
-current state well and just want to move fast on a specific task, skip
-straight to the relevant phase instead of repeating the full reconnaissance.
+- The user invokes `/onboarding`.
+- The user says they are new to the repo (or returning after a long break)
+  and wants to be onboarded.
+- The user asks to be walked through picking and closing a first issue.
 
-## Required reading (once per new session)
+Don't load it on your own for ordinary issue work, reviews, or a fresh
+session — the maintainer and experienced contributors work without it. If a
+contributor who already knows the repo invokes it for one part of the cycle
+(say, issue selection or the PR checklist), go straight to that phase
+instead of running the full reading and reconnaissance.
+
+## Required reading (once per onboarding)
 
 Before touching any code or suggesting any issue, read, in this order, and
 give the user a 5-8 line summary confirming understanding of each before
@@ -70,8 +71,8 @@ moving to the next:
    constantly when generating resources, running migrations, checking
    contract drift, etc.
 5. **Every ADR in `docs/adr/`** — the *why* behind locked decisions. Run
-   `ls docs/adr/` first; don't assume a fixed count or range (it grows —
-   011-014 was the whole set once, it is not anymore). Skim the ones
+   `ls docs/adr/` first; don't assume a fixed count or range — the set
+   grows. Skim the ones
    relevant to whatever issue you end up touching. If an issue or a user
    suggestion seems to contradict an ADR, stop and flag it before
    proceeding.
@@ -101,28 +102,26 @@ go test ./... 2>&1 | tail -40
 Goal: find the repo's *actual* state — what already builds/passes, which
 issues are truly open, what labels and milestones genuinely exist right now,
 and which dependencies between issues are satisfied. Don't rely only on
-`AGENTS.md` prose for this — it can lag behind the tracker (as of
-2026-09-28 the M0-M6 milestones are closed out or nearly so, and most live
-work, epics included, is unmilestoned). If you notice a mismatch between the
-docs and the repo, flag it to the user explicitly before proceeding.
+`AGENTS.md` prose for this — it can lag behind the tracker, and much live
+work (epics included) carries no milestone. If you notice a mismatch between
+the docs and the repo, flag it to the user explicitly before proceeding.
 
 ## Phase 1 — Issue selection
 
-There are two lanes, and picking the right one matters — as of 2026-09-28
-most open issues are standalone `[bug]` reports, not build-plan backlog
-items. Run Phase 0 for the current mix.
+There are two lanes, and picking the right one matters: standalone `[bug]`
+reports and epic children are worked differently. Phase 0 shows the current
+mix.
 
 ### Lane A — Bug fix (default recommendation for a new contributor)
 
 1. List the open bug reports: `gh issue list --state open --search
-   "[bug] in:title"`, and check which carry `good first issue` (note the
-   space; a hyphenated `good-first-issue` label also exists but is unused as
-   of 2026-09-28).
-2. **Don't treat `good first issue` as a difficulty signal.** As of
-   2026-09-28 the maintainer applies it to nearly every triaged bug (86 of 88
-   open `[bug]` issues), including security and concurrency defects. The
-   label means "open to outside contributors", not "easy". Rank the
-   candidates yourself:
+   "[bug] in:title"`, and check which carry `good first issue` (a
+   hyphenated `good-first-issue` label also exists; filter on whichever one
+   the open issues actually carry).
+2. **Don't treat `good first issue` as a difficulty signal.** The
+   maintainer applies it broadly to triaged bugs, security and concurrency
+   defects included. The label means "open to outside contributors", not
+   "easy". Rank the candidates yourself:
    - **Prefer** for a first contribution: input validation, error messages,
      CLI flag/config parsing, docs-vs-behavior mismatches — a narrow change
      with a unit test that reproduces on SQLite or with no database.
@@ -147,11 +146,7 @@ items. Run Phase 0 for the current mix.
 
 Use this lane when the user wants to build something rather than fix a
 reported defect: a live post-v0.1 epic (`UPGRADE-*`, `AUTH-*`, `STORAGE-*`,
-or similar — check `gh issue list` for the current set, it changes). As of
-2026-09-28 no build plan §4 (v0.1) issue is open — `gh api
-'repos/gombit-dev/gombit/issues?milestone=<number>&state=open'` returns none
-for every M-milestone — although the milestone counters from Phase 0 still
-show 1 open on M1-M3.
+or similar — check `gh issue list` for the current set, it changes).
 
 1. **No open dependency** — if the issue says "Depends on #N", `#N` must be
    closed.
@@ -216,8 +211,9 @@ file, so follow the steps here rather than trying to invoke one):
    applies both to the framework's own generators and to any helper script
    that edits registration points (`main.go`, etc.).
 4. **If the change touches the public API:** regenerate the OpenAPI doc + TS
-   client in the same change (`gombit client check --write ...`, see
-   `docs/cli.md`) — mandatory, CI fails without it.
+   client in the same change — mandatory, CI fails without it. The exact
+   `gombit client check --write` invocation for this repo is in the
+   "Contract drift" section of `CONTRIBUTING.md`.
 5. **If a generator is changed intentionally:** run `go test ./goldentest
    -update` and show the resulting diff to the user before approving the
    commit — never accept an `-update` without diff review.
@@ -230,8 +226,7 @@ file, so follow the steps here rather than trying to invoke one):
   skills phrase it as "no *unplanned* battery". Stay inside the specific
   issue you picked — never widen a fix into battery work. An issue that
   belongs to a battery's own epic (e.g. `[STORAGE-2]`) is planned work, not
-  creep, but it still must not pull in a *different* battery. Jobs already
-  shipped (`JOBS-*`) and are off the list.
+  creep, but it still must not pull in a *different* battery.
 - **If something in the tracker looks missing or contradictory** (an epic
   with no root issue, an issue that conflicts with what's already shipped),
   don't add scope on your own — flag it for the user to decide.

@@ -11,8 +11,9 @@
   - `onboarding` (`.claude/skills/onboarding/SKILL.md`) — onboarding and
     pairing guide for a new or returning contributor: required reading,
     finding an open issue (bug-fix vs backlog/epic lane), the
-    implementation loop, validation, and PR. Use it for a first session, or
-    whenever picking up or closing an issue.
+    implementation loop, validation, and PR. Opt-in only: run it via
+    `/onboarding`, when a user says they are new to the repo, or when they
+    ask to be walked through a first issue.
 - For what has shipped — milestones, the Cobra command tree, runtime
   packages — defer to AGENTS.md "Current state", the single place kept
   current; don't restate a snapshot of it here, which is what drifts stale.
