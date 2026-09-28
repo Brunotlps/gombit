@@ -138,6 +138,15 @@ comes first. Do not invent findings. In Claude Code, run the project
 `code-review` skill (`.claude/skills/code-review/SKILL.md`); in Cursor, run
 the project `code-review` skill (`.cursor/skills/code-review/SKILL.md`).
 
+## Onboarding
+
+For a contributor's first session, or when picking up and closing an issue,
+Claude Code has the project `onboarding` skill
+(`.claude/skills/onboarding/SKILL.md`): required reading, live repo
+reconnaissance, issue selection (bug-fix or backlog/epic lane), the
+implementation loop, validation, and PR. It defers to this file wherever the
+two disagree.
+
 ## Cursor skills
 
 Project skills live in `.cursor/skills/` and encode the workflows above.

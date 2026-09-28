@@ -254,6 +254,12 @@ This repo ships a review skill for it:
 Cursor also ships `/create-feature` and `/bugfix` skills encoding the workflows
 above.
 
+New to the repo? In Claude Code, run `/onboarding`
+(`.claude/skills/onboarding/SKILL.md`). It walks through the required reading,
+checks the repo's live state, helps pick an open issue (a bug fix suited to a
+first contribution, or a backlog/epic item), and carries the work through
+tests, local checks, `/code-review`, and the PR template.
+
 ## Working agreement
 
 A pull request is not done unless it satisfies the working agreement in

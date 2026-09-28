@@ -2,11 +2,17 @@
 
 ## Claude Code
 
-- Project skill available: `code-review` (`.claude/skills/code-review/SKILL.md`)
-  — adversarial review of a diff/PR against the Agent Working Agreement in
-  AGENTS.md (from the historical build plan §5) and the change's claimed
-  contract. Invoke with `/code-review` or ask to review a PR/diff; it
-  overrides the bundled `/code-review` for this repo.
+- Project skills available:
+  - `code-review` (`.claude/skills/code-review/SKILL.md`) — adversarial
+    review of a diff/PR against the Agent Working Agreement in AGENTS.md
+    (from the historical build plan §5) and the change's claimed contract.
+    Invoke with `/code-review` or ask to review a PR/diff; it overrides the
+    bundled `/code-review` for this repo.
+  - `onboarding` (`.claude/skills/onboarding/SKILL.md`) — onboarding and
+    pairing guide for a new or returning contributor: required reading,
+    finding an open issue (bug-fix vs backlog/epic lane), the
+    implementation loop, validation, and PR. Use it for a first session, or
+    whenever picking up or closing an issue.
 - For what has shipped — milestones, the Cobra command tree, runtime
   packages — defer to AGENTS.md "Current state", the single place kept
   current; don't restate a snapshot of it here, which is what drifts stale.
