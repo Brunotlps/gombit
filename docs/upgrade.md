@@ -9,9 +9,10 @@ never rewrites code you own without an explicit write action.
 
 This page grows with the UPGRADE-0 epic. Today it covers **planning an
 upgrade** (`gombit upgrade --dry-run`), **applying its dependency changes**
-(`gombit upgrade --to`), the **baseline** (where an application stands) and
-the **compatibility manifest** (what each release asks of an application
-moving to it).
+(`gombit upgrade --to`), **checking for deprecated APIs** (`gombit upgrade
+check`), the **baseline** (where an application stands) and the
+**compatibility manifest** (what each release asks of an application moving
+to it).
 
 ## Planning an upgrade
 
@@ -140,6 +141,48 @@ Review them with `git diff go.mod go.sum`. Still to do (not applied):
   Either way `go.mod` and `go.sum` get back the bytes they had.
 - **Only the dependencies.** The plan's automatic and manual changes are
   printed as still to do; they are not applied.
+
+## Checking for deprecated APIs
+
+`gombit upgrade check` reports every use, in the application, of a framework
+API marked deprecated, with what to use instead:
+
+```text
+$ gombit upgrade check
+Deprecated framework APIs used: 1
+  internal/book/hooks.go:21:18: database.KeepStoredZeros
+      Deprecated: use ScopeEdit with StoredValues, which also keeps the row's stored text editable and judges columns by whether their value changed.
+```
+
+- **What is deprecated** is what the framework's doc comments say, with the
+  Go convention: a paragraph starting `Deprecated:` (the one `go doc`,
+  gopls and pkg.go.dev show). Every such paragraph names its replacement; a
+  test fails one that does not.
+- **What can be deprecated:** a package (its package doc), a function, a
+  method, a type, a constant, a variable, a struct field (named or embedded)
+  or an interface method, documented with a line or a block comment.
+- **How uses are found:** from type information, not text. The app's
+  packages, tests included, and everything they depend on are loaded and
+  type-checked from source as one graph (`go/packages`), so a framework
+  declaration and the app's use of it are the same `go/types` object: a
+  deprecated declaration is tied to the object it defines, and every use in
+  the app resolved to the object it denotes, never matched by file
+  positions. Every framework package in that graph is read, including one
+  the app reaches only through another dependency (a wrapper embedding a
+  framework type, whose promoted method the app calls). A use is a name
+  resolving to such an object (a call, a selector, a composite literal key,
+  a dot-imported name), an element of an unkeyed struct literal
+  (`db.Options{"x", 0}` uses the first field), or the import of a
+  deprecated package; one token can be two uses. So a local name that
+  happens to match, a comment or a string is never reported.
+- **Never a false clean:** the app and its dependencies must type-check, and
+  a framework object from a package outside the loaded graph stops the scan;
+  either is an error, with Go's diagnostics, rather than a scan that misses
+  uses.
+- **Output:** file, line and column, the symbol (`pkg.Name`,
+  `pkg.Type.Field`, `(*pkg.Type).Method`) and the deprecation; `--json`
+  prints them as a list. It exits 1 when there is any use, so a CI job can
+  gate on it; `--dir` selects the application directory.
 
 ## The baseline
 
