@@ -346,6 +346,30 @@ version.
   `Deprecated:` paragraph in the framework to name its replacement. The
   framework now requires `golang.org/x/tools` directly
   ([#345](https://github.com/gombit-dev/gombit/issues/345)).
+- `gombit upgrade fix` (UPGRADE-6) runs the framework's codemods:
+  rewrites of an application's uses of framework APIs, for changes with a
+  mechanical replacement (a rename, a move, a reshaped call). Uses are
+  found from type information, as `gombit upgrade check` finds them, and
+  rewritten in the syntax tree, never as text. Imports are added and
+  dropped as needed, and files are printed gofmt-formatted with their line
+  endings kept. The codemods run in passes on their own output (one may
+  rewrite another's) until a pass changes nothing, and that pass
+  type-checks the result, so a proposed rewrite compiles and running it
+  twice changes nothing
+  ([#346](https://github.com/gombit-dev/gombit/issues/346)).
+  - By default it writes nothing: it prints a unified diff for `git apply`.
+    `--patch FILE` saves it to a file instead, and `--write` rewrites the
+    files atomically. It writes nothing when a file no longer holds the
+    exact bytes the codemods parsed.
+  - A use it cannot rewrite safely is left unchanged and listed with the
+    reason, and the command exits 1.
+  - `upgrade.RunCodemods` and `upgrade.Codemod` are the API. An automatic
+    manifest change applies a codemod as the action `codemod:<id>`. Its
+    check counts build-excluded files that mention the API, and applying
+    it fails with `upgrade.ErrCodemodIncomplete` while any use or such
+    file remains.
+  - No codemods ship yet: the only deprecated API,
+    `database.KeepStoredZeros`, has no mechanical replacement.
 
 ### Changed
 

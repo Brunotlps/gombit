@@ -10,7 +10,8 @@ never rewrites code you own without an explicit write action.
 This page grows with the UPGRADE-0 epic. Today it covers **planning an
 upgrade** (`gombit upgrade --dry-run`), **applying its dependency changes**
 (`gombit upgrade --to`), **checking for deprecated APIs** (`gombit upgrade
-check`), the **baseline** (where an application stands) and the
+check`), **rewriting them with codemods** (`gombit upgrade fix`), the
+**baseline** (where an application stands) and the
 **compatibility manifest** (what each release asks of an application moving
 to it).
 
@@ -184,6 +185,107 @@ Deprecated framework APIs used: 1
   prints them as a list. It exits 1 when there is any use, so a CI job can
   gate on it; `--dir` selects the application directory.
 
+## Rewriting with codemods
+
+For a change whose replacement is mechanical (a rename, a move to another
+package, reordered arguments), the framework can ship a **codemod**: a
+rewrite of the application's uses of one framework API. `gombit upgrade
+fix` runs them and proposes the result as a patch. By default it writes
+nothing:
+
+```text
+$ gombit upgrade fix > upgrade.patch     # the patch on stdout, a summary on stderr
+$ git apply upgrade.patch                # after review
+$ gombit upgrade fix --patch upgrade.patch  # always written; empty when there is nothing to do
+$ gombit upgrade fix --write             # rewrite the files in place
+$ gombit upgrade fix --only old-to-open  # one codemod (by ID)
+```
+
+**This gombit ships no codemods yet.** Each one comes with the release
+whose change it rewrites. The only deprecated API today,
+`database.KeepStoredZeros`, has no mechanical replacement (`StoredValues`
+must be taken before the edit), so it stays a manual change, and `gombit
+upgrade fix` says there is nothing to run.
+
+- **Syntax and types, not text.** Uses are found from type information,
+  exactly as `gombit upgrade check` finds them (the same `go/types` object,
+  never a matching name), and rewritten in the syntax tree. A local name,
+  a comment or a string is never touched. Imports follow: a moved API's
+  package is imported, under a free name when its own is taken in the
+  file, and the old import is dropped once nothing else uses it.
+- **gofmt output.** Changed files are printed with `go/format`. CRLF line
+  endings are kept, so the patch shows only the rewritten lines. A file
+  that was not gofmt-formatted gets its formatting fixed too.
+- **Checked before it is proposed.** The codemods run in passes, each on
+  the application as the last pass left it, so one codemod can rewrite
+  another's output (a rename of a rename, shipped by two releases). They
+  stop when a pass changes nothing. That last pass type-checks the
+  rewritten application. A rewrite that does not compile, or never
+  settles, is refused, and nothing is proposed.
+- **Idempotent.** The run ends only when the codemods change nothing more,
+  so running them again on the result changes nothing.
+- **Never silently.** Without `--write` nothing is changed.
+  - The rewrite is computed from the exact bytes the type checker parsed,
+    never a second read.
+  - `--write` writes each file atomically. It writes nothing if any file's
+    content is not exactly those bytes, because a file edited during the
+    run would otherwise be reverted.
+  - A file changed between passes fails the run.
+  - The check is not a lock: an edit made in the instant between it and
+    the write is lost, so don't run `--write` while editing.
+- **Calls through wrappers.** A call through parentheses or type arguments
+  (`(db.F)(x)`, `db.F[T](x)`) is still a call of the API.
+- **Left for you.** A use a codemod cannot rewrite safely is left as it was
+  and listed with the reason, and the command exits 1. Its position is in
+  the file as the patch leaves it. Such uses include:
+  - the new name would resolve to something else there (shadowed by a local
+    or by the app's own method), or a pointer method on a value that is
+    not addressable;
+  - an embedded field, whose name would change with its type;
+  - a generated file (regenerate it instead) or a cgo file;
+  - an API the app's framework version does not have yet (run `gombit
+    upgrade --to` first).
+- **Build constraints.** Files the current build excludes are not
+  type-checked, so not rewritten. Those that mention a codemod's API by
+  name are listed: rerun with their `GOOS`, `GOARCH` or `-tags` (through
+  `GOFLAGS`).
+  - They are found by walking the directory tree the way `./...` matches
+    it, so a platform-only directory (every file excluded, so no package
+    to load) is covered too.
+  - The walk skips `testdata`, `vendor`, names starting with `.` or `_`,
+    and nested modules.
+- **Uses, not declarations.** A codemod rewrites the app's uses of the API.
+  Renaming an interface method that the app implements still means
+  renaming the app's own methods by hand.
+
+In the compatibility manifest, an `automatic` change applies a codemod as
+the action `codemod:<id>`.
+
+- **Its check** reports the change as needed when the app has uses to
+  rewrite, or when files its build excludes mention the API.
+- **Applying it** writes the rewrite. It then fails with
+  `upgrade.ErrCodemodIncomplete`, naming what remains, if uses were left
+  for the developer or excluded files mention the API: the change is not
+  done until a run under those files' `GOOS`, `GOARCH` or tags is clean.
+
+In Go, `upgrade.RunCodemods` runs codemods and returns the
+proposed `upgrade.Fix` (`Patch`, `Write`, `Left`, `Unchecked`).
+`upgrade.Codemod` declares one:
+
+- `Rename` and/or `MoveTo`, for a rename or a move;
+- or a `Rewrite` func for anything else. It gets each `upgrade.Use`: the
+  identifier, the expression, the enclosing call, and `Import`/`Skip`
+  helpers.
+
+Its target is `Package` and `Symbol`, where `Symbol` is `Name` or
+`Type.Name` for a method or field that `Type`'s own declaration declares.
+
+A member that `Type` only reaches is refused, naming the type that
+declares it. That covers a member promoted from an embedded type or
+interface, and `Base`'s member when `Type` is defined from `Base`
+(`type Type Base`) or is an alias of it. Uses are matched by the
+declaration, so such a codemod would rewrite every use of `Base`'s member.
+
 ## The baseline
 
 An application's baseline is two facts:
@@ -282,7 +384,7 @@ Each change is classified by what moving across it takes:
 | Kind | Meaning |
 | --- | --- |
 | `manual` | The developer acts; the change says how. |
-| `automatic` | The upgrade tooling applies it, as a reviewable change. It names the action that does it (`upgrade.LookupAction`: an action carries its implementation), and the manifest is refused if this framework does not implement that action. |
+| `automatic` | The upgrade tooling applies it, as a reviewable change. It names the action that does it (`upgrade.LookupAction`: an action carries its implementation; `codemod:<id>` is a [codemod](#rewriting-with-codemods)). The manifest is refused if this framework does not implement that action. |
 | `informational` | Nothing to do, but worth knowing when moving across it. |
 
 A change of any kind can be `breaking`: an app that relies on documented (or

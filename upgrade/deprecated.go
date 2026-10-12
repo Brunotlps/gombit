@@ -299,8 +299,8 @@ func (s *scan) add(p *packages.Package, pos token.Pos, pkgPath string, d declDoc
 	}
 	s.seen[key] = true
 	file := at.Filename
-	if rel, err := filepath.Rel(s.root, file); err == nil && !strings.HasPrefix(rel, "..") {
-		file = filepath.ToSlash(rel)
+	if rel, inside := relTo(s.root, file); inside {
+		file = rel
 	}
 	s.uses = append(s.uses, DeprecatedUse{
 		File: file, Line: at.Line, Column: at.Column,
@@ -369,6 +369,7 @@ func walkDocs(pkg string, f *ast.File, fn func(name *ast.Ident, symbol string, d
 // walkMembers calls fn for the fields of a struct type, or the methods of
 // an interface type, named owner.
 func walkMembers(owner string, typ ast.Expr, fn func(name *ast.Ident, symbol string, docs []*ast.CommentGroup)) {
+	typ = ast.Unparen(typ) // type T (struct{...}): parentheses change nothing
 	var fields *ast.FieldList
 	switch t := typ.(type) {
 	case *ast.StructType:
