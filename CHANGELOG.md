@@ -399,7 +399,24 @@ version.
     transition.
   - `trusted-proxies-trust-all` (v0.7.0) now declares its
     `GOMBIT_HTTP_TRUSTED_PROXIES` refusal.
+- `gombit upgrade contract [--url] [--write] [--json]` (UPGRADE-8) reports
+  which generated contract artifacts are stale after an upgrade, each by
+  the check the existing drift gates make:
+  - the resource `*.gen.go`, as `gombit generate --check` renders them
+    with the app's framework version;
+  - the committed `openapi.json`, against the running app's (`--url`);
+  - the TypeScript client, as `gombit client check` compares it.
 
+  While the resource files are not current, the checks against the running
+  app's document are unchecked (rebuild and rerun). `--write` regenerates
+  the stale ones with the same generation, writing generator-owned files
+  only (never `hooks.go`, nor a client-directory file gombit did not
+  generate). It exits 1 while anything is stale; `--strict` also fails on
+  an artifact it could not check, for a CI gate. `gombit upgrade --dry-run`
+  now points to it after the dependency change. `contractcheck.Check`,
+  `generate.Stale`, `generate.Update`, `client.ClientDrift` and
+  `client.SpecEqual` are the API
+  ([#348](https://github.com/gombit-dev/gombit/issues/348)).
 - [Session management](docs/auth.md#sessions) in both auth modes:
   `GET /auth/sessions` lists the user's active sessions with an opaque id,
   `last_refreshed_at`, `expires_at`, and a `current` flag;

@@ -44,6 +44,11 @@ type Plan struct {
 	// application's environment files (AnalyzeConfig): names only, never
 	// a value.
 	Config ConfigReport `json:"config"`
+	// Contract are the changes on the path to the generated contract (the
+	// OpenAPI document and TypeScript client: area client). Whatever they
+	// are, the framework renders the generated artifacts, so after the
+	// dependency change gombit upgrade contract checks them.
+	Contract []Change `json:"contract"`
 }
 
 // DependencyChange is a go.mod directive about a module that the upgrade
@@ -112,6 +117,14 @@ func PlanUpgrade(workDir string, m *Manifest, to string) (Plan, error) {
 	}
 	c := Classify(releases)
 	p.Manual, p.Informational = c.Manual, c.Informational
+	p.Contract = []Change{}
+	for _, r := range releases {
+		for _, ch := range r.Changes {
+			if ch.Area == "client" {
+				p.Contract = append(p.Contract, ch)
+			}
+		}
+	}
 	if p.Config, err = AnalyzeConfig(workDir, releases); err != nil {
 		return Plan{}, err
 	}
@@ -268,4 +281,13 @@ func (p Plan) renderToDo(b *strings.Builder) {
 	}
 	b.WriteString("\n")
 	p.Config.render(b)
+	b.WriteString("\nGenerated contract artifacts (resource *.gen.go, OpenAPI document, TypeScript client):\n")
+	b.WriteString("  After the dependency change, check them: gombit upgrade contract [--url <the running app>/openapi.json]; --write regenerates them.\n")
+	if len(p.Contract) > 0 {
+		var ids []string
+		for _, c := range p.Contract {
+			ids = append(ids, c.ID)
+		}
+		fmt.Fprintf(b, "  Contract changes on this path: %s.\n", strings.Join(ids, ", "))
+	}
 }

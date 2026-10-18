@@ -88,7 +88,11 @@ upgrade's configuration changes for the app (renamed, default changed,
 action required, security review; never a value from its `.env` files)
 and upgrades its `.env` templates with `--write` (`upgrade.AnalyzeConfig`,
 manifest `config:` entries, the `config.Variables()` catalog held to the
-manifest by a snapshot test; UPGRADE-7). The other batteries
+manifest by a snapshot test; UPGRADE-7), and `gombit upgrade contract`,
+which reports stale generated contract artifacts (resource `*.gen.go`,
+OpenAPI document, TypeScript client) by the existing drift gates' own
+checks, and regenerates them with `--write`, generator-owned files only
+(`upgrade/contractcheck`; UPGRADE-8). The other batteries
 (events, scheduler, mail, gRPC, multi-tenancy, i18n) are not here yet.
 The **CHAOS-0** resilience suite is in: `internal/faulttest` (deterministic
 fault injection: a faulting `database/sql` driver, a scripted HTTP
