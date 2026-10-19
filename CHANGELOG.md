@@ -29,6 +29,11 @@ version.
   One equal to the stored value rounded the same way (the admin UI sending
   the field back, an integer field or a belongs_to key alike) keeps the
   stored value ([#448](https://github.com/gombit-dev/gombit/issues/448)).
+- An already-rotated refresh token that has expired is now a 401 that leaves
+  the user's other sessions alone. Presenting a rotated token again still
+  revokes all of them while it is unexpired, so a stolen token is detected
+  only within its lifetime
+  ([#458](https://github.com/gombit-dev/gombit/issues/458)).
 
 ### Changed
 

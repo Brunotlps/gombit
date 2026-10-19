@@ -530,3 +530,9 @@ releases:
           integer sends it as a string (`"9007199254740993"`), which is read
           exactly.
         refs: [448]
+
+      - id: expired-rotated-refresh-token-no-cascade
+        kind: informational
+        area: security
+        summary: "An already-rotated refresh token that has expired is a 401 and no longer revokes the user's sessions."
+        refs: [458]

@@ -26,6 +26,8 @@ compatibility manifest (see [upgrade.md](upgrade.md)).
   integer sends it as a string (`"9007199254740993"`), which is read
   exactly.
 
+- An already-rotated refresh token that has expired is a 401 and no longer revokes the user's sessions. (`expired-rotated-refresh-token-no-cascade`, security, [#458](https://github.com/gombit-dev/gombit/issues/458))
+
 ## v0.8.0
 
 ### Manual: action required

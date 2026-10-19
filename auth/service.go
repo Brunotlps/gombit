@@ -145,10 +145,11 @@ func (s *Service) issueTokens(tx *gorm.DB, user User, now time.Time) (TokenPair,
 }
 
 // RotateRefresh validates the current refresh token, revokes it, and issues a
-// new pair. Reuse of an already-rotated token revokes the user's remaining
-// tokens; a token revoked by logout or session revocation is just invalid.
-// Concurrent callers with the same still-valid token share one
-// rotation so a lost race cannot family-revoke the winner's new session.
+// new pair. Reuse of an already-rotated token before it expires revokes the
+// user's remaining tokens; a token revoked by logout or session revocation,
+// and any expired token, is just invalid. Concurrent callers with the same
+// still-valid token share one rotation so a lost race cannot family-revoke
+// the winner's new session.
 func (s *Service) RotateRefresh(ctx context.Context, raw string) (TokenPair, error) {
 	raw = strings.TrimSpace(raw)
 	if raw == "" {
@@ -210,6 +211,19 @@ func (s *Service) rotateRefreshOnce(ctx context.Context, raw, hash string) (Toke
 			return err
 		}
 		now := s.now()
+		// Expiry comes before the reuse check: an expired token is a plain
+		// 401, rotated or not (#458). A rotated row keeps its original
+		// expires_at; past it the token cannot refresh anyone, and in cookie
+		// mode the browser has already dropped it with the cookie's Max-Age,
+		// so a stale copy (a lost rotation response, a restored backup) must
+		// not end every live session. The cost: theft is detected only while
+		// the rotated token is unexpired. If a thief rotated it first and the
+		// legitimate client comes back only after it expired, the thief's
+		// session survives this 401; the sessions list is how the user finds
+		// and revokes it.
+		if !row.ExpiresAt.After(now) {
+			return errInvalidRefreshToken
+		}
 		if row.RevokedAt != nil {
 			if row.ReplacedBy == nil {
 				// Revoked by logout or session revocation, not by rotation:
@@ -217,14 +231,12 @@ func (s *Service) rotateRefreshOnce(ctx context.Context, raw, hash string) (Toke
 				// theft, so it must not end the user's other sessions.
 				return errInvalidRefreshToken
 			}
+			// Rotated, and presented again before it expired: reuse.
 			if err := revokeAllTx(tx, row.UserID, now); err != nil {
 				return err
 			}
 			reuse = true
 			return nil
-		}
-		if !row.ExpiresAt.After(now) {
-			return errInvalidRefreshToken
 		}
 
 		result := tx.Model(&RefreshToken{}).
