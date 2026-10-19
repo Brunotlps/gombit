@@ -97,7 +97,12 @@ planning: the plan lists the framework-owned tables (auth, storage claims)
 a release adds, alters or removes, with the migration steps the app needs
 from its model registry, and no upgrade command ever runs a migration
 (`upgrade.AnalyzeSchema`, manifest `schema:` entries, the framework's
-tables held to the manifest by a snapshot test; UPGRADE-9). The other batteries
+tables held to the manifest by a snapshot test; UPGRADE-9), and the
+compatibility and deprecation policy (`docs/compatibility.md`, enforced from
+v0.8.0: breaking changes only in minors pre-1.0 and majors from 1.0, with a
+security exception, refused by the release gate; deprecations name their
+release, with a window `gombit upgrade check` shows; `upgrade/policy.go`;
+UPGRADE-10). The other batteries
 (events, scheduler, mail, gRPC, multi-tenancy, i18n) are not here yet.
 The **CHAOS-0** resilience suite is in: `internal/faulttest` (deterministic
 fault injection: a faulting `database/sql` driver, a scripted HTTP

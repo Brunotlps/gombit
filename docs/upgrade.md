@@ -17,6 +17,10 @@ changes** (the migrations an upgrade needs), the **baseline** (where an applicat
 **compatibility manifest** (what each release asks of an application moving
 to it).
 
+Which releases may break, and how long a deprecated API stays, is set by
+the [compatibility and deprecation policy](compatibility.md). The tooling
+follows that policy.
+
 ## Planning an upgrade
 
 `gombit upgrade --dry-run` works out what moving the application to a
@@ -159,7 +163,8 @@ API marked deprecated, with what to use instead:
 $ gombit upgrade check
 Deprecated framework APIs used: 1
   internal/book/hooks.go:21:18: database.KeepStoredZeros
-      Deprecated: use ScopeEdit with StoredValues, which also keeps the row's stored text editable and judges columns by whether their value changed.
+      Deprecated: since v0.8.0, use ScopeEdit with StoredValues, which also keeps the row's stored text editable and judges columns by whether their value changed.
+      (deprecated in v0.8.0; the compatibility policy lets v0.10.0 (or v1.0.0, if it comes first) remove it)
 ```
 
 - **What is deprecated** is what the framework's doc comments say, with the
@@ -188,9 +193,15 @@ Deprecated framework APIs used: 1
   either is an error, with Go's diagnostics, rather than a scan that misses
   uses.
 - **Output:** file, line and column, the symbol (`pkg.Name`,
-  `pkg.Type.Field`, `(*pkg.Type).Method`) and the deprecation; `--json`
-  prints them as a list. It exits 1 when there is any use, so a CI job can
-  gate on it; `--dir` selects the application directory.
+  `pkg.Type.Field`, `(*pkg.Type).Method`) and the deprecation. When the
+  deprecation names its release (`Deprecated: since vX.Y.Z, ...`, as every
+  framework deprecation does), a line follows with the deprecation window:
+  the first release the [compatibility policy](compatibility.md#deprecations)
+  lets remove the API. `--json` prints the uses as a list, with `since` and
+  `removable_from` (and `removable_from_major`, v1.0.0 for a pre-1.0
+  deprecation) when the release is named. It exits 1 when there is any
+  use, so a CI job can gate on it; `--dir` selects the application
+  directory.
 
 ## Rewriting with codemods
 
@@ -690,7 +701,10 @@ it until it acts. A fix that only code matching undocumented output notices
 is not breaking. Each change also names the `area` it
 touches (`api`, `behavior`, `cli`, `client`, `config`, `dependency`,
 `scaffold`, `schema`, `security`), a one-line `summary`, Markdown `details`,
-and the issues or pull requests behind it.
+and the issues or pull requests behind it. A change that deprecates
+framework APIs lists them in `deprecates`, named as `gombit upgrade check`
+names them; a `Deprecated: since vX.Y.Z` paragraph must name a release that
+declares its API there ([the policy](compatibility.md#deprecations)).
 
 The manifest lists **every release** from the first one it covers (v0.6.1),
 including releases with nothing to declare, so a version it does not list is
