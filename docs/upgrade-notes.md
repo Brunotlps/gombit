@@ -8,7 +8,7 @@ What each release asks of an application moving to it, newest first. This
 page, the release notes, and the upgrade tooling all come from the same
 compatibility manifest (see [upgrade.md](upgrade.md)).
 
-## Unreleased
+## v0.8.0
 
 ### Manual: action required
 
@@ -173,6 +173,11 @@ compatibility manifest (see [upgrade.md](upgrade.md)).
   On PostgreSQL that token could survive the cascade.
 
 - A new app's placeholder `schema.ts` includes the session operations; an existing app's generated client gets them from `gombit client generate`. (`client-schema-session-operations`, client, [#335](https://github.com/gombit-dev/gombit/issues/335))
+
+- The framework requires newer AWS SDK for Go v2 modules (the S3 storage driver): `github.com/aws/aws-sdk-go-v2` v1.47.3, `github.com/aws/aws-sdk-go-v2/service/s3` v1.114.0 and `github.com/aws/smithy-go` v1.28.5. (`aws-sdk-updates`, dependency, [#570](https://github.com/gombit-dev/gombit/issues/570), [#590](https://github.com/gombit-dev/gombit/issues/590))
+
+  Go's minimal version selection moves an app's build to them with the
+  framework upgrade.
 
 ## v0.7.1
 
