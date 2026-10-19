@@ -536,3 +536,9 @@ releases:
         area: security
         summary: "An already-rotated refresh token that has expired is a 401 and no longer revokes the user's sessions."
         refs: [458]
+
+      - id: cookie-refresh-401-clears-session-cookies
+        kind: informational
+        area: behavior
+        summary: "In cookie mode, a refresh rejected with a 401 clears the `gombit_access` and `gombit_refresh` cookies."
+        refs: [458]

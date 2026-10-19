@@ -28,6 +28,8 @@ compatibility manifest (see [upgrade.md](upgrade.md)).
 
 - An already-rotated refresh token that has expired is a 401 and no longer revokes the user's sessions. (`expired-rotated-refresh-token-no-cascade`, security, [#458](https://github.com/gombit-dev/gombit/issues/458))
 
+- In cookie mode, a refresh rejected with a 401 clears the `gombit_access` and `gombit_refresh` cookies. (`cookie-refresh-401-clears-session-cookies`, behavior, [#458](https://github.com/gombit-dev/gombit/issues/458))
+
 ## v0.8.0
 
 ### Manual: action required

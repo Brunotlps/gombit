@@ -11,7 +11,10 @@ import (
 	"testing"
 	"time"
 
+	"golang.org/x/crypto/bcrypt"
+
 	"github.com/gombit-dev/gombit/auth"
+	"github.com/gombit-dev/gombit/config"
 	"github.com/gombit-dev/gombit/database"
 	"github.com/gombit-dev/gombit/framework"
 	"github.com/gombit-dev/gombit/internal/faulttest"
@@ -1201,6 +1204,432 @@ func TestFault_Concurrency_ReuseCascadeDuringRotation(t *testing.T) {
 			}
 		}
 	})
+}
+
+// TestFault_Concurrency_RefreshLosesRotationRace: two instances of the app
+// (two auth.Service values over one database, so they do not share a
+// rotation) refresh the same token at once, as two tabs of one browser do
+// when their requests reach different instances. Rotation A holds the user's
+// lock (its transaction is pinned at the replacement token's insert) while
+// refresh B, which read the token before A committed, waits for that lock.
+// Expected outcome: once A commits, B loses the compare-and-swap and fails
+// with errRotationRaced, an invalid refresh token rather than a reuse, so A's
+// new session lives on and B writes nothing. Through the cookie route B
+// answers 401 and sets no cookie: A's response has just set the session's
+// new cookies in the same browser, and clearing them would sign the user out
+// of a live session. B is released only once it is really waiting for the
+// user's row, so it read the token before A's commit.
+//
+// SQLite is skipped like the tests above.
+func TestFault_Concurrency_RefreshLosesRotationRace(t *testing.T) {
+	dbs := nonSQLite()
+	tests := []struct {
+		name string
+		// loser builds instance B over f's database and returns its refresh
+		// of a raw token, which returns the check of its own outcome: B runs
+		// on another goroutine, the check on the test's.
+		loser func(t *testing.T, f rotationFixture) func(raw string) func(t *testing.T)
+	}{
+		{"service", func(t *testing.T, f rotationFixture) func(string) func(*testing.T) {
+			cfg := config.DefaultFor(config.EnvironmentTest)
+			cfg.Auth.JWTSecret = testJWTSecret
+			cfg.Auth.BcryptCost = bcrypt.MinCost
+			svc, err := auth.NewService(f.db.DB, cfg)
+			if err != nil {
+				t.Fatal(err)
+			}
+			return func(raw string) func(*testing.T) {
+				_, err := svc.RotateRefresh(context.Background(), raw)
+				return func(t *testing.T) {
+					t.Helper()
+					if !errors.Is(err, auth.ErrRotationRaced) || !errors.Is(err, auth.ErrInvalidRefreshToken) {
+						t.Fatalf("B's RotateRefresh = %v, want errRotationRaced, an invalid refresh token", err)
+					}
+				}
+			}
+		}},
+		{"cookie refresh", func(t *testing.T, f rotationFixture) func(string) func(*testing.T) {
+			app := newCookieAuthAppWithDB(t, f.db)
+			jar := fetchCSRF(t, app)
+			return func(raw string) func(*testing.T) {
+				jar.cookies[auth.RefreshCookieName] = &http.Cookie{Name: auth.RefreshCookieName, Value: raw} //nolint:gosec // G124: request Cookie header only carries name/value.
+				rec := doRequest(app, jar, http.MethodPost, "/api/v1/auth/refresh", "")
+				return func(t *testing.T) {
+					t.Helper()
+					assertError(t, rec, http.StatusUnauthorized, "authentication")
+					if got := rec.Header().Values("Set-Cookie"); len(got) != 0 {
+						t.Fatalf("B's 401 set cookies %q, want none: they would clear the ones A's response just set", got)
+					}
+				}
+			}
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if len(dbs) == 0 {
+				t.Skip("needs PostgreSQL or MySQL (-auth.postgres-dsn / -auth.mysql-dsn)")
+			}
+			faulttest.ForEachDB(t, dbs, func(t *testing.T, kind database.Driver, dsn string) {
+				release := make(chan struct{})
+				defer func() {
+					select {
+					case <-release:
+					default:
+						close(release)
+					}
+				}()
+				// Statement call 1 is A's user lock, call 2 A's replacement
+				// insert (held), call 3 B's user lock.
+				stmts := faulttest.Sequence(faulttest.Success(), faulttest.Block(release))
+				faults := &faulttest.DBFaults{Statement: stmts, Match: locksUserOrInsertsRefreshToken}
+				f := newRotationFixture(t, kind, dsn, faults)
+				ctx := context.Background()
+				faults.Disarm()
+				refresh := tt.loser(t, f)
+				faults.Arm()
+
+				rotated := make(chan auth.TokenPair, 1)
+				rotateErr := make(chan error, 1)
+				go func() {
+					pair, err := f.svc.RotateRefresh(ctx, f.refresh)
+					rotated <- pair
+					rotateErr <- err
+				}()
+				wait(t, stmts.Reached(2), "A's rotation never reached its insert")
+
+				checks := make(chan func(*testing.T), 1)
+				go func() { checks <- refresh(f.refresh) }()
+				wait(t, stmts.Reached(3), "B never took the user's lock")
+				// Reaching the statement hook says nothing about the server:
+				// release A only once B is really waiting for the user's row.
+				faulttest.AwaitLockWait(t, kind, dsn, "users")
+				close(release) // A commits its replacement token
+
+				if err := waitErr(t, rotateErr, "A's rotation"); err != nil {
+					t.Fatalf("A's RotateRefresh = %v; it held the user's lock first and should commit", err)
+				}
+				a2 := <-rotated
+				select {
+				case check := <-checks:
+					check(t)
+				case <-time.After(5 * time.Second):
+					t.Fatal("B's refresh is wedged")
+				}
+				if _, err := f.svc.ParseAccess(ctx, a2.AccessToken); err != nil {
+					t.Fatalf("A's new session does not authenticate after B lost the race: %v", err)
+				}
+				faulttest.Idle(t, f.db)
+				var tokens []auth.RefreshToken
+				if err := f.db.Where("user_id = ?", f.user.ID).Find(&tokens).Error; err != nil {
+					t.Fatal(err)
+				}
+				if len(tokens) != 2 {
+					t.Fatalf("%d refresh tokens, want 2: the rotated one and A's replacement, nothing from B", len(tokens))
+				}
+				if _, err := f.svc.RotateRefresh(ctx, a2.RefreshToken); err != nil {
+					t.Fatalf("A's new session cannot refresh after B lost the race: %v", err)
+				}
+			})
+		})
+	}
+}
+
+// TestFault_Concurrency_RefreshLosesRotationRaceAcrossExpiry is the race
+// above when the token expires while B waits for the user's row: A read the
+// clock before the expiry, B reads it after, so B finds the token expired and
+// never reaches the compare-and-swap. Expected outcome: B still fails with
+// errRotationRaced, not a plain invalid refresh token, because under the
+// user's lock the token turns out to have A's successor. Through the cookie
+// route B answers 401 and sets no cookie, so a browser that holds A's new
+// cookies and then applies B's response is still signed in. B must re-read
+// the token with a lock to see the successor: on MySQL its transaction reads
+// from the snapshot its first read took, before A's commit, and only a
+// locking read sees the latest committed row.
+//
+// The two instances share one clock, which the test moves to the token's
+// expires_at once B is waiting for the lock. B's cookie route is its own
+// service's handler, served by a cookie app over the same database: the
+// app's own service reads the system clock.
+//
+// SQLite is skipped like the tests above. One process cannot run this race
+// there; several processes sharing one file in WAL mode are not covered (see
+// rotateRefreshOnce).
+func TestFault_Concurrency_RefreshLosesRotationRaceAcrossExpiry(t *testing.T) {
+	dbs := nonSQLite()
+	tests := []struct {
+		name string
+		// loser builds instance B over f's database, reading clock, and
+		// returns its refresh of a raw token, which returns the check of its
+		// own outcome given A's new pair: B runs on another goroutine, the
+		// check on the test's.
+		loser func(t *testing.T, f rotationFixture, clock auth.Clock) func(raw string) func(t *testing.T, a2 auth.TokenPair)
+	}{
+		{"service", func(t *testing.T, f rotationFixture, clock auth.Clock) func(string) func(*testing.T, auth.TokenPair) {
+			svc := newInstance(t, f, clock)
+			return func(raw string) func(*testing.T, auth.TokenPair) {
+				_, err := svc.RotateRefresh(context.Background(), raw)
+				return func(t *testing.T, _ auth.TokenPair) {
+					t.Helper()
+					if !errors.Is(err, auth.ErrRotationRaced) || !errors.Is(err, auth.ErrInvalidRefreshToken) {
+						t.Fatalf("B's RotateRefresh = %v, want errRotationRaced, an invalid refresh token: the expired token has A's successor", err)
+					}
+				}
+			}
+		}},
+		{"cookie refresh", func(t *testing.T, f rotationFixture, clock auth.Clock) func(string) func(*testing.T, auth.TokenPair) {
+			app, jar := newInstanceCookieRefresh(t, f, newInstance(t, f, clock))
+			return func(raw string) func(*testing.T, auth.TokenPair) {
+				jar.cookies[auth.RefreshCookieName] = &http.Cookie{Name: auth.RefreshCookieName, Value: raw} //nolint:gosec // G124: request Cookie header only carries name/value.
+				rec := doRequest(app, jar, http.MethodPost, instanceRefreshPath, "")
+				return func(t *testing.T, a2 auth.TokenPair) {
+					t.Helper()
+					assertError(t, rec, http.StatusUnauthorized, "authentication")
+					assertRequestID(t, rec)
+					if got := rec.Header().Values("Set-Cookie"); len(got) != 0 {
+						t.Fatalf("B's 401 set cookies %q, want none: they would clear the ones A's response just set", got)
+					}
+					// The browser holds A's new cookies when B's response
+					// arrives.
+					browser := newCookieJar()
+					browser.cookies[auth.AccessCookieName] = &http.Cookie{Name: auth.AccessCookieName, Value: a2.AccessToken}    //nolint:gosec // G124: request Cookie header only carries name/value.
+					browser.cookies[auth.RefreshCookieName] = &http.Cookie{Name: auth.RefreshCookieName, Value: a2.RefreshToken} //nolint:gosec // G124: request Cookie header only carries name/value.
+					browser.update(rec)
+					if status := getMeCookie(app, browser); status != http.StatusOK {
+						t.Fatalf("GET /me with A's cookies after B's response = %d, want 200: B signed the browser out of A's live session", status)
+					}
+				}
+			}
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if len(dbs) == 0 {
+				t.Skip("needs PostgreSQL or MySQL (-auth.postgres-dsn / -auth.mysql-dsn)")
+			}
+			faulttest.ForEachDB(t, dbs, func(t *testing.T, kind database.Driver, dsn string) {
+				release := make(chan struct{})
+				defer func() {
+					select {
+					case <-release:
+					default:
+						close(release)
+					}
+				}()
+				// Statement call 1 is A's user lock, call 2 A's replacement
+				// insert (held), call 3 B's user lock.
+				stmts := faulttest.Sequence(faulttest.Success(), faulttest.Block(release))
+				faults := &faulttest.DBFaults{Statement: stmts, Match: locksUserOrInsertsRefreshToken}
+				f := newRotationFixture(t, kind, dsn, faults)
+				ctx := context.Background()
+				faults.Disarm()
+				// The shared clock starts at the system's, so A's new tokens
+				// are valid for the cookie app's own routes; the token
+				// expires ten seconds into it.
+				start := time.Now()
+				token := expireTokenAt(t, f, start.Add(10*time.Second))
+				clock := &syncClock{now: start}
+				auth.SetClock(f.svc, clock)
+				refresh := tt.loser(t, f, clock)
+				faults.Arm()
+
+				rotated := make(chan auth.TokenPair, 1)
+				rotateErr := make(chan error, 1)
+				go func() {
+					pair, err := f.svc.RotateRefresh(ctx, f.refresh)
+					rotated <- pair
+					rotateErr <- err
+				}()
+				wait(t, stmts.Reached(2), "A's rotation never reached its insert")
+
+				checks := make(chan func(*testing.T, auth.TokenPair), 1)
+				go func() { checks <- refresh(f.refresh) }()
+				wait(t, stmts.Reached(3), "B never took the user's lock")
+				faulttest.AwaitLockWait(t, kind, dsn, "users")
+				clock.set(token.ExpiresAt) // the token expires while B waits
+				close(release)             // A commits its replacement token
+
+				if err := waitErr(t, rotateErr, "A's rotation"); err != nil {
+					t.Fatalf("A's RotateRefresh = %v; it held the user's lock first and should commit", err)
+				}
+				a2 := <-rotated
+				select {
+				case check := <-checks:
+					check(t, a2)
+				case <-time.After(5 * time.Second):
+					t.Fatal("B's refresh is wedged")
+				}
+				if _, err := f.svc.ParseAccess(ctx, a2.AccessToken); err != nil {
+					t.Fatalf("A's new session does not authenticate after B lost the race: %v", err)
+				}
+				faulttest.Idle(t, f.db)
+				var tokens []auth.RefreshToken
+				if err := f.db.Where("user_id = ?", f.user.ID).Find(&tokens).Error; err != nil {
+					t.Fatal(err)
+				}
+				if len(tokens) != 2 {
+					t.Fatalf("%d refresh tokens, want 2: the rotated one and A's replacement, nothing from B", len(tokens))
+				}
+				if _, err := f.svc.RotateRefresh(ctx, a2.RefreshToken); err != nil {
+					t.Fatalf("A's new session cannot refresh after B lost the race: %v", err)
+				}
+			})
+		})
+	}
+}
+
+// TestFault_Concurrency_RefreshExpiresDuringRevocation: a revocation of the
+// session holds the user's row (pinned at its UPDATE of the tokens) while
+// instance B, which read the session's token unrevoked, waits for the row,
+// and the token expires during that wait. Expected outcome: B finds the
+// token expired and, re-reading it under the lock, revoked with no
+// successor: a plain invalid refresh token, not errRotationRaced, so the
+// cookie route answers 401 and clears the session cookies. Only a rotation
+// leaves a successor whose cookies must stay; a revoked session has none.
+//
+// SQLite is skipped like the tests above.
+func TestFault_Concurrency_RefreshExpiresDuringRevocation(t *testing.T) {
+	dbs := nonSQLite()
+	tests := []struct {
+		name string
+		// loser builds instance B as in the test above; the check needs
+		// nothing from the revocation.
+		loser func(t *testing.T, f rotationFixture, clock auth.Clock) func(raw string) func(t *testing.T)
+	}{
+		{"service", func(t *testing.T, f rotationFixture, clock auth.Clock) func(string) func(*testing.T) {
+			svc := newInstance(t, f, clock)
+			return func(raw string) func(*testing.T) {
+				_, err := svc.RotateRefresh(context.Background(), raw)
+				return func(t *testing.T) {
+					t.Helper()
+					if !errors.Is(err, auth.ErrInvalidRefreshToken) || errors.Is(err, auth.ErrRotationRaced) {
+						t.Fatalf("B's RotateRefresh = %v, want an invalid refresh token, not errRotationRaced: the token was revoked with no successor", err)
+					}
+				}
+			}
+		}},
+		{"cookie refresh", func(t *testing.T, f rotationFixture, clock auth.Clock) func(string) func(*testing.T) {
+			app, jar := newInstanceCookieRefresh(t, f, newInstance(t, f, clock))
+			return func(raw string) func(*testing.T) {
+				jar.cookies[auth.RefreshCookieName] = &http.Cookie{Name: auth.RefreshCookieName, Value: raw} //nolint:gosec // G124: request Cookie header only carries name/value.
+				rec := doRequest(app, jar, http.MethodPost, instanceRefreshPath, "")
+				return func(t *testing.T) {
+					t.Helper()
+					assertError(t, rec, http.StatusUnauthorized, "authentication")
+					assertRequestID(t, rec)
+					assertClearsSessionCookies(t, rec)
+				}
+			}
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if len(dbs) == 0 {
+				t.Skip("needs PostgreSQL or MySQL (-auth.postgres-dsn / -auth.mysql-dsn)")
+			}
+			faulttest.ForEachDB(t, dbs, func(t *testing.T, kind database.Driver, dsn string) {
+				release := make(chan struct{})
+				defer func() {
+					select {
+					case <-release:
+					default:
+						close(release)
+					}
+				}()
+				// Matched statement 1 is the revocation's user lock, 2 its
+				// UPDATE of the tokens (held), 3 B's user lock.
+				stmts := faulttest.Sequence(faulttest.Success(), faulttest.Block(release))
+				faults := &faulttest.DBFaults{Statement: stmts, Match: locksUserOrWritesRefreshTokens}
+				f := newRotationFixture(t, kind, dsn, faults)
+				ctx := context.Background()
+				faults.Disarm()
+				listed, err := f.svc.ListSessions(ctx, f.user.ID)
+				if err != nil || len(listed) != 1 {
+					t.Fatalf("ListSessions = %v, %v; want the fixture's one session", listed, err)
+				}
+				start := time.Now()
+				token := expireTokenAt(t, f, start.Add(10*time.Second))
+				clock := &syncClock{now: start}
+				auth.SetClock(f.svc, clock)
+				refresh := tt.loser(t, f, clock)
+				faults.Arm()
+
+				revokeErr := make(chan error, 1)
+				go func() { revokeErr <- f.svc.RevokeSession(ctx, f.user.ID, listed[0].ID) }()
+				wait(t, stmts.Reached(2), "the revocation never reached its update")
+
+				checks := make(chan func(*testing.T), 1)
+				go func() { checks <- refresh(f.refresh) }()
+				wait(t, stmts.Reached(3), "B never took the user's lock")
+				faulttest.AwaitLockWait(t, kind, dsn, "users")
+				clock.set(token.ExpiresAt) // the token expires while B waits
+				close(release)             // the revocation updates the token and commits
+
+				if err := waitErr(t, revokeErr, "revocation"); err != nil {
+					t.Fatalf("RevokeSession = %v; it held the user's lock first and should commit", err)
+				}
+				select {
+				case check := <-checks:
+					check(t)
+				case <-time.After(5 * time.Second):
+					t.Fatal("B's refresh is wedged")
+				}
+				faulttest.Idle(t, f.db)
+				var tokens []auth.RefreshToken
+				if err := f.db.Where("user_id = ?", f.user.ID).Find(&tokens).Error; err != nil {
+					t.Fatal(err)
+				}
+				if len(tokens) != 1 || tokens[0].RevokedAt == nil || tokens[0].ReplacedBy != nil {
+					t.Fatalf("%d refresh tokens (first revoked: %v); want the one, revoked with no successor: B wrote nothing", len(tokens), len(tokens) > 0 && tokens[0].RevokedAt != nil)
+				}
+			})
+		})
+	}
+}
+
+// newInstance is a second auth.Service over f's database that reads clock:
+// another instance of the app, which shares nothing in memory with f.svc and
+// so does not join its rotation of a token.
+func newInstance(t *testing.T, f rotationFixture, clock auth.Clock) *auth.Service {
+	t.Helper()
+	cfg := config.DefaultFor(config.EnvironmentTest)
+	cfg.Auth.JWTSecret = testJWTSecret
+	cfg.Auth.BcryptCost = bcrypt.MinCost
+	cfg.Auth.Mode = config.AuthModeCookie
+	svc, err := auth.NewService(f.db.DB, cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	auth.SetClock(svc, clock)
+	return svc
+}
+
+// instanceRefreshPath is where newInstanceCookieRefresh serves an instance's
+// cookie refresh.
+const instanceRefreshPath = "/api/v1/test/instance/refresh"
+
+// newInstanceCookieRefresh serves svc's cookie refresh at instanceRefreshPath
+// on a cookie app over f's database, and returns the app and a browser that
+// holds its CSRF cookie. Set it up with f's faults disarmed.
+func newInstanceCookieRefresh(t *testing.T, f rotationFixture, svc *auth.Service) (*framework.App, *cookieJar) {
+	t.Helper()
+	app := newCookieAuthAppWithDB(t, f.db)
+	auth.MountCookieRefresh(app.API(), svc, instanceRefreshPath)
+	return app, fetchCSRF(t, app)
+}
+
+// expireTokenAt moves the expiry of f's refresh token to at and returns the
+// row as the database now holds it, so a clock set to its ExpiresAt is at
+// the stored instant. Call it with f's faults disarmed.
+func expireTokenAt(t *testing.T, f rotationFixture, at time.Time) auth.RefreshToken {
+	t.Helper()
+	if err := f.db.Model(&auth.RefreshToken{}).Where("user_id = ?", f.user.ID).Update("expires_at", at).Error; err != nil {
+		t.Fatal(err)
+	}
+	var token auth.RefreshToken
+	if err := f.db.Where("user_id = ?", f.user.ID).First(&token).Error; err != nil {
+		t.Fatal(err)
+	}
+	return token
 }
 
 // TestFault_Concurrency_RotationLockAllowsForeignKeyInserts: while a rotation

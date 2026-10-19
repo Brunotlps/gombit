@@ -34,6 +34,14 @@ version.
   revokes all of them while it is unexpired, so a stolen token is detected
   only within its lifetime
   ([#458](https://github.com/gombit-dev/gombit/issues/458)).
+- In cookie mode, a `POST /auth/refresh` rejected with a 401 clears the
+  `gombit_access` and `gombit_refresh` cookies, as logout does, instead of
+  leaving the browser to send a dead refresh cookie until its Max-Age. A 5xx
+  leaves them, and so does a refresh of a token that another rotation already
+  replaced (one that lost the race to a rotation of the same token on another
+  instance, or whose token expired with a successor), since that rotation's
+  response sets the session's new cookies
+  ([#458](https://github.com/gombit-dev/gombit/issues/458)).
 
 ### Changed
 

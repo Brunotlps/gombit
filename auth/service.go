@@ -184,9 +184,10 @@ func (s *Service) RotateRefresh(ctx context.Context, raw string) (TokenPair, err
 }
 
 // rotateRefreshOnce runs one rotation in a transaction. Lock order: the
-// user's row (lockUserTx) comes before any write to a refresh_tokens row,
-// the same order every revocation uses; the compare-and-swap below must stay
-// after it. The initial read of the token takes no lock. The rotation's
+// user's row (lockUserTx) comes before any write to or locking read of a
+// refresh_tokens row, the same order every revocation uses; the
+// compare-and-swap and the re-read of an expired token below must stay after
+// it. The initial read of the token takes no lock. The rotation's
 // instant is read once the lock is held: the lock can wait behind another
 // rotation or a revocation, and a token that expired during that wait must
 // not rotate, nor its successor's lifetime start before the wait.
@@ -222,6 +223,40 @@ func (s *Service) rotateRefreshOnce(ctx context.Context, raw, hash string) (Toke
 		// session survives this 401; the sessions list is how the user finds
 		// and revokes it.
 		if !row.ExpiresAt.After(now) {
+			// An expired token that has a successor was rotated, perhaps by
+			// another tab of the same browser whose new session is live: it
+			// is errRotationRaced, still a 401, so that refreshCookie does
+			// not clear that session's cookies. Only a rotation leaves a
+			// successor; a token revoked by logout, a session revocation or
+			// the reuse cascade has none, and its 401 clears them. If the
+			// successor was revoked since, the cookies stay this time, and a
+			// refresh with the successor's cookie clears them.
+			rotated := row.ReplacedBy != nil
+			if row.RevokedAt == nil {
+				// The read above took no lock, and a rotation of this token
+				// may have committed while this one waited for the user's
+				// lock: re-read the row, with a locking read. On MySQL a
+				// plain read sees the snapshot this transaction's first read
+				// took, from before that commit; a locking read sees the
+				// latest committed row. PostgreSQL (READ COMMITTED) would see
+				// it either way. SQLite's dialect drops the clause. Within
+				// one process this race cannot happen: the process joins
+				// concurrent rotations of a token into one. Several
+				// processes sharing one database file are not covered: in
+				// WAL mode another process's rotation can commit while this
+				// transaction reads from its older snapshot, and this
+				// refresh then finds no successor and clears the cookies.
+				var current RefreshToken
+				if err := tx.Clauses(clause.Locking{Strength: clause.LockingStrengthShare}).
+					First(&current, row.ID).Error; err != nil {
+					// A server failure, like the lock's: not a 401.
+					return err
+				}
+				rotated = current.ReplacedBy != nil
+			}
+			if rotated {
+				return errRotationRaced
+			}
 			return errInvalidRefreshToken
 		}
 		if row.RevokedAt != nil {
@@ -246,10 +281,16 @@ func (s *Service) rotateRefreshOnce(ctx context.Context, raw, hash string) (Toke
 			return result.Error
 		}
 		if result.RowsAffected != 1 {
-			// Lost the compare-and-swap: another caller already rotated this
-			// still-valid token. That is not reuse-as-theft; do not revoke the
-			// winner's new session.
-			return errInvalidRefreshToken
+			// Lost the compare-and-swap: the token was revoked after the
+			// unlocked read above, almost always by a rotation of the same
+			// token on another instance, sometimes by a session revocation
+			// that committed while this rotation waited for the user's lock.
+			// Neither is reuse-as-theft; do not revoke the winner's new
+			// session. refreshCookie leaves the cookies alone for
+			// errRotationRaced, as for an expired token with a successor
+			// above; unlike there, this branch cannot tell the two causes
+			// apart.
+			return errRotationRaced
 		}
 
 		issued, err := s.issueTokens(tx, user, now)

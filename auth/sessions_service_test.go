@@ -526,7 +526,9 @@ func runSessionsService(t *testing.T, db *database.DB) {
 			// present ends b's token and returns what it issued in its place
 			// (a rotation's successor), which must survive, or not, along
 			// with ada's other session.
-			present   func(t *testing.T, e sessionsEnv, ada auth.User, b auth.TokenPair) *auth.TokenPair
+			present func(t *testing.T, e sessionsEnv, ada auth.User, b auth.TokenPair) *auth.TokenPair
+			// wantErr is exact: errRotationRaced also is ErrInvalidRefreshToken,
+			// so a case that wants ErrInvalidRefreshToken must not get it.
 			wantErr   error
 			wantAlive bool // whether ada's other session and b's successor survive
 		}{
@@ -546,13 +548,14 @@ func runSessionsService(t *testing.T, db *database.DB) {
 				next := e.rotate(t, b)
 				return &next
 			}, auth.ErrRefreshReuse, false},
-			// Past its expiry a rotated token is just invalid: no cascade (#458).
+			// Past its expiry a rotated token is just invalid: no cascade
+			// (#458). It has a successor, so it is errRotationRaced.
 			{"expired already-rotated token", func(t *testing.T, e sessionsEnv, _ auth.User, b auth.TokenPair) *auth.TokenPair {
 				id := rowOf(t, e, b)
 				next := e.rotate(t, b)
 				expire(t, id)
 				return &next
-			}, auth.ErrInvalidRefreshToken, true},
+			}, auth.ErrRotationRaced, true},
 			{"expired logged-out token", func(t *testing.T, e sessionsEnv, _ auth.User, b auth.TokenPair) *auth.TokenPair {
 				id := rowOf(t, e, b)
 				if err := e.svc.RevokeRefresh(e.ctx, b.RefreshToken); err != nil {
@@ -571,7 +574,8 @@ func runSessionsService(t *testing.T, db *database.DB) {
 				if next := tt.present(t, e, ada, a[1]); next != nil {
 					alive["the presented token's successor"] = *next
 				}
-				if _, err := e.svc.RotateRefresh(e.ctx, a[1].RefreshToken); !errors.Is(err, tt.wantErr) {
+				_, err := e.svc.RotateRefresh(e.ctx, a[1].RefreshToken)
+				if !errors.Is(err, tt.wantErr) || (tt.wantErr != auth.ErrRotationRaced && errors.Is(err, auth.ErrRotationRaced)) {
 					t.Errorf("RotateRefresh(presented again) = %v, want %v", err, tt.wantErr)
 				}
 				for name, pair := range alive {
@@ -583,6 +587,33 @@ func runSessionsService(t *testing.T, db *database.DB) {
 					t.Fatal("another user's session was revoked")
 				}
 			})
+		}
+	})
+
+	// A token is expired from its expires_at on: at that instant it does not
+	// rotate, and with no successor it is a plain invalid refresh token.
+	t.Run("a token at its expiry instant", func(t *testing.T) {
+		e := newEnv(t)
+		ada, a := e.user(t, "ada", 1)
+		id, err := auth.AuthenticatedRow(e.ctx, e.svc, a[0].AccessToken)
+		if err != nil {
+			t.Fatal(err)
+		}
+		var row auth.RefreshToken
+		if err := db.First(&row, id).Error; err != nil {
+			t.Fatal(err)
+		}
+		auth.SetClock(e.svc, &stepClock{now: row.ExpiresAt})
+		if _, err := e.svc.RotateRefresh(e.ctx, a[0].RefreshToken); !errors.Is(err, auth.ErrInvalidRefreshToken) || errors.Is(err, auth.ErrRotationRaced) {
+			t.Fatalf("RotateRefresh at the token's expires_at = %v, want an invalid refresh token, not errRotationRaced", err)
+		}
+		var rows []auth.RefreshToken
+		if err := db.Where("user_id = ?", ada.ID).Find(&rows).Error; err != nil {
+			t.Fatal(err)
+		}
+		if len(rows) != 1 || rows[0].RevokedAt != nil || rows[0].ReplacedBy != nil {
+			t.Fatalf("after the rotation at expires_at: %d tokens (first revoked: %v); want the one, untouched",
+				len(rows), len(rows) > 0 && rows[0].RevokedAt != nil)
 		}
 	})
 

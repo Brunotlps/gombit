@@ -2,6 +2,7 @@ package auth
 
 import (
 	"context"
+	"net/http"
 
 	"github.com/danielgtaylor/huma/v2"
 )
@@ -35,6 +36,25 @@ var ErrInvalidAccessToken = errInvalidAccessToken
 // ErrRefreshReuse is the error RotateRefresh returns for the reuse of an
 // already-rotated refresh token.
 var ErrRefreshReuse = errRefreshReuse
+
+// ErrRotationRaced is the error RotateRefresh returns when the token it read
+// was revoked before its compare-and-swap (almost always by a rotation of the
+// same token on another instance, sometimes by a session revocation that
+// committed while it waited for the user's lock), and for an expired token
+// that has a successor. It wraps ErrInvalidRefreshToken.
+var ErrRotationRaced = errRotationRaced
+
+// MountCookieRefresh registers s's cookie-mode refresh handler on api at
+// path. A cookie app over the same database serves it, so a test runs the
+// cookie refresh of a second instance, one whose clock it sets, through the
+// app's middleware and error responses.
+func MountCookieRefresh(api huma.API, s *Service, path string) {
+	huma.Register(api, huma.Operation{
+		OperationID: "test-cookie-refresh",
+		Method:      http.MethodPost,
+		Path:        path,
+	}, s.refreshCookie)
+}
 
 // AuthenticatedRow is the id of the refresh token row the access token is
 // bound to, as the middlewares record it for the request.
