@@ -20,6 +20,15 @@ version.
   in a new `version` key), so a concurrent edit is still a 409; it sends an
   integer past 2^53 as a string
   ([#454](https://github.com/gombit-dev/gombit/issues/454)).
+- Admin writes refuse an integer the field's Go type cannot hold with a 422
+  on that field. `300` into an `int8` was stored as `44`, `3000000000` into
+  an `int32` wrapped, and `-5` into a `uint` was stored as a value the list
+  endpoint could not read back, a `500` for everyone until the row was fixed
+  by hand. A JSON number from 2^53 on (or `1e30`), which has lost digits by
+  the time it is decoded, is refused too: send a large integer as a string.
+  One equal to the stored value rounded the same way (the admin UI sending
+  the field back, an integer field or a belongs_to key alike) keeps the
+  stored value ([#448](https://github.com/gombit-dev/gombit/issues/448)).
 
 ### Changed
 
