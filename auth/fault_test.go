@@ -225,12 +225,13 @@ func newFaultedCookieSession(t *testing.T, kind database.Driver, dsn string, fau
 	return db, app, jar
 }
 
-// rereadsRefreshToken matches the locked re-read of an expired, unrevoked
-// token's row: a SELECT on refresh_tokens by primary key in GORM's
-// First(&row, id) form (WHERE refresh_tokens.id = ?). It carries FOR SHARE,
-// which SQLite's dialect drops, so the match does not look for it. Nothing
-// else a cookie refresh runs has that form: its first read of the token is
-// by hash, and ParseAccess reads the row with WHERE id = ?.
+// rereadsRefreshToken matches the locked re-read of a token's row, after the
+// token was found expired and unrevoked or after a lost compare-and-swap: a
+// SELECT on refresh_tokens by primary key in GORM's First(&row, id) form
+// (WHERE refresh_tokens.id = ?). It carries FOR SHARE, which SQLite's
+// dialect drops, so the match does not look for it. Nothing else a cookie
+// refresh runs has that form: its first read of the token is by hash, and
+// ParseAccess reads the row with WHERE id = ?.
 func rereadsRefreshToken(query string) bool {
 	unquoted := strings.NewReplacer("`", "", `"`, "").Replace(query)
 	return strings.HasPrefix(strings.TrimSpace(strings.ToUpper(query)), "SELECT") &&

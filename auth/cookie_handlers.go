@@ -87,12 +87,12 @@ func (s *Service) logoutCookie(ctx context.Context, input *cookieRefreshInput) (
 // sends the dead cookie until its Max-Age, and every page load repeats the
 // failed refresh. Anything else leaves them. A 5xx is a server failure, and
 // the refresh token may still be valid for the client's retry. A refresh that
-// lost to another rotation of the token (errRotationRaced: it lost the
-// compare-and-swap, or found the token expired with a successor) is a 401,
-// but the winner's response sets the session's new cookies in the same
-// browser, and clearing them would end a live session. When the
-// compare-and-swap lost to a session revocation instead, the cookies stay
-// too; the next refresh finds the token revoked and clears them.
+// lost to another rotation of the token (errRotationRaced: the token has a
+// successor, whether it lost the compare-and-swap or found the token
+// expired) is a 401, but the winner's response sets the session's new
+// cookies in the same browser, and clearing them would end a live session.
+// A refresh that lost the compare-and-swap to a session revocation finds no
+// successor: its 401 clears the cookies.
 func (s *Service) rejectRefreshCookie(cause, resp error) error {
 	var env *contract.ErrorEnvelope
 	if errors.Is(cause, errRotationRaced) || !errors.As(resp, &env) || env.GetStatus() != http.StatusUnauthorized {

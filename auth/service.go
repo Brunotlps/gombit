@@ -186,7 +186,7 @@ func (s *Service) RotateRefresh(ctx context.Context, raw string) (TokenPair, err
 // rotateRefreshOnce runs one rotation in a transaction. Lock order: the
 // user's row (lockUserTx) comes before any write to or locking read of a
 // refresh_tokens row, the same order every revocation uses; the
-// compare-and-swap and the re-read of an expired token below must stay after
+// compare-and-swap and the re-reads below (hasSuccessorTx) must stay after
 // it. The initial read of the token takes no lock. The rotation's
 // instant is read once the lock is held: the lock can wait behind another
 // rotation or a revocation, and a token that expired during that wait must
@@ -235,24 +235,18 @@ func (s *Service) rotateRefreshOnce(ctx context.Context, raw, hash string) (Toke
 			if row.RevokedAt == nil {
 				// The read above took no lock, and a rotation of this token
 				// may have committed while this one waited for the user's
-				// lock: re-read the row, with a locking read. On MySQL a
-				// plain read sees the snapshot this transaction's first read
-				// took, from before that commit; a locking read sees the
-				// latest committed row. PostgreSQL (READ COMMITTED) would see
-				// it either way. SQLite's dialect drops the clause. Within
+				// lock: re-read the row, with a locking read
+				// (hasSuccessorTx). SQLite's dialect drops the clause. Within
 				// one process this race cannot happen: the process joins
 				// concurrent rotations of a token into one. Several
 				// processes sharing one database file are not covered: in
 				// WAL mode another process's rotation can commit while this
 				// transaction reads from its older snapshot, and this
 				// refresh then finds no successor and clears the cookies.
-				var current RefreshToken
-				if err := tx.Clauses(clause.Locking{Strength: clause.LockingStrengthShare}).
-					First(&current, row.ID).Error; err != nil {
+				if rotated, err = hasSuccessorTx(tx, row.ID); err != nil {
 					// A server failure, like the lock's: not a 401.
 					return err
 				}
-				rotated = current.ReplacedBy != nil
 			}
 			if rotated {
 				return errRotationRaced
@@ -282,15 +276,24 @@ func (s *Service) rotateRefreshOnce(ctx context.Context, raw, hash string) (Toke
 		}
 		if result.RowsAffected != 1 {
 			// Lost the compare-and-swap: the token was revoked after the
-			// unlocked read above, almost always by a rotation of the same
-			// token on another instance, sometimes by a session revocation
-			// that committed while this rotation waited for the user's lock.
-			// Neither is reuse-as-theft; do not revoke the winner's new
-			// session. refreshCookie leaves the cookies alone for
-			// errRotationRaced, as for an expired token with a successor
-			// above; unlike there, this branch cannot tell the two causes
-			// apart.
-			return errRotationRaced
+			// unlocked read above, by a rotation of the same token on
+			// another instance or by a session revocation that committed
+			// while this rotation waited for the user's lock. Neither is
+			// reuse-as-theft; do not revoke anything. The re-read tells them
+			// apart, as for an expired token above. A successor means a
+			// rotation won: errRotationRaced, and refreshCookie leaves the
+			// cookies the winner's response sets. None means the session was
+			// revoked: a plain invalid token, whose 401 clears the dead
+			// cookies.
+			rotated, err := hasSuccessorTx(tx, row.ID)
+			if err != nil {
+				// A server failure, like the lock's: not a 401.
+				return err
+			}
+			if rotated {
+				return errRotationRaced
+			}
+			return errInvalidRefreshToken
 		}
 
 		issued, err := s.issueTokens(tx, user, now)
@@ -314,6 +317,22 @@ func (s *Service) rotateRefreshOnce(ctx context.Context, raw, hash string) (Toke
 		return TokenPair{}, errRefreshReuse
 	}
 	return pair, nil
+}
+
+// hasSuccessorTx re-reads the refresh token row id in tx, which holds the
+// user's lock (lockUserTx), and reports whether a rotation has given it a
+// successor. It is a locking read: on MySQL (REPEATABLE READ) a plain read
+// sees the snapshot this transaction's first read took, from before a
+// rotation that committed while it waited for the user's lock, and an UPDATE
+// that matched no row does not move that snapshot; a locking read sees the
+// latest committed row. PostgreSQL (READ COMMITTED) would see it either way.
+func hasSuccessorTx(tx *gorm.DB, id uint) (bool, error) {
+	var current RefreshToken
+	if err := tx.Clauses(clause.Locking{Strength: clause.LockingStrengthShare}).
+		First(&current, id).Error; err != nil {
+		return false, err
+	}
+	return current.ReplacedBy != nil, nil
 }
 
 // RevokeRefresh invalidates one refresh token. Missing/already-revoked tokens

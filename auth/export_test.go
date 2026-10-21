@@ -37,11 +37,12 @@ var ErrInvalidAccessToken = errInvalidAccessToken
 // already-rotated refresh token.
 var ErrRefreshReuse = errRefreshReuse
 
-// ErrRotationRaced is the error RotateRefresh returns when the token it read
-// was revoked before its compare-and-swap (almost always by a rotation of the
-// same token on another instance, sometimes by a session revocation that
-// committed while it waited for the user's lock), and for an expired token
-// that has a successor. It wraps ErrInvalidRefreshToken.
+// ErrRotationRaced is the error RotateRefresh returns when another rotation
+// gave the token it read a successor: it lost the compare-and-swap to a
+// rotation of the same token on another instance, or found the token expired
+// with a successor. A token a session revocation ended before the
+// compare-and-swap has none and is a plain ErrInvalidRefreshToken. It wraps
+// ErrInvalidRefreshToken.
 var ErrRotationRaced = errRotationRaced
 
 // MountCookieRefresh registers s's cookie-mode refresh handler on api at

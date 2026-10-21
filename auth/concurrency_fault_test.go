@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"regexp"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -998,7 +999,8 @@ var sessionsRequestModes = []struct {
 // outcome: the rotation waits for the user's row on the server and does
 // nothing else (no compare-and-swap, no replacement insert) until the
 // revocation commits; it then finds its token revoked and fails as an
-// invalid refresh token, and no replacement exists. This pins the lock order,
+// invalid refresh token, not errRotationRaced (the token has no successor),
+// and no replacement exists. This pins the lock order,
 // user before token, which both paths must keep: a rotation that took the
 // token first would deadlock against the revocation, and one that did not
 // wait would insert a replacement behind it. A revocation that held the lock
@@ -1095,8 +1097,8 @@ func TestFault_Concurrency_RotationDuringRevocation(t *testing.T) {
 				if err := waitErr(t, revokeErr, "revocation"); err != nil {
 					t.Fatalf("revoke = %v; it held the user's lock first and should commit", err)
 				}
-				if err := waitErr(t, rotateErr, "rotation"); !errors.Is(err, auth.ErrInvalidRefreshToken) {
-					t.Fatalf("RotateRefresh = %v, want an invalid refresh token: its session was revoked first", err)
+				if err := waitErr(t, rotateErr, "rotation"); !errors.Is(err, auth.ErrInvalidRefreshToken) || errors.Is(err, auth.ErrRotationRaced) {
+					t.Fatalf("RotateRefresh = %v, want an invalid refresh token, not errRotationRaced: its session was revoked first, and the token has no successor", err)
 				}
 				faulttest.Idle(t, f.db)
 				var tokens []auth.RefreshToken
@@ -1584,6 +1586,216 @@ func TestFault_Concurrency_RefreshExpiresDuringRevocation(t *testing.T) {
 			})
 		})
 	}
+}
+
+// TestFault_Concurrency_CookieRefreshDuringRevocation is
+// TestFault_Concurrency_RotationDuringRevocation through the cookie route: a
+// revocation that ends the browser's session (that one, the others, or all)
+// holds the user's row, pinned at its UPDATE of the tokens, while the
+// browser's refresh, which read its unexpired token unrevoked, waits for that
+// row. Expected outcome: once the revocation commits, the refresh loses the
+// compare-and-swap and, re-reading the token under the lock, finds it revoked
+// with no successor. No rotation set new cookies in the browser, so the 401
+// clears the dead ones, exactly as logout does, and the browser is signed
+// out; the refresh writes nothing. Lost to a rotation instead, the 401 keeps
+// the cookies (TestFault_Concurrency_RefreshLosesRotationRace).
+//
+// SQLite is skipped like the tests above.
+func TestFault_Concurrency_CookieRefreshDuringRevocation(t *testing.T) {
+	dbs := nonSQLite()
+	tests := []struct {
+		name   string
+		revoke func(ctx context.Context, f rotationFixture, current, browser auth.TokenPair) error
+	}{
+		{"one", func(ctx context.Context, f rotationFixture, _, browser auth.TokenPair) error {
+			id, err := auth.SessionIDOf(ctx, f.svc, browser.AccessToken)
+			if err != nil {
+				return err
+			}
+			return f.svc.RevokeSession(ctx, f.user.ID, id)
+		}},
+		{"others", func(ctx context.Context, f rotationFixture, current, _ auth.TokenPair) error {
+			row, err := auth.AuthenticatedRow(ctx, f.svc, current.AccessToken)
+			if err != nil {
+				return err
+			}
+			return auth.RevokeOtherSessionsKeeping(ctx, f.svc, f.user.ID, row)
+		}},
+		{"all", func(ctx context.Context, f rotationFixture, _, _ auth.TokenPair) error {
+			return f.svc.RevokeAllSessions(ctx, f.user.ID)
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if len(dbs) == 0 {
+				t.Skip("needs PostgreSQL or MySQL (-auth.postgres-dsn / -auth.mysql-dsn)")
+			}
+			faulttest.ForEachDB(t, dbs, func(t *testing.T, kind database.Driver, dsn string) {
+				release := make(chan struct{})
+				defer func() {
+					select {
+					case <-release:
+					default:
+						close(release)
+					}
+				}()
+				// Matched statement 1 is the revocation's user lock, 2 its
+				// UPDATE of the tokens (held), 3 the refresh's user lock.
+				stmts := faulttest.Sequence(faulttest.Success(), faulttest.Block(release))
+				faults := &faulttest.DBFaults{Statement: stmts, Match: locksUserOrWritesRefreshTokens}
+				f := newRotationFixture(t, kind, dsn, faults)
+				ctx := context.Background()
+				faults.Disarm()
+				browser, err := f.svc.IssueTokens(ctx, f.user)
+				if err != nil {
+					t.Fatal(err)
+				}
+				current, err := f.svc.IssueTokens(ctx, f.user)
+				if err != nil {
+					t.Fatal(err)
+				}
+				app := newCookieAuthAppWithDB(t, f.db)
+				logout := doRequest(app, fetchCSRF(t, app), http.MethodPost, "/api/v1/auth/logout", "")
+				if logout.Code != http.StatusOK {
+					t.Fatalf("logout status = %d; body: %s", logout.Code, logout.Body.String())
+				}
+				logoutClears := logout.Header().Values("Set-Cookie")
+				slices.Sort(logoutClears)
+				jar := fetchCSRF(t, app)
+				jar.cookies[auth.AccessCookieName] = &http.Cookie{Name: auth.AccessCookieName, Value: browser.AccessToken}    //nolint:gosec // G124: request Cookie header only carries name/value.
+				jar.cookies[auth.RefreshCookieName] = &http.Cookie{Name: auth.RefreshCookieName, Value: browser.RefreshToken} //nolint:gosec // G124: request Cookie header only carries name/value.
+				if status := getMeCookie(app, jar); status != http.StatusOK {
+					t.Fatalf("GET /me before the race = %d, want 200", status)
+				}
+				faults.Arm()
+
+				revokeErr := make(chan error, 1)
+				go func() { revokeErr <- tt.revoke(ctx, f, current, browser) }()
+				wait(t, stmts.Reached(2), "the revocation never reached its update")
+
+				refreshed := make(chan *httptest.ResponseRecorder, 1)
+				go func() { refreshed <- doRequest(app, jar, http.MethodPost, "/api/v1/auth/refresh", "") }()
+				wait(t, stmts.Reached(3), "the refresh never took the user's lock")
+				// Release the revocation only once the refresh is really
+				// waiting for the user's row, so it read the token before
+				// the revocation committed.
+				faulttest.AwaitLockWait(t, kind, dsn, "users")
+				close(release) // the revocation updates the tokens and commits
+
+				if err := waitErr(t, revokeErr, "revocation"); err != nil {
+					t.Fatalf("revoke = %v; it held the user's lock first and should commit", err)
+				}
+				var rec *httptest.ResponseRecorder
+				select {
+				case rec = <-refreshed:
+				case <-time.After(5 * time.Second):
+					t.Fatal("the refresh is wedged")
+				}
+				assertError(t, rec, http.StatusUnauthorized, "authentication")
+				assertRequestID(t, rec)
+				assertClearsSessionCookies(t, rec)
+				if got := rec.Header().Values("Set-Cookie"); !slices.Equal(slices.Sorted(slices.Values(got)), logoutClears) {
+					t.Errorf("the refresh's Set-Cookie = %q, want logout's %q", got, logoutClears)
+				}
+				if status := getMeCookie(app, jar); status != http.StatusUnauthorized {
+					t.Errorf("GET /me after the refresh = %d, want 401: the session was revoked", status)
+				}
+				faulttest.Idle(t, f.db)
+				var tokens []auth.RefreshToken
+				if err := f.db.Where("user_id = ?", f.user.ID).Find(&tokens).Error; err != nil {
+					t.Fatal(err)
+				}
+				if len(tokens) != 3 {
+					t.Fatalf("%d refresh tokens, want 3: the refresh left a replacement behind the revocation", len(tokens))
+				}
+				for _, token := range tokens {
+					if token.ReplacedBy != nil {
+						t.Fatalf("token %d was replaced by %d; the refresh must not have rotated", token.ID, *token.ReplacedBy)
+					}
+				}
+			})
+		})
+	}
+}
+
+// TestFault_Concurrency_CookieRefreshRereadFailureAfterLostSwap: a cookie
+// refresh loses the compare-and-swap to a revocation of its session, as in
+// TestFault_Concurrency_CookieRefreshDuringRevocation, and the re-read of the
+// token under the user's lock, which tells a rotation (a successor) from a
+// revocation (none), fails for an infrastructure reason. Expected outcome: a
+// server failure, 500 with no cookie, as when the lock itself fails: whether
+// the browser holds a live successor's cookies is not known. Once the fault
+// clears, the next refresh finds the token revoked and clears the session
+// cookies.
+//
+// SQLite is skipped like the tests above.
+func TestFault_Concurrency_CookieRefreshRereadFailureAfterLostSwap(t *testing.T) {
+	dbs := nonSQLite()
+	if len(dbs) == 0 {
+		t.Skip("needs PostgreSQL or MySQL (-auth.postgres-dsn / -auth.mysql-dsn)")
+	}
+	faulttest.ForEachDB(t, dbs, func(t *testing.T, kind database.Driver, dsn string) {
+		release := make(chan struct{})
+		defer func() {
+			select {
+			case <-release:
+			default:
+				close(release)
+			}
+		}()
+		// Matched statement 1 is the revocation's user lock, 2 its UPDATE of
+		// the tokens (held), 3 the refresh's user lock, 4 its
+		// compare-and-swap, which affects no row, and 5 its re-read of the
+		// token, which fails.
+		stmts := faulttest.Sequence(faulttest.Success(), faulttest.Block(release),
+			faulttest.Success(), faulttest.Success(), faulttest.Failure(faulttest.ErrInjected))
+		faults := &faulttest.DBFaults{Statement: stmts, Match: func(query string) bool {
+			return locksUserOrWritesRefreshTokens(query) || rereadsRefreshToken(query)
+		}}
+		f := newRotationFixture(t, kind, dsn, faults)
+		ctx := context.Background()
+		faults.Disarm()
+		listed, err := f.svc.ListSessions(ctx, f.user.ID)
+		if err != nil || len(listed) != 1 {
+			t.Fatalf("ListSessions = %v, %v; want the fixture's one session", listed, err)
+		}
+		app := newCookieAuthAppWithDB(t, f.db)
+		jar := fetchCSRF(t, app)
+		jar.cookies[auth.RefreshCookieName] = &http.Cookie{Name: auth.RefreshCookieName, Value: f.refresh} //nolint:gosec // G124: request Cookie header only carries name/value.
+		faults.Arm()
+
+		revokeErr := make(chan error, 1)
+		go func() { revokeErr <- f.svc.RevokeSession(ctx, f.user.ID, listed[0].ID) }()
+		wait(t, stmts.Reached(2), "the revocation never reached its update")
+
+		refreshed := make(chan *httptest.ResponseRecorder, 1)
+		go func() { refreshed <- doRequest(app, jar, http.MethodPost, "/api/v1/auth/refresh", "") }()
+		wait(t, stmts.Reached(3), "the refresh never took the user's lock")
+		faulttest.AwaitLockWait(t, kind, dsn, "users")
+		close(release) // the revocation updates the token and commits
+
+		if err := waitErr(t, revokeErr, "revocation"); err != nil {
+			t.Fatalf("RevokeSession = %v; it held the user's lock first and should commit", err)
+		}
+		var rec *httptest.ResponseRecorder
+		select {
+		case rec = <-refreshed:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the refresh is wedged")
+		}
+		assertError(t, rec, http.StatusInternalServerError, "internal")
+		if n, failed := stmts.Calls(), stmts.Failures(); n != 5 || failed != 1 {
+			t.Fatalf("%d matched statements, %d failed; want 5 with the last, the re-read after the lost compare-and-swap, failed", n, failed)
+		}
+		if got := rec.Header().Values("Set-Cookie"); len(got) != 0 {
+			t.Fatalf("the failed refresh set cookies %q, want none: a server failure leaves them", got)
+		}
+		faults.Disarm()
+		faulttest.Idle(t, f.db)
+		next := doRequest(app, jar, http.MethodPost, "/api/v1/auth/refresh", "")
+		assertError(t, next, http.StatusUnauthorized, "authentication")
+		assertClearsSessionCookies(t, next)
+	})
 }
 
 // newInstance is a second auth.Service over f's database that reads clock:
