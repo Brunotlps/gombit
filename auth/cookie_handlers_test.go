@@ -1016,6 +1016,25 @@ func assertClearsSessionCookies(t *testing.T, rec *httptest.ResponseRecorder) {
 	}
 }
 
+// assertSignedOut fails t unless GET /me with jar answers 401 "missing
+// session cookie": the browser no longer sends the session's access cookie
+// (the jar keeps a cleared cookie with an empty value, which the server
+// reads as missing). A jar that still held the access cookie of a session
+// that has ended gets "invalid session cookie" instead, so this tells
+// cleared cookies from a dead session whose cookies the browser kept.
+func assertSignedOut(t *testing.T, app *framework.App, jar *cookieJar) {
+	t.Helper()
+	rec := doRequest(app, jar, http.MethodGet, "/api/v1/me", "")
+	var env contract.ErrorEnvelope
+	if err := json.Unmarshal(rec.Body.Bytes(), &env); err != nil {
+		t.Errorf("GET /me: decode error envelope: %v; body: %s", err, rec.Body.String())
+		return
+	}
+	if rec.Code != http.StatusUnauthorized || env.Body.Message != "missing session cookie" {
+		t.Errorf("GET /me = %d %q, want 401 %q: the browser should hold no session cookie", rec.Code, env.Body.Message, "missing session cookie")
+	}
+}
+
 func assertCSRFRejected(t *testing.T, rec *httptest.ResponseRecorder) {
 	t.Helper()
 	if rec.Code != http.StatusForbidden {

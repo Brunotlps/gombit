@@ -1596,9 +1596,10 @@ func TestFault_Concurrency_RefreshExpiresDuringRevocation(t *testing.T) {
 // row. Expected outcome: once the revocation commits, the refresh loses the
 // compare-and-swap and, re-reading the token under the lock, finds it revoked
 // with no successor. No rotation set new cookies in the browser, so the 401
-// clears the dead ones, exactly as logout does, and the browser is signed
-// out; the refresh writes nothing. Lost to a rotation instead, the 401 keeps
-// the cookies (TestFault_Concurrency_RefreshLosesRotationRace).
+// clears the dead ones, exactly as logout does, and the browser then sends no
+// session cookie (assertSignedOut); the refresh writes nothing. Lost to a
+// rotation instead, the 401 keeps the cookies
+// (TestFault_Concurrency_RefreshLosesRotationRace).
 //
 // SQLite is skipped like the tests above.
 func TestFault_Concurrency_CookieRefreshDuringRevocation(t *testing.T) {
@@ -1693,12 +1694,10 @@ func TestFault_Concurrency_CookieRefreshDuringRevocation(t *testing.T) {
 				}
 				assertError(t, rec, http.StatusUnauthorized, "authentication")
 				assertRequestID(t, rec)
+				assertSignedOut(t, app, jar)
 				assertClearsSessionCookies(t, rec)
 				if got := rec.Header().Values("Set-Cookie"); !slices.Equal(slices.Sorted(slices.Values(got)), logoutClears) {
 					t.Errorf("the refresh's Set-Cookie = %q, want logout's %q", got, logoutClears)
-				}
-				if status := getMeCookie(app, jar); status != http.StatusUnauthorized {
-					t.Errorf("GET /me after the refresh = %d, want 401: the session was revoked", status)
 				}
 				faulttest.Idle(t, f.db)
 				var tokens []auth.RefreshToken
@@ -1716,6 +1715,107 @@ func TestFault_Concurrency_CookieRefreshDuringRevocation(t *testing.T) {
 			})
 		})
 	}
+}
+
+// TestFault_Concurrency_CookieRefreshDuringLogout: the browser's refresh has
+// read its unexpired token, unrevoked, and is held just before the user-row
+// lock it takes next when another tab of the same browser logs out with the
+// same refresh cookie, and the logout commits. Logout revokes the token with
+// one UPDATE and takes no user lock, so unlike the revocations above it does
+// not make the refresh wait on the server: it lands between the refresh's
+// unlocked read and its compare-and-swap. Expected outcome: the refresh loses
+// the compare-and-swap and, re-reading the token under the lock, finds it
+// revoked with no successor: a 401 that clears the session cookies exactly as
+// the logout did, the refreshing tab then sends no session cookie, and no
+// successor is written. The exact count of matched statements pins that
+// path: a refresh that read the token already revoked would neither swap nor
+// re-read it.
+//
+// SQLite is skipped like the tests above.
+func TestFault_Concurrency_CookieRefreshDuringLogout(t *testing.T) {
+	dbs := nonSQLite()
+	if len(dbs) == 0 {
+		t.Skip("needs PostgreSQL or MySQL (-auth.postgres-dsn / -auth.mysql-dsn)")
+	}
+	faulttest.ForEachDB(t, dbs, func(t *testing.T, kind database.Driver, dsn string) {
+		release := make(chan struct{})
+		defer func() {
+			select {
+			case <-release:
+			default:
+				close(release)
+			}
+		}()
+		// Matched statement 1 is the refresh's user lock (held), 2 the
+		// logout's UPDATE of the token, 3 the refresh's compare-and-swap,
+		// which affects no row, and 4 its re-read of the token.
+		stmts := faulttest.Sequence(faulttest.Block(release))
+		faults := &faulttest.DBFaults{Statement: stmts, Match: func(query string) bool {
+			return locksUserOrWritesRefreshTokens(query) || rereadsRefreshToken(query)
+		}}
+		f := newRotationFixture(t, kind, dsn, faults)
+		ctx := context.Background()
+		faults.Disarm()
+		browser, err := f.svc.IssueTokens(ctx, f.user)
+		if err != nil {
+			t.Fatal(err)
+		}
+		app := newCookieAuthAppWithDB(t, f.db)
+		tab, other := fetchCSRF(t, app), fetchCSRF(t, app)
+		for _, jar := range []*cookieJar{tab, other} {
+			jar.cookies[auth.AccessCookieName] = &http.Cookie{Name: auth.AccessCookieName, Value: browser.AccessToken}    //nolint:gosec // G124: request Cookie header only carries name/value.
+			jar.cookies[auth.RefreshCookieName] = &http.Cookie{Name: auth.RefreshCookieName, Value: browser.RefreshToken} //nolint:gosec // G124: request Cookie header only carries name/value.
+		}
+		if status := getMeCookie(app, tab); status != http.StatusOK {
+			t.Fatalf("GET /me before the race = %d, want 200", status)
+		}
+		faults.Arm()
+
+		refreshed := make(chan *httptest.ResponseRecorder, 1)
+		go func() { refreshed <- doRequest(app, tab, http.MethodPost, "/api/v1/auth/refresh", "") }()
+		wait(t, stmts.Reached(1), "the refresh never reached the user's lock")
+
+		logout := doRequest(app, other, http.MethodPost, "/api/v1/auth/logout", "")
+		if logout.Code != http.StatusOK {
+			t.Fatalf("logout status = %d; body: %s", logout.Code, logout.Body.String())
+		}
+		if n := stmts.Calls(); n != 2 {
+			t.Fatalf("%d matched statements once the logout returned, want 2: the refresh's held lock and the logout's UPDATE", n)
+		}
+		logoutClears := logout.Header().Values("Set-Cookie")
+		slices.Sort(logoutClears)
+		close(release) // the refresh takes the user's lock and goes on
+
+		var rec *httptest.ResponseRecorder
+		select {
+		case rec = <-refreshed:
+		case <-time.After(5 * time.Second):
+			t.Fatal("the refresh is wedged")
+		}
+		assertError(t, rec, http.StatusUnauthorized, "authentication")
+		assertRequestID(t, rec)
+		assertSignedOut(t, app, tab)
+		assertClearsSessionCookies(t, rec)
+		if got := rec.Header().Values("Set-Cookie"); !slices.Equal(slices.Sorted(slices.Values(got)), logoutClears) {
+			t.Errorf("the refresh's Set-Cookie = %q, want logout's %q", got, logoutClears)
+		}
+		if n, failed := stmts.Calls(), stmts.Failures(); n != 4 || failed != 0 {
+			t.Fatalf("%d matched statements, %d failed; want 4: the refresh's lock, the logout's UPDATE, the refresh's compare-and-swap and its re-read", n, failed)
+		}
+		faulttest.Idle(t, f.db)
+		var tokens []auth.RefreshToken
+		if err := f.db.Where("user_id = ?", f.user.ID).Find(&tokens).Error; err != nil {
+			t.Fatal(err)
+		}
+		if len(tokens) != 2 {
+			t.Fatalf("%d refresh tokens, want 2: the fixture's and the browser's, no replacement", len(tokens))
+		}
+		for _, token := range tokens {
+			if token.ReplacedBy != nil {
+				t.Fatalf("token %d was replaced by %d; the refresh must not have rotated", token.ID, *token.ReplacedBy)
+			}
+		}
+	})
 }
 
 // TestFault_Concurrency_CookieRefreshRereadFailureAfterLostSwap: a cookie

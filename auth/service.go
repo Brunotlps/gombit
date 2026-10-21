@@ -276,13 +276,15 @@ func (s *Service) rotateRefreshOnce(ctx context.Context, raw, hash string) (Toke
 		}
 		if result.RowsAffected != 1 {
 			// Lost the compare-and-swap: the token was revoked after the
-			// unlocked read above, by a rotation of the same token on
-			// another instance or by a session revocation that committed
-			// while this rotation waited for the user's lock. Neither is
+			// unlocked read above. Either a rotation of the same token on
+			// another instance won and gave it a successor, or something
+			// revoked it with none: a logout (which takes no user lock), a
+			// session revocation that committed while this rotation waited
+			// for the user's lock, or the reuse cascade. None of them is
 			// reuse-as-theft; do not revoke anything. The re-read tells them
 			// apart, as for an expired token above. A successor means a
 			// rotation won: errRotationRaced, and refreshCookie leaves the
-			// cookies the winner's response sets. None means the session was
+			// cookies the winner's response sets. None means the token was
 			// revoked: a plain invalid token, whose 401 clears the dead
 			// cookies.
 			rotated, err := hasSuccessorTx(tx, row.ID)
