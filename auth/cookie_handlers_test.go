@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -864,6 +866,122 @@ func runExpiredRotatedRefresh(t *testing.T, db *database.DB) {
 		}
 		if rec := doRequest(app, browser, http.MethodPost, "/api/v1/auth/refresh", ""); rec.Code != http.StatusOK {
 			t.Errorf("the successor's refresh status = %d, want 200; body: %s", rec.Code, rec.Body.String())
+		}
+	})
+}
+
+// TestRefreshOpenAPI: the cookie refresh's OpenAPI operation declares the
+// 401 whose response clears the session cookies (rejectRefreshCookie), with
+// its Set-Cookie header and the D10 error envelope, next to the default
+// error response and the 200, which stay what Huma generates for the login.
+// Huma does not document headers attached to an error at runtime, so the 401
+// is declared on the operation, and a declared 401 stops Huma from adding the
+// default, so that is declared too. The Bearer refresh sets no cookie and
+// declares neither: its responses are the 200 and the default.
+func TestRefreshOpenAPI(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	responses := func(t *testing.T, app *framework.App, path string) map[string]json.RawMessage {
+		t.Helper()
+		rec := httptest.NewRecorder()
+		app.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/openapi.json", nil))
+		if rec.Code != http.StatusOK {
+			t.Fatalf("GET /openapi.json status = %d; body: %s", rec.Code, rec.Body.String())
+		}
+		var spec struct {
+			Paths map[string]map[string]struct {
+				Responses map[string]json.RawMessage `json:"responses"`
+			} `json:"paths"`
+		}
+		if err := json.Unmarshal(rec.Body.Bytes(), &spec); err != nil {
+			t.Fatalf("decode OpenAPI: %v", err)
+		}
+		op, ok := spec.Paths[path]["post"]
+		if !ok {
+			t.Fatalf("OpenAPI has no POST %s", path)
+		}
+		return op.Responses
+	}
+	sameJSON := func(t *testing.T, a, b []byte) bool {
+		t.Helper()
+		var x, y any
+		if err := json.Unmarshal(a, &x); err != nil {
+			t.Fatalf("decode %s: %v", a, err)
+		}
+		if err := json.Unmarshal(b, &y); err != nil {
+			t.Fatalf("decode %s: %v", b, err)
+		}
+		return reflect.DeepEqual(x, y)
+	}
+	type errorResponse struct {
+		Headers map[string]struct {
+			Description string `json:"description"`
+			Schema      struct {
+				Type string `json:"type"`
+			} `json:"schema"`
+		} `json:"headers"`
+		Content map[string]struct {
+			Schema json.RawMessage `json:"schema"`
+		} `json:"content"`
+	}
+	decode := func(t *testing.T, raw json.RawMessage) errorResponse {
+		t.Helper()
+		var resp errorResponse
+		if err := json.Unmarshal(raw, &resp); err != nil {
+			t.Fatalf("decode response %s: %v", raw, err)
+		}
+		return resp
+	}
+	errorEnvelope := []byte(`{"$ref": "#/components/schemas/ErrorEnvelope"}`)
+	isErrorEnvelope := func(t *testing.T, resp errorResponse) bool {
+		t.Helper()
+		media, ok := resp.Content["application/json"]
+		return ok && len(resp.Content) == 1 && sameJSON(t, media.Schema, errorEnvelope)
+	}
+
+	t.Run("cookie", func(t *testing.T) {
+		app := newCookieAuthApp(t)
+		refresh := responses(t, app, "/api/v1/auth/refresh")
+		login := responses(t, app, "/api/v1/auth/login")
+		if got := slices.Sorted(maps.Keys(refresh)); !slices.Equal(got, []string{"200", "401", "default"}) {
+			t.Fatalf("cookie refresh responses = %v, want 200, 401 and default", got)
+		}
+		unauthorized := decode(t, refresh["401"])
+		setCookie, ok := unauthorized.Headers["Set-Cookie"]
+		if !ok || len(unauthorized.Headers) != 1 {
+			t.Fatalf("cookie refresh 401 headers = %s, want Set-Cookie", refresh["401"])
+		}
+		if setCookie.Schema.Type != "string" {
+			t.Errorf("cookie refresh 401 Set-Cookie schema type = %q, want string", setCookie.Schema.Type)
+		}
+		for _, want := range []string{auth.AccessCookieName, auth.RefreshCookieName, "Max-Age=0"} {
+			if !strings.Contains(setCookie.Description, want) {
+				t.Errorf("cookie refresh 401 Set-Cookie description %q does not mention %s", setCookie.Description, want)
+			}
+		}
+		if !isErrorEnvelope(t, unauthorized) {
+			t.Errorf("cookie refresh 401 content = %s, want application/json ErrorEnvelope", refresh["401"])
+		}
+		if !isErrorEnvelope(t, decode(t, refresh["default"])) {
+			t.Errorf("cookie refresh default = %s, want application/json ErrorEnvelope", refresh["default"])
+		}
+		for _, status := range []string{"200", "default"} {
+			if !sameJSON(t, refresh[status], login[status]) {
+				t.Errorf("cookie refresh %s = %s, want the login's %s", status, refresh[status], login[status])
+			}
+		}
+	})
+
+	t.Run("bearer", func(t *testing.T) {
+		refresh := responses(t, newAuthApp(t), "/api/v1/auth/refresh")
+		if got := slices.Sorted(maps.Keys(refresh)); !slices.Equal(got, []string{"200", "default"}) {
+			t.Fatalf("Bearer refresh responses = %v, want 200 and default: it declares no 401", got)
+		}
+		def := decode(t, refresh["default"])
+		if len(def.Headers) != 0 {
+			t.Errorf("Bearer refresh default headers = %s, want none", refresh["default"])
+		}
+		if !isErrorEnvelope(t, def) {
+			t.Errorf("Bearer refresh default = %s, want application/json ErrorEnvelope", refresh["default"])
 		}
 	})
 }
