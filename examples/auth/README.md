@@ -78,6 +78,32 @@ curl -sS -X DELETE "http://127.0.0.1:8080/api/v1/auth/sessions?scope=all" \
 
 See [`docs/auth.md`](../../docs/auth.md#sessions) for the semantics.
 
+## Email verification
+
+Registration mails a verification message. This example sets no mailer
+(`framework.WithAuthMailer`), so in development the server logs the message
+instead, token included (`auth: email not sent (development LogMailer)`):
+
+```bash
+# the sessions above were revoked: log in again
+LOGIN=$(curl -sS -X POST http://127.0.0.1:8080/api/v1/auth/login \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"ada@example.com","password":"correct-horse"}')
+ACCESS=$(python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["access_token"])' <<<"$LOGIN")
+
+# ask for a new link (once a minute; supersedes the earlier one)
+curl -sS -X POST http://127.0.0.1:8080/api/v1/auth/verify-email/resend \
+  -H "Authorization: Bearer $ACCESS"
+
+# post the latest token in the log; GET /me says "email_verified": false
+# until then
+curl -sS -X POST http://127.0.0.1:8080/api/v1/auth/verify-email \
+  -H 'Content-Type: application/json' -d '{"token":"<token from the log>"}'
+```
+
+See [`docs/auth.md`](../../docs/auth.md#email-verification) for the token
+rules, the mailer, and `auth.RequireVerifiedEmail`.
+
 The development JWT secret in `main.go` is not a production secret.
 Production config rejects secrets shorter than 32 characters.
 

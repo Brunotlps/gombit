@@ -38,6 +38,8 @@ All paths use `config.API.Prefix` (default `/api/v1`). D10 envelopes.
 | `GET` | `/auth/sessions` | Bearer access JWT. Lists the user's active sessions; see [Sessions](#sessions). |
 | `DELETE` | `/auth/sessions/{id}` | Bearer access JWT. Revokes one session; 404 if `id` names no active session of the user. |
 | `DELETE` | `/auth/sessions?scope=others\|all` | Bearer access JWT. `others` revokes every session except the current one; `all` revokes every session, the current one included. |
+| `POST` | `/auth/verify-email` | Public. Body `{ "token" }` from the verification message; marks the email verified. See [Email verification](#email-verification). |
+| `POST` | `/auth/verify-email/resend` | Bearer access JWT. Mails a new verification link (at most one a minute). |
 
 Passwords are hashed with bcrypt. Access JWTs are HS256, bound to the refresh
 row so logout, session revocation, and reuse of a rotated refresh token 401
@@ -53,6 +55,106 @@ device retrying its refresh must not end the session that revoked it.
 Concurrent refresh of the **current** still-valid token (two tabs, parallel
 `POST /auth/refresh`) shares one rotation and does not family-revoke the
 winner.
+
+## Email verification
+
+A user's email starts **unverified**. Registration mails a verification
+message, and posting its token proves the user owns the address:
+
+```sh
+curl -sX POST localhost:8080/api/v1/auth/verify-email \
+  -H 'Content-Type: application/json' -d '{"token":"<token from the message>"}'
+# {"data":{"id":1,"email":"ada@example.com","email_verified":true}}
+```
+
+`GET /me` and `POST /auth/register` report `email_verified`.
+
+- **The token.** 32 random bytes, stored as its SHA-256 in
+  `auth_one_time_tokens` (the raw token exists only in the message). It
+  expires after `GOMBIT_AUTH_EMAIL_VERIFICATION_TTL` (24h), works **once**,
+  and proves the address it was sent to: once the user's email is another
+  one, it fails. An unknown, expired, used or superseded token is a 422 on
+  `token`; the cases are not told apart.
+- **Resending.** `POST /auth/verify-email/resend` (authenticated) mails a new
+  token and **supersedes** the earlier ones: only the latest link works. A
+  user may ask once a minute (429 with `Retry-After`), counted from the
+  latest message delivered or still being sent; a verified user gets a 409.
+  On SQLite, which has no row locks, two resends at the very same moment can
+  both be sent.
+- **Failures.** A new token is written *pending*, and does not work until
+  its message was delivered: the mailer's `Send` returned nil. Delivery then
+  activates it and supersedes the earlier tokens in one transaction. So
+  whatever fails, either the new link works and no earlier one does, or
+  nothing changed and the earlier link keeps working. A message the mailer
+  could not send (503), or whose token could not be activated (500), is
+  withdrawn, and the user can ask again at once; if withdrawing it fails
+  too, the token stays pending (it never works) and counts as a message in
+  flight until the minute is up.
+- **Bound to the address.** A verification is for the address it proved
+  (`User.VerifiedEmail`): once the user's email is another one, by any path
+  (a GORM update, the admin), `User.EmailVerified()` is false and
+  `RequireVerifiedEmail` denies until the new address is verified.
+- **The link.** `GOMBIT_AUTH_EMAIL_VERIFICATION_URL` is the page the message
+  links to, with `{token}` where the token goes
+  (`https://app.example.com/verify-email?token={token}`); that page posts the
+  token to `POST /auth/verify-email`. Unset, the message carries the bare
+  token.
+- **Requiring it.** `auth.RequireVerifiedEmail()` is a Huma middleware for an
+  app's own operations, after the authentication gate. It answers 403 for an
+  unverified user:
+
+  ```go
+  svc, _ := auth.NewService(db.DB, cfg)
+  huma.Register(api, huma.Operation{
+      OperationID: "publish-post", Method: http.MethodPost, Path: "/api/v1/posts/{id}/publish",
+      Middlewares: huma.Middlewares{svc.RequireBearer(), auth.RequireVerifiedEmail()},
+  }, publish)
+  ```
+
+  In cookie mode the gate is `svc.RequireCookieSession()`. Login does not
+  require a verified email: an app decides which actions do.
+- **Superusers.** `gombit createsuperuser` creates a verified user, and sends
+  nothing. Users that existed before this release start unverified; to mark
+  one verified, set both `email_verified_at` and `verified_email` (to its
+  `email`).
+
+### Sending the messages
+
+The framework sends mail through one interface, `auth.Mailer`
+(`Send(ctx, auth.Message)`), that the app implements over its email provider
+and passes to `framework.WithAuthMailer` (or `auth.WithMailer`):
+
+```go
+type smtpMailer struct{ /* ... */ }
+
+func (m smtpMailer) Send(ctx context.Context, msg auth.Message) error {
+    // msg.To, msg.Subject, msg.Text: a plain default message;
+    // msg.Kind, msg.URL, msg.Token, msg.ExpiresAt: for your own template.
+}
+
+app, err := framework.New(framework.WithAuthMailer(smtpMailer{}))
+```
+
+`msg.Token` is a credential: never log it. Without a mailer, development and
+test apps log each message, link and token included (`auth.LogMailer`), so the
+flow works locally; a production app sends none (registration still succeeds,
+a resend is a 503) and logs a warning at startup. `Send` is synchronous: it
+returns nil once the provider accepted the message, because that is when its
+link starts working and the earlier ones stop. Don't return nil after only
+queueing the message: the earlier link would be superseded before the new
+one arrives. Registration sends its message on the request, so a slow mailer
+makes registration slow.
+
+Tests use `authtest.Mailer`, which records the messages instead of sending
+them:
+
+```go
+mail := &authtest.Mailer{}
+app, _ := framework.New(framework.WithAuthMailer(mail) /* ... */)
+// register ada@example.com, then:
+msg, _ := mail.Last("ada@example.com")
+// POST msg.Token to /api/v1/auth/verify-email
+```
 
 ## Sessions
 
@@ -162,6 +264,8 @@ ADMIN-3 assignment helpers and admin enforcement rules.
 | `GOMBIT_JWT_SECRET` | `Config.Auth.JWTSecret` | empty (auth unmounted) |
 | `GOMBIT_JWT_ACCESS_TTL` | `Config.Auth.AccessTokenTTL` | `15m` |
 | `GOMBIT_JWT_REFRESH_TTL` | `Config.Auth.RefreshTokenTTL` | `168h` (7 days) |
+| `GOMBIT_AUTH_EMAIL_VERIFICATION_TTL` | `Config.Auth.EmailVerificationTTL` | `24h` |
+| `GOMBIT_AUTH_EMAIL_VERIFICATION_URL` | `Config.Auth.EmailVerificationURL` | empty (the message carries the bare token); must contain `{token}` |
 
 With auth on, `config.Load` / `Validate` refuse a `GOMBIT_JWT_REFRESH_TTL`
 shorter than `GOMBIT_JWT_ACCESS_TTL` (equal is fine): the refresh token's
