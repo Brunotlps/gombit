@@ -877,10 +877,22 @@ func runExpiredRotatedRefresh(t *testing.T, db *database.DB) {
 // Huma does not document headers attached to an error at runtime, so the 401
 // is declared on the operation, and a declared 401 stops Huma from adding the
 // default, so that is declared too. The Bearer refresh sets no cookie and
-// declares neither: its responses are the 200 and the default.
+// declares neither: its responses are the 200 and the default. An operation
+// may document its own error responses, but none may document a Set-Cookie
+// header on a response that does not send one: outside a 200, only the cookie
+// refresh's 401 sets cookies. The check covers every operation auth.Mount
+// registers (each tagged Auth), in both modes; the cookie app also serves the
+// admin's operations, tagged Admin, which are the admin package's contract,
+// not this one.
 func TestRefreshOpenAPI(t *testing.T) {
 	gin.SetMode(gin.TestMode)
-	responses := func(t *testing.T, app *framework.App, path string) map[string]json.RawMessage {
+	type authOperation struct {
+		id        string
+		responses map[string]json.RawMessage
+	}
+	// operations reads app's /openapi.json and returns its operations tagged
+	// Auth, keyed "METHOD path".
+	operations := func(t *testing.T, app *framework.App) map[string]authOperation {
 		t.Helper()
 		rec := httptest.NewRecorder()
 		app.Router().ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/openapi.json", nil))
@@ -889,17 +901,56 @@ func TestRefreshOpenAPI(t *testing.T) {
 		}
 		var spec struct {
 			Paths map[string]map[string]struct {
-				Responses map[string]json.RawMessage `json:"responses"`
+				OperationID string                     `json:"operationId"`
+				Tags        []string                   `json:"tags"`
+				Responses   map[string]json.RawMessage `json:"responses"`
 			} `json:"paths"`
 		}
 		if err := json.Unmarshal(rec.Body.Bytes(), &spec); err != nil {
 			t.Fatalf("decode OpenAPI: %v", err)
 		}
-		op, ok := spec.Paths[path]["post"]
-		if !ok {
-			t.Fatalf("OpenAPI has no POST %s", path)
+		ops := map[string]authOperation{}
+		for path, methods := range spec.Paths {
+			for method, op := range methods {
+				if slices.Contains(op.Tags, "Auth") {
+					ops[strings.ToUpper(method)+" "+path] = authOperation{id: op.OperationID, responses: op.Responses}
+				}
+			}
 		}
-		return op.Responses
+		return ops
+	}
+	// noErrorSetsCookies fails t unless no response of an operation in ops
+	// other than its 200 declares a Set-Cookie header, except the response
+	// keyed allowed ("METHOD path status"; "" allows none), and unless ops
+	// holds each operation ID in want, so the Auth filter cannot leave the
+	// check with nothing to look at.
+	noErrorSetsCookies := func(t *testing.T, ops map[string]authOperation, allowed string, want ...string) {
+		t.Helper()
+		seen := map[string]bool{}
+		for key, op := range ops {
+			seen[op.id] = true
+			for status, raw := range op.responses {
+				if status == "200" || key+" "+status == allowed {
+					continue
+				}
+				var resp struct {
+					Headers map[string]json.RawMessage `json:"headers"`
+				}
+				if err := json.Unmarshal(raw, &resp); err != nil {
+					t.Fatalf("decode %s %s response: %v", key, status, err)
+				}
+				for name := range resp.Headers {
+					if strings.EqualFold(name, "Set-Cookie") {
+						t.Errorf("%s (%s) %s response declares Set-Cookie: outside a 200, only the cookie refresh's 401 sets cookies", key, op.id, status)
+					}
+				}
+			}
+		}
+		for _, id := range want {
+			if !seen[id] {
+				t.Errorf("OpenAPI has no operation %q tagged Auth", id)
+			}
+		}
 	}
 	sameJSON := func(t *testing.T, a, b []byte) bool {
 		t.Helper()
@@ -939,9 +990,10 @@ func TestRefreshOpenAPI(t *testing.T) {
 	}
 
 	t.Run("cookie", func(t *testing.T) {
-		app := newCookieAuthApp(t)
-		refresh := responses(t, app, "/api/v1/auth/refresh")
-		login := responses(t, app, "/api/v1/auth/login")
+		ops := operations(t, newCookieAuthApp(t))
+		noErrorSetsCookies(t, ops, "POST /api/v1/auth/refresh 401", "csrf", "login", "logout", "refresh", "get-me")
+		refresh := ops["POST /api/v1/auth/refresh"].responses
+		login := ops["POST /api/v1/auth/login"].responses
 		if got := slices.Sorted(maps.Keys(refresh)); !slices.Equal(got, []string{"200", "401", "default"}) {
 			t.Fatalf("cookie refresh responses = %v, want 200, 401 and default", got)
 		}
@@ -972,7 +1024,9 @@ func TestRefreshOpenAPI(t *testing.T) {
 	})
 
 	t.Run("bearer", func(t *testing.T) {
-		refresh := responses(t, newAuthApp(t), "/api/v1/auth/refresh")
+		ops := operations(t, newAuthApp(t))
+		noErrorSetsCookies(t, ops, "", "login", "logout", "refresh", "get-me")
+		refresh := ops["POST /api/v1/auth/refresh"].responses
 		if got := slices.Sorted(maps.Keys(refresh)); !slices.Equal(got, []string{"200", "default"}) {
 			t.Fatalf("Bearer refresh responses = %v, want 200 and default: it declares no 401", got)
 		}
